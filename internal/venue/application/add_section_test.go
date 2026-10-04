@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -114,3 +115,5 @@ func setupAddSection(t *testing.T) (context.Context, *memory.VenueRepository, do
 	}
 	return ctx, repo, id, application.NewAddSectionHandler(repo, clk)
 }
+
+func clockAt(t time.Time) *clock.Fixed { return clock.NewFixed(t) }
