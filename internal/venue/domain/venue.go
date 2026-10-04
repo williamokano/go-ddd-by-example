@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"slices"
 	"strings"
 	"time"
@@ -23,7 +24,7 @@ type Venue struct {
 
 	// events is a named field, not embedded: embedding would promote Record
 	// onto *Venue and let any caller fake the venue's history.
-	events Events
+	events sharedkernel.Events
 }
 
 // RegisterVenue registers a new venue. It starts as a Draft.
@@ -121,4 +122,4 @@ func (v *Venue) Retire(now time.Time) error {
 
 // PullEvents returns the events recorded since the last pull, in order, and
 // forgets them. The repository calls it after saving, to fill the outbox.
-func (v *Venue) PullEvents() []DomainEvent { return v.events.PullEvents() }
+func (v *Venue) PullEvents() []sharedkernel.DomainEvent { return v.events.PullEvents() }

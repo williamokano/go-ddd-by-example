@@ -3,6 +3,7 @@ package postgres
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 
 	"github.com/google/uuid"
 
@@ -14,7 +15,7 @@ import (
 // ToOutboxMessages translates domain events into integration events: a small
 // anti-corruption layer pointing outward. It decides what leaves the context:
 // VenueRegistered and SectionAdded are internal facts and are not published.
-func ToOutboxMessages(events []domain.DomainEvent, newID func() uuid.UUID) ([]outbox.Message, error) {
+func ToOutboxMessages(events []sharedkernel.DomainEvent, newID func() uuid.UUID) ([]outbox.Message, error) {
 	var msgs []outbox.Message
 	for _, ev := range events {
 		var (

@@ -88,6 +88,11 @@ func TestDependencyRules(t *testing.T) {
 			func(_, imp string) bool { return !isStdlib(imp) },
 		},
 		{
+			"the shared kernel imports only the standard library",
+			func(p string) bool { return strings.HasPrefix(p, module+"/internal/sharedkernel") },
+			func(_, imp string) bool { return !isStdlib(imp) },
+		},
+		{
 			"platform imports no context",
 			func(p string) bool { return strings.HasPrefix(p, module+"/internal/platform") },
 			func(_, imp string) bool { return contextOf(imp) != "" },

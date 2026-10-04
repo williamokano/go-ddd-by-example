@@ -2,6 +2,7 @@ package application_test
 
 import (
 	"errors"
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -35,7 +36,7 @@ func TestRegisterVenue(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Handle() error = %v", err)
 		}
-		want := []domain.DomainEvent{domain.VenueRegistered{VenueID: id, Name: "Coliseu dos Recreios", At: fixedNow}}
+		want := []sharedkernel.DomainEvent{domain.VenueRegistered{VenueID: id, Name: "Coliseu dos Recreios", At: fixedNow}}
 		if diff := cmp.Diff(want, f.repo.Published(), cmp.AllowUnexported(domain.VenueID{})); diff != "" {
 			t.Errorf("events mismatch (-want +got):\n%s", diff)
 		}

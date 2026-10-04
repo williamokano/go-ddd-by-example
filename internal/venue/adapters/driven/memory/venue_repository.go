@@ -6,6 +6,7 @@ package memory
 import (
 	"context"
 	"fmt"
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"slices"
 	"sync"
 
@@ -21,7 +22,7 @@ import (
 type VenueRepository struct {
 	mu        sync.Mutex
 	venues    map[domain.VenueID]domain.VenueState
-	published []domain.DomainEvent
+	published []sharedkernel.DomainEvent
 }
 
 // NewVenueRepository returns an empty repository.
@@ -58,7 +59,7 @@ func (r *VenueRepository) Save(_ context.Context, v *domain.Venue) error {
 
 // Published returns every event drained by Save, in order. It stands in for
 // the outbox, so tests can check which facts a use case produced.
-func (r *VenueRepository) Published() []domain.DomainEvent {
+func (r *VenueRepository) Published() []sharedkernel.DomainEvent {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return slices.Clone(r.published)

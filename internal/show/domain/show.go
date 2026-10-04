@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -24,7 +25,7 @@ type Show struct {
 
 	cancellationReason CancellationReason
 
-	events Events
+	events sharedkernel.Events
 }
 
 // DraftShow drafts a show at an active venue (SHW-1), starting in the future
@@ -166,4 +167,4 @@ func (s *Show) CancellationReason() CancellationReason { return s.cancellationRe
 func (s *Show) Version() int { return s.version }
 
 // PullEvents returns the recorded events and forgets them.
-func (s *Show) PullEvents() []DomainEvent { return s.events.PullEvents() }
+func (s *Show) PullEvents() []sharedkernel.DomainEvent { return s.events.PullEvents() }

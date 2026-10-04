@@ -34,7 +34,7 @@ func TestToOutboxMessages_ShowPublished(t *testing.T) {
 		{Code: "FLOOR", Kind: "ga", Capacity: 3},
 	}}
 
-	msgs, err := postgres.ToOutboxMessages([]domain.DomainEvent{
+	msgs, err := postgres.ToOutboxMessages([]sharedkernel.DomainEvent{
 		domain.ShowDrafted{ShowID: showID, At: at}, // internal: not published
 		domain.ShowPublished{ShowID: showID, VenueID: venueID, Title: "Fado", Schedule: schedule, Layout: layout, Prices: prices, At: at},
 	}, newID)
@@ -65,7 +65,7 @@ func TestToOutboxMessages_ShowPublished(t *testing.T) {
 func TestToOutboxMessages_ShowCancelled(t *testing.T) {
 	reason, _ := domain.NewCancellationReason("venue_retired")
 
-	msgs, err := postgres.ToOutboxMessages([]domain.DomainEvent{
+	msgs, err := postgres.ToOutboxMessages([]sharedkernel.DomainEvent{
 		domain.ShowCancelled{ShowID: showID, VenueID: venueID, Reason: reason, At: at},
 	}, newID)
 

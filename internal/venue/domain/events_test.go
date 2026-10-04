@@ -1,6 +1,7 @@
 package domain_test
 
 import (
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -16,7 +17,7 @@ func TestRegisterVenue_RecordsVenueRegistered(t *testing.T) {
 
 	got := venue.PullEvents()
 
-	want := []domain.DomainEvent{
+	want := []sharedkernel.DomainEvent{
 		domain.VenueRegistered{VenueID: aVenueID(), Name: "Coliseu dos Recreios", At: fixedNow},
 	}
 	if diff := cmp.Diff(want, got, domainValues); diff != "" {
@@ -33,7 +34,7 @@ func TestVenue_AddSection_RecordsSectionAdded(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := []domain.DomainEvent{
+	want := []sharedkernel.DomainEvent{
 		domain.SectionAdded{VenueID: venue.ID(), Section: section, At: fixedNow},
 	}
 	if diff := cmp.Diff(want, venue.PullEvents(), domainValues); diff != "" {
@@ -51,7 +52,7 @@ func TestVenue_Activate_RecordsVenueActivatedWithTheLayout(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := []domain.DomainEvent{domain.VenueActivated{
+	want := []sharedkernel.DomainEvent{domain.VenueActivated{
 		VenueID:  venue.ID(),
 		Name:     venue.Name(),
 		Sections: []domain.Section{orch, floor},
@@ -70,7 +71,7 @@ func TestVenue_Retire_RecordsVenueRetired(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := []domain.DomainEvent{domain.VenueRetired{VenueID: venue.ID(), At: fixedNow}}
+	want := []sharedkernel.DomainEvent{domain.VenueRetired{VenueID: venue.ID(), At: fixedNow}}
 	if diff := cmp.Diff(want, venue.PullEvents(), domainValues); diff != "" {
 		t.Errorf("events mismatch (-want +got):\n%s", diff)
 	}
@@ -126,7 +127,7 @@ func TestVenue_PullEvents(t *testing.T) {
 
 func TestDomainEvents(t *testing.T) {
 	tests := []struct {
-		event    domain.DomainEvent
+		event    sharedkernel.DomainEvent
 		wantName string
 	}{
 		{domain.VenueRegistered{At: fixedNow}, "venue.VenueRegistered"},
@@ -144,7 +145,7 @@ func TestDomainEvents(t *testing.T) {
 	}
 }
 
-func eventNames(events []domain.DomainEvent) []string {
+func eventNames(events []sharedkernel.DomainEvent) []string {
 	names := make([]string, len(events))
 	for i, ev := range events {
 		names[i] = ev.EventName()

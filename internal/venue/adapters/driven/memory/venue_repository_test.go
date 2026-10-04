@@ -2,6 +2,7 @@ package memory_test
 
 import (
 	"context"
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"testing"
 	"time"
 
@@ -27,7 +28,7 @@ func TestVenueRepository_Published(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := []domain.DomainEvent{
+	want := []sharedkernel.DomainEvent{
 		domain.VenueRegistered{VenueID: venue.ID(), Name: venue.Name(), At: fixedNow},
 	}
 	if diff := cmp.Diff(want, repo.Published(), cmp.AllowUnexported(domain.VenueID{})); diff != "" {

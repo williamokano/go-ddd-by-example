@@ -2,6 +2,7 @@ package domain_test
 
 import (
 	"errors"
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"testing"
 	"time"
 
@@ -100,7 +101,7 @@ func TestShow_MarkSoldOut_IsIdempotent(t *testing.T) {
 		_ = s.MarkSoldOut(now)
 		_ = s.MarkSoldOut(now)
 
-		want := []domain.DomainEvent{domain.ShowSoldOut{ShowID: showID, At: now}}
+		want := []sharedkernel.DomainEvent{domain.ShowSoldOut{ShowID: showID, At: now}}
 		if diff := cmp.Diff(want, s.PullEvents(), showValues); diff != "" {
 			t.Errorf("events mismatch (-want +got):\n%s", diff)
 		}
@@ -114,7 +115,7 @@ func TestShow_Cancel_RecordsTheReason(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := []domain.DomainEvent{domain.ShowCancelled{ShowID: showID, VenueID: venueID, Reason: reason(t, "venue_retired"), At: now}}
+	want := []sharedkernel.DomainEvent{domain.ShowCancelled{ShowID: showID, VenueID: venueID, Reason: reason(t, "venue_retired"), At: now}}
 	if diff := cmp.Diff(want, s.PullEvents(), showValues); diff != "" {
 		t.Errorf("events mismatch (-want +got):\n%s", diff)
 	}
@@ -133,7 +134,7 @@ func TestShow_Reschedule(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		want := []domain.DomainEvent{domain.ShowRescheduled{ShowID: showID, Schedule: later, At: now}}
+		want := []sharedkernel.DomainEvent{domain.ShowRescheduled{ShowID: showID, Schedule: later, At: now}}
 		if diff := cmp.Diff(want, s.PullEvents(), showValues); diff != "" {
 			t.Errorf("events mismatch (-want +got):\n%s", diff)
 		}

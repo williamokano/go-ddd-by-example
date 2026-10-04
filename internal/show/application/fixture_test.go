@@ -2,6 +2,7 @@ package application_test
 
 import (
 	"context"
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"testing"
 	"time"
 
@@ -82,7 +83,7 @@ func (f *fixture) publishedShow(t *testing.T) domain.ShowID {
 	return id
 }
 
-func (f *fixture) lastEvent(t *testing.T) domain.DomainEvent {
+func (f *fixture) lastEvent(t *testing.T) sharedkernel.DomainEvent {
 	t.Helper()
 	events := f.shows.Published()
 	if len(events) == 0 {

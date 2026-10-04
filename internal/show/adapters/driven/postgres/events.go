@@ -3,6 +3,7 @@ package postgres
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 
 	"github.com/google/uuid"
 
@@ -13,7 +14,7 @@ import (
 
 // ToOutboxMessages translates Show's domain events into its Published
 // Language. Only ShowPublished and ShowCancelled leave the context.
-func ToOutboxMessages(events []domain.DomainEvent, newID func() uuid.UUID) ([]outbox.Message, error) {
+func ToOutboxMessages(events []sharedkernel.DomainEvent, newID func() uuid.UUID) ([]outbox.Message, error) {
 	var msgs []outbox.Message
 	for _, ev := range events {
 		var (

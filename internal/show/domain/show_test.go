@@ -24,7 +24,7 @@ func TestDraftShow(t *testing.T) {
 		if s.Status() != domain.Draft || s.Title() != "Fado Night" || s.VenueID() != venueID || s.PromoterID() != promoterID {
 			t.Errorf("show = %v %q %v %v", s.Status(), s.Title(), s.VenueID(), s.PromoterID())
 		}
-		want := []domain.DomainEvent{domain.ShowDrafted{
+		want := []sharedkernel.DomainEvent{domain.ShowDrafted{
 			ShowID: showID, VenueID: venueID, PromoterID: promoterID, Title: "Fado Night", Schedule: schedule, At: now,
 		}}
 		if diff := cmp.Diff(want, s.PullEvents(), showValues); diff != "" {
@@ -76,7 +76,7 @@ func TestShow_Price(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Price() error = %v", err)
 		}
-		want := []domain.DomainEvent{domain.ShowPriced{ShowID: showID, Prices: fullPrices(t), At: now}}
+		want := []sharedkernel.DomainEvent{domain.ShowPriced{ShowID: showID, Prices: fullPrices(t), At: now}}
 		if diff := cmp.Diff(want, s.PullEvents(), showValues); diff != "" {
 			t.Errorf("events mismatch (-want +got):\n%s", diff)
 		}
@@ -116,7 +116,7 @@ func TestShow_Publish(t *testing.T) {
 		if s.Status() != domain.Published {
 			t.Errorf("Status() = %v, want published", s.Status())
 		}
-		want := []domain.DomainEvent{domain.ShowPublished{
+		want := []sharedkernel.DomainEvent{domain.ShowPublished{
 			ShowID: showID, VenueID: venueID, Title: "Fado Night", Schedule: inAMonth(t), Layout: activeLayout(), Prices: fullPrices(t), At: now,
 		}}
 		if diff := cmp.Diff(want, s.PullEvents(), showValues); diff != "" {

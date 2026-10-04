@@ -2,27 +2,6 @@ package domain
 
 import "time"
 
-// DomainEvent is something that happened in the Venue Management domain that
-// domain experts care about. Events are named in the past tense and immutable.
-type DomainEvent interface {
-	EventName() string
-	OccurredAt() time.Time
-}
-
-// Events records the domain events of an aggregate until they are pulled.
-// The aggregate records; it never publishes (it knows nothing about Kafka).
-type Events struct{ pending []DomainEvent }
-
-// Record appends an event.
-func (e *Events) Record(ev DomainEvent) { e.pending = append(e.pending, ev) }
-
-// PullEvents returns the recorded events in order and forgets them.
-func (e *Events) PullEvents() []DomainEvent {
-	out := e.pending
-	e.pending = nil
-	return out
-}
-
 // VenueRegistered records that a venue manager registered a new venue.
 type VenueRegistered struct {
 	VenueID VenueID

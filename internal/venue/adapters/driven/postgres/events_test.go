@@ -2,6 +2,7 @@ package postgres_test
 
 import (
 	"encoding/json"
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"testing"
 	"time"
 
@@ -26,7 +27,7 @@ func TestToOutboxMessages_VenueActivated(t *testing.T) {
 	code, _ := domain.NewSectionCode("FLOOR")
 	floor, _ := domain.NewGeneralAdmissionSection(code, "Floor", 500)
 
-	got, err := postgres.ToOutboxMessages([]domain.DomainEvent{
+	got, err := postgres.ToOutboxMessages([]sharedkernel.DomainEvent{
 		domain.VenueActivated{VenueID: venueID, Name: "Coliseu", Sections: []domain.Section{floor}, At: at},
 	}, fixedID)
 
@@ -47,7 +48,7 @@ func TestToOutboxMessages_VenueActivated(t *testing.T) {
 }
 
 func TestToOutboxMessages_VenueRetired(t *testing.T) {
-	got, err := postgres.ToOutboxMessages([]domain.DomainEvent{domain.VenueRetired{VenueID: venueID, At: at}}, fixedID)
+	got, err := postgres.ToOutboxMessages([]sharedkernel.DomainEvent{domain.VenueRetired{VenueID: venueID, At: at}}, fixedID)
 
 	if err != nil || len(got) != 1 || got[0].Type != contracts.TypeVenueRetiredV1 {
 		t.Fatalf("got %+v, %v; want one venue.retired.v1", got, err)
@@ -60,7 +61,7 @@ func TestToOutboxMessages_VenueRetired(t *testing.T) {
 
 // Internal facts nobody outside needs are not published.
 func TestToOutboxMessages_InternalEventsStayInside(t *testing.T) {
-	got, err := postgres.ToOutboxMessages([]domain.DomainEvent{
+	got, err := postgres.ToOutboxMessages([]sharedkernel.DomainEvent{
 		domain.VenueRegistered{VenueID: venueID, Name: "Coliseu", At: at},
 		domain.SectionAdded{VenueID: venueID, At: at},
 	}, fixedID)
