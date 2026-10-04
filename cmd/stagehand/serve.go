@@ -11,6 +11,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/williamokano/go-ddd-by-example/internal/notifications/adapters/driven/logsender"
+	notificationsconsumer "github.com/williamokano/go-ddd-by-example/internal/notifications/adapters/driving/consumer"
+	notificationsapp "github.com/williamokano/go-ddd-by-example/internal/notifications/application"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/clock"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/config"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/httpx"
@@ -139,6 +142,14 @@ func serve(ctx context.Context) error {
 		logger,
 	)
 	consume(ctx, &background, cfg, "ticketing", []string{showcontracts.Topic}, showEvents.Handle, logger)
+
+	// Notifications: a transaction script per event, emails logged.
+	sender := logsender.New(logger)
+	notify := notificationsconsumer.NewTicketingConsumer(
+		notificationsapp.NewSendTicketsHandler(sender),
+		notificationsapp.NewSendRefundHandler(sender),
+	)
+	consume(ctx, &background, cfg, "notifications", []string{ticketingcontracts.Topic}, notify.Handle, logger)
 
 	mux := http.NewServeMux()
 	for _, pattern := range ticketinghttp.Patterns {
