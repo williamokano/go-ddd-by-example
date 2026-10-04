@@ -3,7 +3,7 @@
 Source of truth for *where we are* in the course. Lessons live in `docs/part-*.html`.
 Tick a lesson when its "Done when" checks pass; add a one-line note (date, anything notable).
 
-**Current lesson:** 9.3 — Contract evolution: show.published.v2
+**Current lesson:** 9.4 — Orchestration instead of choreography
 
 ## Part 0 — Orientation & setup (`docs/part-0-orientation.html`)
 - [x] 0.1 Event storming on paper
@@ -113,7 +113,8 @@ Tick a lesson when its "Done when" checks pass; add a one-line note (date, anyth
   - ADR-013: TKT-3 per section; TKT-10 is a domain service. 10 sections: 30/200 holds vs 3/200 (`notes/aggregate-design.md`).
 - [x] 9.2 Ticket check-in at the gate
   - TKT-13: once, never voided, within 12h of the start (no venue time zone yet). Only the Ticket is written; a `ShowSchedule` read port gives the start.
-- [ ] 9.3 Contract evolution: show.published.v2
+- [x] 9.3 Contract evolution: show.published.v2
+  - Additive `accessible_seats` kept venue.activated at v1; seat-by-seat restructure made show.published.v2. Ticketing skips v1 once it reads v2 (v1 arrives first on the same key).
 - [ ] 9.4 Orchestration instead of choreography
 - [ ] 9.5 Show lifecycle completion and back-on-sale
 - [ ] 9.6 Database-enforced boundaries
