@@ -87,6 +87,30 @@ func Run(t *testing.T, newRepo func(t *testing.T) application.InventoryRepositor
 		}
 	})
 
+	t.Run("returned seats round-trip, back on sale (9.5)", func(t *testing.T) {
+		repo := newRepo(t)
+		_, floor := Open(t)
+		save(t, repo, floor)
+		loaded := get(t, repo, floor.ShowID(), "FLOOR")
+		order := domain.NewOrderID(uuid.New())
+		for _, seat := range []string{"FLOOR/GA/0001", "FLOOR/GA/0002", "FLOOR/GA/0003"} {
+			if err := loaded.ConfirmHold(hold(t, loaded, seat), order, now); err != nil {
+				t.Fatal(err)
+			}
+		}
+		save(t, repo, loaded)
+		soldOut := get(t, repo, floor.ShowID(), "FLOOR")
+		soldOut.ReturnSeats(order, now)
+
+		save(t, repo, soldOut)
+
+		again := get(t, repo, floor.ShowID(), "FLOOR")
+		assertSame(t, soldOut, again)
+		if again.IsSoldOut() {
+			t.Error("still sold out after the return")
+		}
+	})
+
 	t.Run("get by hold finds the section; an unknown hold is ErrHoldNotFound", func(t *testing.T) {
 		repo := newRepo(t)
 		_, floor := Open(t)

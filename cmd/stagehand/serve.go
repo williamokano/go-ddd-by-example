@@ -97,12 +97,18 @@ func serve(ctx context.Context) error {
 		Cancel:  showapp.NewCancelShowHandler(shows, clk),
 		Queries: showpg.NewShowQueries(pool),
 	}, logger)
+	// A scheduler completes the shows that have ended (SHW-9).
+	completeShows := showapp.NewCompleteEndedShowsHandler(shows, clk)
+	showSweep := time.NewTicker(cfg.ShowSweepInterval)
+	defer showSweep.Stop()
+	background.Go(func() { scheduler.Run(ctx, showSweep.C, completeShows.Handle, logger) })
 	venueEvents := showconsumer.NewVenueConsumer(
 		showapp.NewOnVenueActivatedHandler(layouts),
 		showapp.NewOnVenueRetiredHandler(layouts, shows, clk),
 		logger,
 	)
-	ticketingEvents := showconsumer.NewTicketingConsumer(showapp.NewMarkShowSoldOutHandler(shows, clk), logger)
+	ticketingEvents := showconsumer.NewTicketingConsumer(
+		showapp.NewMarkShowSoldOutHandler(shows, clk), showapp.NewMarkShowBackOnSaleHandler(shows, clk), logger)
 	consume(ctx, &background, cfg, "show", []string{venuecontracts.Topic, ticketingcontracts.Topic},
 		byEventPrefix(map[string]kafka.Handler{"venue.": venueEvents.Handle, "ticketing.": ticketingEvents.Handle}), logger)
 
@@ -116,6 +122,7 @@ func serve(ctx context.Context) error {
 	orders := ticketingpg.NewOrderRepository(pool)
 	tickets := ticketingpg.NewTicketRepository(pool)
 	ticketingIDs := ticketingids.New(idgen.UUIDv7{})
+	refund := ticketingapp.NewRefundOrderHandler(orders, gateway, clk)
 	ticketingAPI := ticketinghttp.Routes(ticketinghttp.UseCases{
 		Hold:     ticketingapp.NewHoldSeatsHandler(inventories, ticketingIDs, clk, cfg.HoldTTL),
 		Release:  ticketingapp.NewReleaseHoldHandler(inventories, clk),
@@ -123,14 +130,15 @@ func serve(ctx context.Context) error {
 		Checkout: ticketingapp.NewCheckoutHandler(inventories, orders, gateway, ticketingIDs, clk),
 		Orders:   ticketingapp.NewOrderQueries(orders, tickets),
 		CheckIn:  ticketingapp.NewCheckInHandler(tickets, ticketingpg.NewShowSchedule(pool), clk),
+		Return:   ticketingapp.NewReturnOrderHandler(orders, ticketingpg.NewShowSchedule(pool), refund, clk),
 	}, logger)
-	refund := ticketingapp.NewRefundOrderHandler(orders, gateway, clk)
 	steps := ticketingconsumer.SagaSteps{
-		Confirm: ticketingapp.NewConfirmHoldHandler(inventories, clk),
-		Issue:   ticketingapp.NewIssueTicketsHandler(orders, tickets, ticketingIDs, clk),
-		Refund:  refund,
-		Closed:  ticketingapp.NewOnInventoryClosedHandler(tickets, orders, refund, clk),
-		SoldOut: ticketingapp.NewOnSectionSoldOutHandler(inventories, ticketingpg.NewEventPublisher(pool), clk),
+		Confirm:  ticketingapp.NewConfirmHoldHandler(inventories, clk),
+		Issue:    ticketingapp.NewIssueTicketsHandler(orders, tickets, ticketingIDs, clk),
+		Refund:   refund,
+		Closed:   ticketingapp.NewOnInventoryClosedHandler(tickets, orders, refund, clk),
+		SoldOut:  ticketingapp.NewOnSectionSoldOutHandler(inventories, ticketingpg.NewEventPublisher(pool), clk),
+		Returned: ticketingapp.NewOnOrderRefundedHandler(inventories, tickets, clk),
 	}
 	if cfg.SagaStyle == "orchestration" {
 		// The same steps, driven by the CheckoutProcess (9.4) instead of

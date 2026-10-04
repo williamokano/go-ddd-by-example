@@ -10,9 +10,10 @@ const Topic = "ticketing.events"
 
 // Event types.
 const (
-	TypeInventorySoldOutV1 = "ticketing.inventory_sold_out.v1"
-	TypeTicketsIssuedV1    = "ticketing.tickets_issued.v1"
-	TypeOrderRefundedV1    = "ticketing.order_refunded.v1"
+	TypeInventorySoldOutV1        = "ticketing.inventory_sold_out.v1"
+	TypeInventoryAvailableAgainV1 = "ticketing.inventory_available_again.v1"
+	TypeTicketsIssuedV1           = "ticketing.tickets_issued.v1"
+	TypeOrderRefundedV1           = "ticketing.order_refunded.v1"
 )
 
 // InventorySoldOutV1 announces every seat of a show is sold (TKT-10). Show
@@ -20,6 +21,13 @@ const (
 type InventorySoldOutV1 struct {
 	ShowID    string    `json:"show_id"`
 	SoldOutAt time.Time `json:"sold_out_at"`
+}
+
+// InventoryAvailableAgainV1 announces seats on sale again after a return
+// (9.5). Show conforms: a SoldOut show is Published again (SHW-10).
+type InventoryAvailableAgainV1 struct {
+	ShowID      string    `json:"show_id"`
+	AvailableAt time.Time `json:"available_at"`
 }
 
 // TicketsIssuedV1 announces an order's tickets, and where to send them.

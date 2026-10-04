@@ -56,20 +56,24 @@ func TestToOutboxMessages_PublishedLanguage(t *testing.T) {
 		domain.InventorySoldOut{ShowID: show, At: at},
 		domain.OrderFulfilled{OrderID: order, ShowID: show, ContactEmail: email,
 			Tickets: []domain.IssuedTicket{{Seat: seat, Code: domain.TicketCodeFor(domain.NewTicketID(uuid.New()))}}, At: at},
-		domain.OrderRefunded{OrderID: order, ShowID: show, ContactEmail: email, Total: total, At: at},
+		domain.OrderRefunded{OrderID: order, ShowID: show, Section: "ORCH", ContactEmail: email, Total: total, At: at},
 		domain.InventoryClosed{ShowID: show, At: at},
 		domain.SectionSoldOut{ShowID: show, Section: "ORCH", At: at},
+		domain.SectionBackOnSale{ShowID: show, Section: "ORCH", At: at},
 	}, uuid.New)
 
-	if err != nil || len(msgs) != 5 {
+	// OrderRefunded is also a saga step (9.5): its seats may go back on sale.
+	if err != nil || len(msgs) != 7 {
 		t.Fatalf("got %d messages, %v", len(msgs), err)
 	}
 	want := []struct{ topic, typ, key string }{
 		{contracts.Topic, contracts.TypeInventorySoldOutV1, show.String()},
 		{contracts.Topic, contracts.TypeTicketsIssuedV1, order.String()},
 		{contracts.Topic, contracts.TypeOrderRefundedV1, order.String()},
+		{sagamsg.Topic, sagamsg.TypeOrderRefunded, order.String()},
 		{sagamsg.Topic, sagamsg.TypeInventoryClosed, show.String()},
 		{sagamsg.Topic, sagamsg.TypeSectionSoldOut, show.String()},
+		{contracts.Topic, contracts.TypeInventoryAvailableAgainV1, show.String()},
 	}
 	for i, w := range want {
 		if msgs[i].Topic != w.topic || msgs[i].Type != w.typ || msgs[i].Key != w.key {

@@ -27,15 +27,19 @@ type (
 	onSectionSoldOut interface {
 		Handle(context.Context, application.OnSectionSoldOut) error
 	}
+	onOrderRefunded interface {
+		Handle(context.Context, application.OnOrderRefunded) error
+	}
 )
 
 // SagaSteps are the use cases the checkout saga's messages drive.
 type SagaSteps struct {
-	Confirm confirmHold
-	Issue   issueTickets
-	Refund  refundOrder
-	Closed  onInventoryClosed
-	SoldOut onSectionSoldOut
+	Confirm  confirmHold
+	Issue    issueTickets
+	Refund   refundOrder
+	Closed   onInventoryClosed
+	SoldOut  onSectionSoldOut
+	Returned onOrderRefunded
 }
 
 // SagaConsumer consumes ticketing.internal (group "ticketing-saga"):
@@ -75,6 +79,11 @@ func (c *SagaConsumer) Handle(ctx context.Context, env kafka.Envelope) error {
 		var m sagamsg.SectionSoldOut
 		if err = decode(env, &m); err == nil {
 			err = c.steps.SoldOut.Handle(ctx, application.OnSectionSoldOut{ShowID: m.ShowID})
+		}
+	case sagamsg.TypeOrderRefunded:
+		var m sagamsg.OrderRefunded
+		if err = decode(env, &m); err == nil {
+			err = c.steps.Returned.Handle(ctx, application.OnOrderRefunded{ShowID: m.ShowID, Section: m.Section, OrderID: m.OrderID})
 		}
 	case sagamsg.TypeInventoryClosed:
 		var m sagamsg.InventoryClosed

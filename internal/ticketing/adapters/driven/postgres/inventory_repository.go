@@ -274,6 +274,8 @@ func changedSeats(events []sharedkernel.DomainEvent) map[domain.SeatRef]bool {
 			mark(e.Seats)
 		case domain.InventoryClosed:
 			mark(e.ReleasedSeats)
+		case domain.SeatsReturned:
+			mark(e.Seats)
 		}
 	}
 	return changed

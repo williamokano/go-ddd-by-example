@@ -22,6 +22,7 @@ type Config struct {
 	PaymentFakeMode    string        // PAYMENT_FAKE_MODE: approve | decline | delay:3s; default approve
 	HoldSweepInterval  time.Duration // HOLD_SWEEP_INTERVAL, default 5s: how often holds are expired
 	SagaStyle          string        // SAGA_STYLE: orchestration (default, 9.4) | choreography (ADR-010)
+	ShowSweepInterval  time.Duration // SHOW_SWEEP_INTERVAL, default 1m: how often ended shows complete (SHW-9)
 }
 
 // Load builds the Config from getenv (os.Getenv in main, a map in tests).
@@ -52,6 +53,9 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, err
 	}
 	if cfg.HoldSweepInterval, err = duration(getenv, "HOLD_SWEEP_INTERVAL", "5s"); err != nil {
+		return Config{}, err
+	}
+	if cfg.ShowSweepInterval, err = duration(getenv, "SHOW_SWEEP_INTERVAL", "1m"); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil

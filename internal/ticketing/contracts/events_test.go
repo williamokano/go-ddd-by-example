@@ -19,6 +19,9 @@ var at = time.Date(2026, 11, 1, 20, 0, 0, 0, time.UTC)
 func TestGolden(t *testing.T) {
 	for file, event := range map[string]any{
 		"ticketing.inventory_sold_out.v1": contracts.InventorySoldOutV1{ShowID: "0192f5e0-0000-7000-8000-000000000001", SoldOutAt: at},
+		"ticketing.inventory_available_again.v1": contracts.InventoryAvailableAgainV1{
+			ShowID: "0192f5e0-0000-7000-8000-000000000001", AvailableAt: at,
+		},
 		"ticketing.tickets_issued.v1": contracts.TicketsIssuedV1{
 			OrderID: "0192f5e0-0000-7000-8000-0000000000d1", ShowID: "0192f5e0-0000-7000-8000-000000000001",
 			CustomerID: "0192f5e0-0000-7000-8000-0000000000c1", ContactEmail: "ana@example.com",

@@ -14,6 +14,7 @@ import (
 )
 
 type sagaStubs struct {
+	returned  *application.OnOrderRefunded
 	soldOut   *application.OnSectionSoldOut
 	confirmed *application.ConfirmHold
 	issued    *application.IssueTickets
@@ -34,6 +35,13 @@ func (c soldOutStub) Handle(_ context.Context, cmd application.OnSectionSoldOut)
 	return nil
 }
 
+type returnedStub struct{ s *sagaStubs }
+
+func (r returnedStub) Handle(_ context.Context, cmd application.OnOrderRefunded) error {
+	r.s.returned = &cmd
+	return nil
+}
+
 type issueStub struct{ s *sagaStubs }
 
 func (i issueStub) Handle(_ context.Context, cmd application.IssueTickets) error {
@@ -50,7 +58,7 @@ func (r refundStub) Handle(_ context.Context, cmd application.RefundOrder) error
 
 func TestSagaConsumer_RoutesEachStep(t *testing.T) {
 	s := &sagaStubs{}
-	c := consumer.NewSagaConsumer(consumer.SagaSteps{Confirm: confirmStub{s}, Issue: issueStub{s}, Refund: refundStub{s}, SoldOut: soldOutStub{s}},
+	c := consumer.NewSagaConsumer(consumer.SagaSteps{Confirm: confirmStub{s}, Issue: issueStub{s}, Refund: refundStub{s}, SoldOut: soldOutStub{s}, Returned: returnedStub{s}},
 		slog.New(slog.NewTextHandler(io.Discard, nil)))
 	send := func(eventType string, payload any) {
 		b, _ := json.Marshal(payload)
@@ -63,6 +71,7 @@ func TestSagaConsumer_RoutesEachStep(t *testing.T) {
 	send(sagamsg.TypeSeatsSold, sagamsg.SeatsSold{OrderID: "o1", ShowID: "s1", Seats: []string{"ORCH/A/1"}})
 	send(sagamsg.TypeHoldConfirmationFailed, sagamsg.HoldConfirmationFailed{OrderID: "o2", ShowID: "s1"})
 	send(sagamsg.TypeSectionSoldOut, sagamsg.SectionSoldOut{ShowID: "s1", Section: "ORCH"})
+	send(sagamsg.TypeOrderRefunded, sagamsg.OrderRefunded{OrderID: "o3", ShowID: "s1", Section: "ORCH"})
 
 	if *s.confirmed != (application.ConfirmHold{ShowID: "s1", Section: "ORCH", HoldID: "h1", OrderID: "o1"}) {
 		t.Errorf("confirm = %+v", s.confirmed)
@@ -76,6 +85,9 @@ func TestSagaConsumer_RoutesEachStep(t *testing.T) {
 	if s.soldOut == nil || s.soldOut.ShowID != "s1" {
 		t.Errorf("sold out = %+v", s.soldOut)
 	}
+	if s.returned == nil || *s.returned != (application.OnOrderRefunded{ShowID: "s1", Section: "ORCH", OrderID: "o3"}) {
+		t.Errorf("returned = %+v", s.returned)
+	}
 }
 
 // A payload that does not decode is poison: retrying cannot fix it (8.5).
@@ -83,7 +95,7 @@ func TestSagaConsumer_AMalformedPayloadIsPermanent(t *testing.T) {
 	s := &sagaStubs{}
 	c := consumer.NewSagaConsumer(consumer.SagaSteps{Confirm: confirmStub{s}, Issue: issueStub{s}, Refund: refundStub{s}},
 		slog.New(slog.NewTextHandler(io.Discard, nil)))
-	for _, typ := range []string{sagamsg.TypeOrderPaid, sagamsg.TypeSeatsSold, sagamsg.TypeHoldConfirmationFailed, sagamsg.TypeInventoryClosed, sagamsg.TypeSectionSoldOut} {
+	for _, typ := range []string{sagamsg.TypeOrderPaid, sagamsg.TypeSeatsSold, sagamsg.TypeHoldConfirmationFailed, sagamsg.TypeInventoryClosed, sagamsg.TypeSectionSoldOut, sagamsg.TypeOrderRefunded} {
 		if err := c.Handle(context.Background(), kafka.Envelope{EventType: typ, Payload: []byte("{")}); !kafka.IsPermanent(err) {
 			t.Errorf("%s: err = %v, want a permanent error", typ, err)
 		}

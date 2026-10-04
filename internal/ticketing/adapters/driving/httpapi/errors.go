@@ -27,6 +27,8 @@ var errorStatuses = []struct {
 	{application.ErrOrderNotFound, http.StatusNotFound, "Order not found"},
 	{application.ErrTicketNotFound, http.StatusNotFound, "Ticket not found"},
 	{domain.ErrNotHoldOwner, http.StatusForbidden, "Not your hold"},
+	{domain.ErrNotOrderOwner, http.StatusForbidden, "Not your order"},
+	{domain.ErrInvalidOrderTransition, http.StatusConflict, "Invalid order transition"},
 	{application.ErrInventoryNotFound, http.StatusNotFound, "Inventory not found"},
 	{application.ErrHoldNotFound, http.StatusNotFound, "Hold not found"},
 	{domain.ErrHoldNotFound, http.StatusNotFound, "Hold not found"},

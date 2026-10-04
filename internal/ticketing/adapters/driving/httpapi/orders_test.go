@@ -70,3 +70,31 @@ func TestGetOrder(t *testing.T) {
 		t.Errorf("status %d, body %s", w.Code, w.Body)
 	}
 }
+
+type returnStub struct {
+	got *application.ReturnOrder
+	err error
+}
+
+func (r *returnStub) Handle(_ context.Context, cmd application.ReturnOrder) error {
+	r.got = &cmd
+	return r.err
+}
+
+// TKT-14: the buyer returns an order; the rest happens asynchronously.
+func TestReturnOrder(t *testing.T) {
+	r := &returnStub{}
+	h := httpapi.Routes(httpapi.UseCases{Return: r}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	w := do(h, http.MethodPost, "/orders/o1/return", `{"customerId":"`+customer+`"}`)
+
+	if w.Code != http.StatusAccepted || *r.got != (application.ReturnOrder{OrderID: "o1", CustomerID: customer}) {
+		t.Errorf("status %d, command %+v", w.Code, r.got)
+	}
+	for err, status := range map[error]int{domain.ErrNotOrderOwner: 403, domain.ErrSalesClosed: 409, domain.ErrInvalidOrderTransition: 409} {
+		h := httpapi.Routes(httpapi.UseCases{Return: &returnStub{err: errors.Join(errors.New("return"), err)}}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		if w := do(h, http.MethodPost, "/orders/o1/return", `{"customerId":"`+customer+`"}`); w.Code != status {
+			t.Errorf("%v → %d, want %d", err, w.Code, status)
+		}
+	}
+}

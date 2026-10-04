@@ -65,6 +65,13 @@ func ToOutboxMessages(events []sharedkernel.DomainEvent, newID func() uuid.UUID)
 				OrderID: e.OrderID.String(), ShowID: e.ShowID.String(), CustomerID: e.CustomerID.String(),
 				ContactEmail: e.ContactEmail.String(), Amount: e.Total.Amount(), Currency: e.Total.Currency().String(), RefundedAt: e.At,
 			}, ev)
+			if err == nil {
+				err = add(sagamsg.Topic, e.OrderID.String(), sagamsg.TypeOrderRefunded,
+					sagamsg.OrderRefunded{OrderID: e.OrderID.String(), ShowID: e.ShowID.String(), Section: e.Section}, ev)
+			}
+		case domain.SectionBackOnSale:
+			err = add(contracts.Topic, e.ShowID.String(), contracts.TypeInventoryAvailableAgainV1,
+				contracts.InventoryAvailableAgainV1{ShowID: e.ShowID.String(), AvailableAt: e.At}, ev)
 		}
 		if err != nil {
 			return nil, err

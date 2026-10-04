@@ -39,6 +39,20 @@ func (h *handlers) release(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// returnOrder answers 202: the refund is done, the seats and tickets follow
+// through the saga.
+func (h *handlers) returnOrder(w http.ResponseWriter, r *http.Request) {
+	var req customerRequest
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	if err := h.uc.Return.Handle(r.Context(), application.ReturnOrder{OrderID: r.PathValue("id"), CustomerID: req.CustomerID}); err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
 func (h *handlers) checkIn(w http.ResponseWriter, r *http.Request) {
 	var req checkInRequest
 	if !httpx.DecodeJSON(w, r, &req) {

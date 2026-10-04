@@ -14,6 +14,7 @@ const (
 	TypeHoldConfirmationFailed = "ticketing.hold_confirmation_failed"
 	TypeInventoryClosed        = "ticketing.inventory_closed"
 	TypeSectionSoldOut         = "ticketing.section_sold_out"
+	TypeOrderRefunded          = "ticketing.order_refunded"
 )
 
 // OrderPaid starts ConfirmHold.
@@ -22,6 +23,14 @@ type OrderPaid struct {
 	ShowID  string `json:"show_id"`
 	Section string `json:"section"`
 	HoldID  string `json:"hold_id"`
+}
+
+// OrderRefunded starts returning the order's seats and voiding its tickets
+// (9.5).
+type OrderRefunded struct {
+	OrderID string `json:"order_id"`
+	ShowID  string `json:"show_id"`
+	Section string `json:"section"`
 }
 
 // SectionSoldOut starts the show-wide sold-out check (TKT-10, ADR-013).

@@ -21,6 +21,9 @@ type (
 	checkout interface {
 		Handle(context.Context, application.Checkout) (application.CheckoutResult, error)
 	}
+	returnOrder interface {
+		Handle(context.Context, application.ReturnOrder) error
+	}
 	checkIn interface {
 		Handle(context.Context, application.CheckIn) error
 	}
@@ -37,6 +40,7 @@ type UseCases struct {
 	Checkout checkout
 	Orders   orderQueries
 	CheckIn  checkIn
+	Return   returnOrder
 }
 
 // Routes returns the Ticketing API:
@@ -46,6 +50,7 @@ type UseCases struct {
 //	GET    /shows/{id}/seats   SeatQueries  200
 //	POST   /orders             Checkout     201 + Location
 //	GET    /orders/{id}        OrderQueries 200
+//	POST   /orders/{id}/return  ReturnOrder  202
 //	POST   /tickets/{code}/check-in CheckIn 204
 func Routes(uc UseCases, logger *slog.Logger) http.Handler {
 	h := &handlers{uc: uc, logger: logger}
@@ -55,6 +60,7 @@ func Routes(uc UseCases, logger *slog.Logger) http.Handler {
 	mux.HandleFunc("GET /shows/{id}/seats", h.seats)
 	mux.HandleFunc("POST /orders", h.placeOrder)
 	mux.HandleFunc("GET /orders/{id}", h.getOrder)
+	mux.HandleFunc("POST /orders/{id}/return", h.returnOrder)
 	mux.HandleFunc("POST /tickets/{code}/check-in", h.checkIn)
 	return mux
 }
@@ -63,5 +69,5 @@ func Routes(uc UseCases, logger *slog.Logger) http.Handler {
 // these next to other contexts' APIs on one mux.
 var Patterns = []string{
 	"POST /shows/{id}/holds", "DELETE /holds/{id}", "GET /shows/{id}/seats", "POST /orders", "GET /orders/{id}",
-	"POST /tickets/{code}/check-in",
+	"POST /orders/{id}/return", "POST /tickets/{code}/check-in",
 }
