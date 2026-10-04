@@ -2,8 +2,9 @@ package httpapi
 
 import (
 	"errors"
-	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"net/http"
+
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 
 	"github.com/williamokano/go-ddd-by-example/internal/platform/httpx"
 	"github.com/williamokano/go-ddd-by-example/internal/show/application"

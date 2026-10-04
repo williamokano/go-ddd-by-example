@@ -4,9 +4,10 @@ package memory
 import (
 	"context"
 	"fmt"
-	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"slices"
 	"sync"
+
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 
 	"github.com/williamokano/go-ddd-by-example/internal/show/application"
 	"github.com/williamokano/go-ddd-by-example/internal/show/domain"

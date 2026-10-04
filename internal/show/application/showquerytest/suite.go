@@ -4,9 +4,10 @@ package showquerytest
 import (
 	"context"
 	"errors"
-	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"testing"
 	"time"
+
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"

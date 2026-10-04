@@ -62,7 +62,10 @@ func migrateUp(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("migrations: %w", err)
 	}
-	return postgres.Migrate(ctx, databaseURL, migrations, "up")
+	if err := postgres.Migrate(ctx, databaseURL, migrations, "up"); err != nil {
+		return fmt.Errorf("migrate up: %w", err)
+	}
+	return nil
 }
 
 // URL returns the database URL of the package's container.

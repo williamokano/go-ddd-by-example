@@ -24,7 +24,8 @@ func TestTicketIDFor_IsDeterministic(t *testing.T) {
 	a, _ := domain.ParseSeatRef("ORCH/A/1")
 	b, _ := domain.ParseSeatRef("ORCH/A/2")
 
-	if gen.TicketIDFor(order, a) != gen.TicketIDFor(order, a) || gen.TicketIDFor(order, a) == gen.TicketIDFor(order, b) {
+	first, again, other := gen.TicketIDFor(order, a), gen.TicketIDFor(order, a), gen.TicketIDFor(order, b)
+	if first != again || first == other {
 		t.Error("TicketIDFor must be the same for the same seat and differ across seats")
 	}
 }

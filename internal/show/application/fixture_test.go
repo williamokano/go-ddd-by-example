@@ -2,9 +2,10 @@ package application_test
 
 import (
 	"context"
-	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"testing"
 	"time"
+
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 
 	"github.com/google/uuid"
 

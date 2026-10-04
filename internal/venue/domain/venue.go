@@ -2,11 +2,12 @@ package domain
 
 import (
 	"fmt"
-	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 )
 
 // maxVenueNameLength is VEN-1's limit, in characters.

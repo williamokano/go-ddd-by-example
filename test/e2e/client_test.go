@@ -60,7 +60,7 @@ func (c *client) do(method, path string, body any) response {
 	if err != nil {
 		c.t.Fatalf("%s %s: %v (is the app running? make up)", method, path, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
 		c.t.Fatal(err)

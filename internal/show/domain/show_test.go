@@ -2,10 +2,11 @@ package domain_test
 
 import (
 	"errors"
-	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 
 	"github.com/google/go-cmp/cmp"
 

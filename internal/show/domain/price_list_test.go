@@ -2,8 +2,9 @@ package domain_test
 
 import (
 	"errors"
-	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"testing"
+
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 
 	"github.com/williamokano/go-ddd-by-example/internal/show/domain"
 )

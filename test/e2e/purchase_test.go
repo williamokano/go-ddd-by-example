@@ -23,8 +23,9 @@ type orderJSON struct {
 		Currency string `json:"currency"`
 	} `json:"total"`
 	Tickets []struct {
-		Seat string `json:"seat"`
-		Code string `json:"code"`
+		Seat   string `json:"seat"`
+		Code   string `json:"code"`
+		Status string `json:"status"`
 	} `json:"tickets"`
 }
 
@@ -32,10 +33,35 @@ type orderJSON struct {
 // and publishes a show there a month from now.
 func (c *client) publishedShow() string {
 	c.t.Helper()
-	promoter := uuid.NewString()
+	return c.publishedShowBy(uuid.NewString())
+}
+
+// publishedShowBy is publishedShow for a promoter the test needs to know.
+func (c *client) publishedShowBy(promoter string) string {
+	c.t.Helper()
 	show := c.draftShow(c.activeVenue(), promoter, schedule(30*24*time.Hour))
 	c.priceAndPublish(show, promoter)
 	return show
+}
+
+// buy holds the seats and places an order for them, and returns the order id.
+func (c *client) buy(showID string, seats ...string) string {
+	c.t.Helper()
+	customer := uuid.NewString()
+	h := c.hold(showID, customer, seats...)
+	var placed struct{ ID string }
+	mustStatus(c.t, c.do(http.MethodPost, "/orders", map[string]any{
+		"holdId": h.HoldID, "customerId": customer, "contactEmail": "ana@example.com",
+	}), http.StatusCreated).decode(c.t, &placed)
+	return placed.ID
+}
+
+// order reads an order.
+func (c *client) order(id string) orderJSON {
+	c.t.Helper()
+	var o orderJSON
+	mustStatus(c.t, c.do(http.MethodGet, "/orders/"+id, nil), http.StatusOK).decode(c.t, &o)
+	return o
 }
 
 // hold holds seats, waiting until Ticketing has opened the inventory

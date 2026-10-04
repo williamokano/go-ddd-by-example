@@ -2,10 +2,11 @@ package domain
 
 import (
 	"fmt"
-	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"maps"
 	"slices"
 	"strings"
+
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 )
 
 // PriceList is one price per section code of the venue (SHW-4). Show prices

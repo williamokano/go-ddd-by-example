@@ -2,10 +2,11 @@ package domain
 
 import (
 	"fmt"
-	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 )
 
 // maxTitleLength is SHW-1's limit, in characters.

@@ -3,8 +3,9 @@ package postgres
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"time"
+
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 
 	"github.com/google/uuid"
 
