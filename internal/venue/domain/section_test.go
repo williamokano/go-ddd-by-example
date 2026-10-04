@@ -84,3 +84,17 @@ func TestSection_Rows_ReturnsACopy(t *testing.T) {
 		t.Errorf("Capacity() = %d after mutating Rows(), want %d", got, want)
 	}
 }
+
+func TestNewSeatedSection_CopiesTheGivenRows(t *testing.T) {
+	rows := []domain.Row{mustRow(t, "A", 10)}
+	section, err := domain.NewSeatedSection(mustCode(t, "ORCH"), "Orchestra", rows)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rows[0] = mustRow(t, "Z", 99)
+
+	if got, want := section.Capacity(), 10; got != want {
+		t.Errorf("Capacity() = %d after mutating the caller's slice, want %d", got, want)
+	}
+}

@@ -37,7 +37,7 @@ func NewSeatedSection(code SectionCode, name string, rows []Row) (Section, error
 		}
 		seen[r.Label()] = true
 	}
-	return Section{code: code, name: strings.TrimSpace(name), kind: Seated, rows: rows}, nil
+	return Section{code: code, name: strings.TrimSpace(name), kind: Seated, rows: slices.Clone(rows)}, nil
 }
 
 // NewGeneralAdmissionSection builds a standing section with a capacity instead
