@@ -64,6 +64,22 @@ type TicketingInventory struct {
 	UpdatedAt time.Time
 }
 
+type TicketingOrder struct {
+	ID           uuid.UUID
+	ShowID       uuid.UUID
+	HoldID       uuid.UUID
+	CustomerID   uuid.UUID
+	ContactEmail string
+	Lines        []byte
+	TotalAmount  int64
+	Currency     string
+	Status       string
+	PaymentRef   string
+	Version      int32
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
 type TicketingOutbox struct {
 	ID          int64
 	EventID     uuid.UUID
@@ -84,6 +100,16 @@ type TicketingSeat struct {
 	State       string
 	HoldID      uuid.NullUUID
 	OrderID     uuid.NullUUID
+}
+
+type TicketingTicket struct {
+	ID      uuid.UUID
+	Code    string
+	ShowID  uuid.UUID
+	OrderID uuid.UUID
+	SeatRef string
+	Status  string
+	Version int32
 }
 
 type VenueOutbox struct {
