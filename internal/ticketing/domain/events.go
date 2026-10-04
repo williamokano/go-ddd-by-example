@@ -1,0 +1,46 @@
+package domain
+
+import "time"
+
+// InventoryOpened records that a published show's inventory opened (TKT-1).
+type InventoryOpened struct {
+	ShowID ShowID
+	Seats  int
+	At     time.Time
+}
+
+// SeatsHeld records a new hold (TKT-2).
+type SeatsHeld struct {
+	ShowID     ShowID
+	HoldID     HoldID
+	CustomerID CustomerID
+	Seats      []SeatRef
+	ExpiresAt  time.Time
+	At         time.Time
+}
+
+// HoldExpired records that a hold lapsed and its seats are available (TKT-4).
+type HoldExpired struct {
+	ShowID ShowID
+	HoldID HoldID
+	Seats  []SeatRef
+	At     time.Time
+}
+
+// EventName implements DomainEvent.
+func (InventoryOpened) EventName() string { return "ticketing.InventoryOpened" }
+
+// OccurredAt implements DomainEvent.
+func (e InventoryOpened) OccurredAt() time.Time { return e.At }
+
+// EventName implements DomainEvent.
+func (SeatsHeld) EventName() string { return "ticketing.SeatsHeld" }
+
+// OccurredAt implements DomainEvent.
+func (e SeatsHeld) OccurredAt() time.Time { return e.At }
+
+// EventName implements DomainEvent.
+func (HoldExpired) EventName() string { return "ticketing.HoldExpired" }
+
+// OccurredAt implements DomainEvent.
+func (e HoldExpired) OccurredAt() time.Time { return e.At }
