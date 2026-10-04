@@ -1,6 +1,6 @@
 DOCS_PORT ?= 8000
 
-.PHONY: docs test lint infra down reset
+.PHONY: docs test lint infra down reset migrate
 
 docs: ## serve the course at http://localhost:$(DOCS_PORT)
 	@echo "Course: http://localhost:$(DOCS_PORT)"
@@ -20,3 +20,9 @@ down: ## stop everything (keep data)
 
 reset: ## stop everything and wipe volumes
 	docker compose down -v
+
+DATABASE_URL ?= postgres://stagehand:stagehand@localhost:5432/stagehand?sslmode=disable
+export DATABASE_URL
+
+migrate: ## apply migrations against $$DATABASE_URL
+	go run ./cmd/stagehand migrate up
