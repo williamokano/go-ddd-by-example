@@ -51,8 +51,13 @@ func parseUUID(kind, raw string) (uuid.UUID, error) {
 	return u, nil
 }
 
-func (id ShowID) String() string     { return id.value.String() }
-func (id VenueID) String() string    { return id.value.String() }
+// String returns the canonical textual form.
+func (id ShowID) String() string { return id.value.String() }
+
+// String returns the canonical textual form.
+func (id VenueID) String() string { return id.value.String() }
+
+// String returns the canonical textual form.
 func (id PromoterID) String() string { return id.value.String() }
 
 // IsZero reports whether the ID is the zero value.
