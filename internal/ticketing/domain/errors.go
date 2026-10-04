@@ -17,6 +17,11 @@ var (
 	// TKT-3: one active hold per customer per show.
 	ErrCustomerAlreadyHolding = errors.New("ticketing: customer already holds seats for this show")
 
+	// TKT-4, TKT-8: only a live hold, by its owner, can be released or confirmed.
+	ErrHoldNotFound = errors.New("ticketing: hold not found")
+	ErrNotHoldOwner = errors.New("ticketing: the hold belongs to another customer")
+	ErrHoldExpired  = errors.New("ticketing: hold expired")
+
 	// TKT-12: no new holds on a closed inventory or after the show's start.
 	ErrSalesClosed = errors.New("ticketing: sales are closed")
 )

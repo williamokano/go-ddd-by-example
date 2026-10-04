@@ -44,3 +44,56 @@ func (HoldExpired) EventName() string { return "ticketing.HoldExpired" }
 
 // OccurredAt implements DomainEvent.
 func (e HoldExpired) OccurredAt() time.Time { return e.At }
+
+// HoldReleased records that a customer gave their held seats back.
+type HoldReleased struct {
+	ShowID ShowID
+	HoldID HoldID
+	Seats  []SeatRef
+	At     time.Time
+}
+
+// EventName implements DomainEvent.
+func (HoldReleased) EventName() string { return "ticketing.HoldReleased" }
+
+// OccurredAt implements DomainEvent.
+func (e HoldReleased) OccurredAt() time.Time { return e.At }
+
+// SeatsSold records that a paid order's held seats are sold (TKT-8).
+type SeatsSold struct {
+	ShowID  ShowID
+	HoldID  HoldID
+	OrderID OrderID
+	Seats   []SeatRef
+	At      time.Time
+}
+
+// EventName implements DomainEvent.
+func (SeatsSold) EventName() string { return "ticketing.SeatsSold" }
+
+// OccurredAt implements DomainEvent.
+func (e SeatsSold) OccurredAt() time.Time { return e.At }
+
+// InventorySoldOut records that every seat is sold (TKT-10).
+type InventorySoldOut struct {
+	ShowID ShowID
+	At     time.Time
+}
+
+// EventName implements DomainEvent.
+func (InventorySoldOut) EventName() string { return "ticketing.InventorySoldOut" }
+
+// OccurredAt implements DomainEvent.
+func (e InventorySoldOut) OccurredAt() time.Time { return e.At }
+
+// InventoryClosed records that sales stopped for good (TKT-11).
+type InventoryClosed struct {
+	ShowID ShowID
+	At     time.Time
+}
+
+// EventName implements DomainEvent.
+func (InventoryClosed) EventName() string { return "ticketing.InventoryClosed" }
+
+// OccurredAt implements DomainEvent.
+func (e InventoryClosed) OccurredAt() time.Time { return e.At }

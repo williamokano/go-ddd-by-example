@@ -21,6 +21,8 @@ type ShowInventory struct {
 	seats    map[SeatRef]*seat
 	order    []SeatRef // layout order, for stable listings
 	holds    map[HoldID]Hold
+	closed   bool
+	soldOut  bool // InventorySoldOut already recorded (TKT-10)
 	version  int
 
 	events sharedkernel.Events
@@ -91,6 +93,9 @@ func (inv *ShowInventory) Hold(id HoldID, customer CustomerID, seats []SeatRef, 
 	if id.IsZero() || customer.IsZero() {
 		return fmt.Errorf("%w: zero hold or customer id", ErrInvalidID)
 	}
+	if inv.closed {
+		return fmt.Errorf("%w: the inventory is closed", ErrSalesClosed)
+	}
 	if !now.Before(inv.startsAt) {
 		return fmt.Errorf("%w: the show starts at %s", ErrSalesClosed, inv.startsAt.Format(time.RFC3339))
 	}
@@ -131,6 +136,82 @@ func (inv *ShowInventory) Hold(id HoldID, customer CustomerID, seats []SeatRef, 
 	return nil
 }
 
+// ReleaseHold gives a customer's held seats back.
+func (inv *ShowInventory) ReleaseHold(id HoldID, customer CustomerID, now time.Time) error {
+	h, ok := inv.holds[id]
+	if !ok {
+		return fmt.Errorf("%w: %s", ErrHoldNotFound, id)
+	}
+	if h.customer != customer {
+		return fmt.Errorf("%w: hold %s", ErrNotHoldOwner, id)
+	}
+	inv.freeSeats(h)
+	delete(inv.holds, id)
+	inv.events.Record(HoldReleased{ShowID: inv.showID, HoldID: id, Seats: h.Seats(), At: now})
+	return nil
+}
+
+// ConfirmHold sells the seats of a paid order's hold (TKT-8). A hold that
+// lapsed, even if not swept yet, or that was released, can't be confirmed:
+// the order must be refunded (the saga's compensation). Confirming the same
+// order again is a no-op, because the saga may redeliver. Selling the last
+// available seat records InventorySoldOut, exactly once (TKT-10).
+func (inv *ShowInventory) ConfirmHold(id HoldID, order OrderID, now time.Time) error {
+	if inv.isSoldTo(order) {
+		return nil
+	}
+	h, ok := inv.holds[id]
+	if !ok {
+		return fmt.Errorf("%w: %s", ErrHoldNotFound, id)
+	}
+	if h.IsExpired(now) {
+		return fmt.Errorf("%w: hold %s lapsed at %s", ErrHoldExpired, id, h.expiresAt.Format(time.RFC3339))
+	}
+	for _, ref := range h.seats {
+		s := inv.seats[ref]
+		s.state, s.holdID, s.orderID = Sold, HoldID{}, order
+	}
+	delete(inv.holds, id)
+	inv.events.Record(SeatsSold{ShowID: inv.showID, HoldID: id, OrderID: order, Seats: h.Seats(), At: now})
+	if !inv.soldOut && inv.allSold() {
+		inv.soldOut = true
+		inv.events.Record(InventorySoldOut{ShowID: inv.showID, At: now})
+	}
+	return nil
+}
+
+// Close stops all sales: active holds are released and no new hold is
+// accepted (TKT-11, TKT-12). Closing twice is a no-op.
+func (inv *ShowInventory) Close(now time.Time) {
+	if inv.closed {
+		return
+	}
+	for _, id := range inv.holdIDs() {
+		inv.freeSeats(inv.holds[id])
+		delete(inv.holds, id)
+	}
+	inv.closed = true
+	inv.events.Record(InventoryClosed{ShowID: inv.showID, At: now})
+}
+
+func (inv *ShowInventory) isSoldTo(order OrderID) bool {
+	for _, s := range inv.seats {
+		if s.state == Sold && s.orderID == order {
+			return true
+		}
+	}
+	return false
+}
+
+func (inv *ShowInventory) allSold() bool {
+	for _, s := range inv.seats {
+		if s.state != Sold {
+			return false
+		}
+	}
+	return true
+}
+
 // ExpireHolds frees the seats of every hold that has lapsed at now (TKT-4)
 // and records HoldExpired for each. Time is passed in; nothing here sleeps.
 func (inv *ShowInventory) ExpireHolds(now time.Time) {
@@ -167,6 +248,12 @@ func (inv *ShowInventory) ShowID() ShowID { return inv.showID }
 
 // StartsAt returns when the show starts: no holds after that (TKT-12).
 func (inv *ShowInventory) StartsAt() time.Time { return inv.startsAt }
+
+// IsClosed reports whether sales are closed for good (TKT-11).
+func (inv *ShowInventory) IsClosed() bool { return inv.closed }
+
+// IsSoldOut reports whether InventorySoldOut was recorded.
+func (inv *ShowInventory) IsSoldOut() bool { return inv.soldOut }
 
 // Version is the version the inventory was loaded at (ADR-011).
 func (inv *ShowInventory) Version() int { return inv.version }
