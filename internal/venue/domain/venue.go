@@ -110,6 +110,7 @@ func (v *Venue) Retire(now time.Time) error {
 		return fmt.Errorf("%w: cannot retire a %s venue", ErrInvalidVenueTransition, v.status)
 	}
 	v.status = Retired
+	v.events.Record(VenueRetired{VenueID: v.id, At: now})
 	return nil
 }
 

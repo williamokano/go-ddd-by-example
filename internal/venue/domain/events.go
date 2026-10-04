@@ -63,3 +63,15 @@ func (VenueActivated) EventName() string { return "venue.VenueActivated" }
 
 // OccurredAt implements DomainEvent.
 func (e VenueActivated) OccurredAt() time.Time { return e.At }
+
+// VenueRetired: the venue closed for good.
+type VenueRetired struct {
+	VenueID VenueID
+	At      time.Time
+}
+
+// EventName implements DomainEvent.
+func (VenueRetired) EventName() string { return "venue.VenueRetired" }
+
+// OccurredAt implements DomainEvent.
+func (e VenueRetired) OccurredAt() time.Time { return e.At }

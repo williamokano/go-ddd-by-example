@@ -61,3 +61,17 @@ func TestVenue_Activate_RecordsVenueActivatedWithTheLayout(t *testing.T) {
 		t.Errorf("events mismatch (-want +got):\n%s", diff)
 	}
 }
+
+func TestVenue_Retire_RecordsVenueRetired(t *testing.T) {
+	venue := newActiveVenue(t)
+	venue.PullEvents()
+
+	if err := venue.Retire(fixedNow); err != nil {
+		t.Fatal(err)
+	}
+
+	want := []domain.DomainEvent{domain.VenueRetired{VenueID: venue.ID(), At: fixedNow}}
+	if diff := cmp.Diff(want, venue.PullEvents(), domainValues); diff != "" {
+		t.Errorf("events mismatch (-want +got):\n%s", diff)
+	}
+}
