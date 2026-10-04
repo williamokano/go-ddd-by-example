@@ -1,5 +1,6 @@
 // Command stagehand is the whole platform in one binary (ADR-001).
 //
+//	stagehand serve                          run the HTTP API
 //	stagehand migrate up|down|reset|status   apply the embedded migrations to $DATABASE_URL
 package main
 
@@ -8,20 +9,28 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/williamokano/go-ddd-by-example/db"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/postgres"
 )
 
 func main() {
-	if err := run(context.Background(), os.Args[1:]); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	err := run(ctx, os.Args[1:])
+	stop()
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "stagehand:", err)
 		os.Exit(1)
 	}
 }
 
 func run(ctx context.Context, args []string) error {
-	if len(args) == 2 && args[0] == "migrate" {
+	switch {
+	case len(args) == 1 && args[0] == "serve":
+		return serve(ctx)
+	case len(args) == 2 && args[0] == "migrate":
 		migrations, err := fs.Sub(db.Migrations, "migrations")
 		if err != nil {
 			return fmt.Errorf("migrations: %w", err)
@@ -30,6 +39,7 @@ func run(ctx context.Context, args []string) error {
 			return fmt.Errorf("migrate: %w", err)
 		}
 		return nil
+	default:
+		return fmt.Errorf("usage: stagehand serve | stagehand migrate up|down|reset|status")
 	}
-	return fmt.Errorf("usage: stagehand migrate up|down|reset|status")
 }

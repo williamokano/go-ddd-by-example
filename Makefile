@@ -1,6 +1,6 @@
 DOCS_PORT ?= 8000
 
-.PHONY: docs test lint infra down reset migrate generate test-integration
+.PHONY: docs test lint infra down reset migrate generate test-integration run
 
 docs: ## serve the course at http://localhost:$(DOCS_PORT)
 	@echo "Course: http://localhost:$(DOCS_PORT)"
@@ -32,3 +32,6 @@ migrate: ## apply migrations against $$DATABASE_URL
 
 generate: ## sqlc: SQL in db/queries → Go in each context's sqlcgen package
 	go tool sqlc generate
+
+run: ## the app on the host against `make infra`
+	go run ./cmd/stagehand serve
