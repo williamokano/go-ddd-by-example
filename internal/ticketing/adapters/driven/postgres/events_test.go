@@ -10,6 +10,7 @@ import (
 	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/driven/postgres"
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/sagamsg"
+	"github.com/williamokano/go-ddd-by-example/internal/ticketing/contracts"
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/domain"
 )
 
@@ -36,5 +37,41 @@ func TestToOutboxMessages_SagaSteps(t *testing.T) {
 	var sold sagamsg.SeatsSold
 	if err := json.Unmarshal(msgs[1].Payload, &sold); err != nil || len(sold.Seats) != 1 || sold.Seats[0] != "ORCH/A/1" {
 		t.Errorf("seats sold payload = %+v, %v", sold, err)
+	}
+}
+
+func TestToOutboxMessages_PublishedLanguage(t *testing.T) {
+	at := time.Date(2026, 11, 1, 20, 0, 0, 0, time.UTC)
+	show, order := domain.NewShowID(uuid.New()), domain.NewOrderID(uuid.New())
+	email, _ := domain.NewContactEmail("ana@example.com")
+	seat, _ := domain.ParseSeatRef("ORCH/A/1")
+	eur, _ := sharedkernel.NewCurrency("EUR")
+	total, _ := sharedkernel.NewMoney(9000, eur)
+
+	msgs, err := postgres.ToOutboxMessages([]sharedkernel.DomainEvent{
+		domain.InventorySoldOut{ShowID: show, At: at},
+		domain.OrderFulfilled{OrderID: order, ShowID: show, ContactEmail: email,
+			Tickets: []domain.IssuedTicket{{Seat: seat, Code: domain.TicketCodeFor(domain.NewTicketID(uuid.New()))}}, At: at},
+		domain.OrderRefunded{OrderID: order, ShowID: show, ContactEmail: email, Total: total, At: at},
+		domain.InventoryClosed{ShowID: show, At: at},
+	}, uuid.New)
+
+	if err != nil || len(msgs) != 4 {
+		t.Fatalf("got %d messages, %v", len(msgs), err)
+	}
+	want := []struct{ topic, typ, key string }{
+		{contracts.Topic, contracts.TypeInventorySoldOutV1, show.String()},
+		{contracts.Topic, contracts.TypeTicketsIssuedV1, order.String()},
+		{contracts.Topic, contracts.TypeOrderRefundedV1, order.String()},
+		{sagamsg.Topic, sagamsg.TypeInventoryClosed, show.String()},
+	}
+	for i, w := range want {
+		if msgs[i].Topic != w.topic || msgs[i].Type != w.typ || msgs[i].Key != w.key {
+			t.Errorf("message %d = %s/%s/%s, want %s/%s/%s", i, msgs[i].Topic, msgs[i].Type, msgs[i].Key, w.topic, w.typ, w.key)
+		}
+	}
+	var issued contracts.TicketsIssuedV1
+	if err := json.Unmarshal(msgs[1].Payload, &issued); err != nil || issued.ContactEmail != "ana@example.com" || len(issued.Tickets) != 1 {
+		t.Errorf("tickets issued = %+v, %v", issued, err)
 	}
 }
