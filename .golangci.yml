@@ -1,0 +1,20 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - errorlint
+    - gocritic
+    - revive
+    - testpackage
+    - wrapcheck
+  exclusions:
+    rules:
+      # The domain returns its own sentinel errors; there is nothing foreign to wrap.
+      - path: internal/.*/domain/
+        linters: [wrapcheck]
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
