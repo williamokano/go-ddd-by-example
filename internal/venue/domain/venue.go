@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"unicode/utf8"
 )
@@ -59,8 +60,9 @@ func (v *Venue) AddSection(s Section) error {
 	return nil
 }
 
-// Sections returns the venue's sections, in the order they were added.
-func (v *Venue) Sections() []Section { return v.sections }
+// Sections returns a copy of the venue's sections, in the order they were
+// added. Handing out the internal slice would let callers bypass VEN-2 and VEN-4.
+func (v *Venue) Sections() []Section { return slices.Clone(v.sections) }
 
 // Capacity returns the venue's total number of places: the seats in seated
 // sections plus the capacity of general admission sections (VEN-7).

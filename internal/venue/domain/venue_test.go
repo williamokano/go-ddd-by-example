@@ -114,3 +114,14 @@ func TestVenue_Capacity(t *testing.T) {
 		t.Errorf("Capacity() = %d, want %d (VEN-7)", got, want)
 	}
 }
+
+func TestVenue_Sections_ReturnsACopy(t *testing.T) {
+	venue := newDraftVenue(t, withSection(seatedSection(t, "ORCH", mustRow(t, "A", 20))))
+
+	sections := venue.Sections()
+	sections[0] = gaSection(t, "HACK", 9999)
+
+	if diff := cmp.Diff([]string{"ORCH"}, sectionCodes(venue.Sections())); diff != "" {
+		t.Errorf("mutating Sections() changed the venue (-want +got):\n%s", diff)
+	}
+}
