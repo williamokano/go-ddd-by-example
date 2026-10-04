@@ -96,17 +96,22 @@
 │   ├── sharedkernel/                  # Shared Kernel (domain!): Money, Currency, DomainEvent, Events recorder
 │   ├── platform/                      # technical plumbing (NOT domain, NOT shared kernel)
 │   │   ├── config/                    #   env config
-│   │   ├── postgres/                  #   pool, tx helper, test helpers (testcontainers)
+│   │   ├── postgres/                  #   pool, TxManager (savepoint-joining Begin, ADR-012), testcontainers helpers
 │   │   ├── outbox/                    #   outbox writer + relay (Postgres → Kafka)
 │   │   ├── kafka/                     #   producer, consumer-group runner, envelope
 │   │   ├── httpx/                     #   JSON helpers, error responses, middleware
+│   │   ├── scheduler/                 #   the ticker behind every clock-driven policy (holds, SHW-9)
+│   │   ├── trace/                     #   correlation and causation IDs in the context (8.3)
+│   │   ├── telemetry/                 #   OpenTelemetry setup and propagation (9.7)
 │   │   └── clock/, idgen/             #   system implementations of the Clock and IDGenerator ports
 │   ├── venue/
 │   │   ├── domain/                    # pure model: venue.go, section.go, address.go, events.go, errors.go
 │   │   ├── application/               # ports.go, register_venue.go, add_section.go, ..., queries.go
+│   │   │   └── venuerepotest/         # the repository contract suite, run by the memory fake AND Postgres
 │   │   ├── contracts/                 # Published Language: venue.activated.v1 payload structs + topic names
 │   │   └── adapters/
 │   │       ├── driving/httpapi/       # handlers, DTOs, routes, error→status mapping
+│   │       ├── driven/memory/         # in-memory fakes, for application tests
 │   │       └── driven/postgres/       # VenueRepository impl, mapping, sqlc output in ./sqlcgen
 │   ├── show/
 │   │   ├── domain/ application/ contracts/
@@ -117,9 +122,12 @@
 │   │   ├── domain/ application/ contracts/
 │   │   └── adapters/
 │   │       ├── driving/httpapi/ driving/consumer/ driving/scheduler/   # hold-expiry ticker
-│   │       ├── driven/postgres/
-│   │       └── driven/payment/        # fakegateway implementing PaymentGateway
-│   └── notifications/                 # transaction script: handlers + EmailSender port + log adapter
+│   │       ├── driven/postgres/ driven/memory/
+│   │       ├── driven/payment/        # fakegateway implementing PaymentGateway
+│   │       └── sagamsg/               # ticketing.internal messages: private, never in contracts
+│   ├── notifications/                 # transaction script: application (handlers + EmailSender port, inbox)
+│   │   └── adapters/                  #   driving/consumer, driven/logsender
+│   └── archtest/                      # the dependency rule as a test
 ├── db/
 │   ├── migrations/                    # goose SQL migrations (one schema per context)
 │   └── queries/{venue,show,ticketing}/   # sqlc input queries

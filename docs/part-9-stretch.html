@@ -17,6 +17,7 @@
 <section class="lesson" id="l9-1">
 <h3><span class="lesson-id">9.1</span> Re-cut the inventory aggregate per section</h3>
 <p>Supersede ADR-005: a <code>SectionInventory</code> per (show, section), with holds limited to one section. Re-run the 7.6 measurements and compare. Which tests had to change? (Ideally domain tests and the inventory repository. HTTP and e2e should barely change.)</p>
+<div class="callout discuss"><span class="label">Before you start: which rules move?</span><p>TKT-3 ("one active hold per show") and TKT-10 ("sold out exactly once") were checked by the aggregate you are about to split. Decide what each becomes and record it in the ADR. (Chapter 1 shows where the reference landed.) Also: <code>OrderPaid</code> now needs the section, or <code>ConfirmHold</code> can't load the right inventory.</p></div>
 <details class="solution"><summary>Reference solution (try it yourself first)</summary>
 <!-- resume: part-8 lesson-9.1 -->
 <p class="resume">Start this lesson from <code>git checkout part-8</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/821d6d62e993"><code>lesson-9.1</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/4d78867b0b31...821d6d62e993">this lesson's 4 commits</a>).</p>
@@ -78,7 +79,7 @@ func OpenInventory(showID ShowID, layout InventoryLayout, startsAt time.Time, no
 
 <section class="lesson" id="l9-2">
 <h3><span class="lesson-id">9.2</span> Ticket check-in at the gate</h3>
-<p>A new use case: <code>CheckIn(ticketCode, gateID, now)</code>. A ticket can only be checked in once, only if it isn't voided, and only on the day of the show. It touches only the <code>Ticket</code> aggregate. Notice how cheap that is, because Ticket was kept small.</p>
+<p>A new use case: <code>CheckIn(ticketCode, gateID, now)</code>. A ticket can only be checked in once, only if it isn't voided, and only on the day of the show. It touches only the <code>Ticket</code> aggregate. Notice how cheap that is, because Ticket was kept small. The rule is TKT-13. "On the day of the show" needs a definition: Ticketing knows when the show starts, not the venue's time zone, so the reference uses 12 hours either side of the start.</p>
 <details class="solution"><summary>Reference solution (try it yourself first)</summary>
 <!-- resume: lesson-9.1 lesson-9.2 -->
 <p class="resume">Start this lesson from <code>git checkout lesson-9.1</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/4a2ca9a563b4"><code>lesson-9.2</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/821d6d62e993...4a2ca9a563b4">this lesson's 4 commits</a>).</p>
@@ -209,7 +210,11 @@ func (o *CheckoutOrchestrator) drive(ctx context.Context, rawOrder, rawShow stri
 
 <section class="lesson" id="l9-5">
 <h3><span class="lesson-id">9.5</span> Show lifecycle completion and back-on-sale</h3>
-<p>A scheduler marks shows Completed after <code>endsAt</code>. When a refund frees seats on a SoldOut show, Ticketing publishes <code>inventory_available_again</code> and Show moves back to Published.</p>
+<p>A scheduler marks shows Completed after <code>endsAt</code> (SHW-9). When seats are freed on a SoldOut show, Ticketing publishes <code>inventory_available_again</code> and Show moves back to Published (SHW-10).</p>
+<div class="callout warn"><span class="label">Found while building it</span><ul>
+  <li>Nothing frees a <em>sold</em> seat yet: the only refunds happen when the show is cancelled, and then there is nothing left to sell. Back-on-sale needs a way in first: a customer <strong>return</strong> (TKT-14, <code>POST /orders/{id}/return</code>).</li>
+  <li>With per-section inventories (9.1), "the show is back on sale" looks like a mirror of <code>ShowSoldOut</code>. Try writing that policy, then think about two sections reopening at the same moment in two transactions. Which one announces it?</li>
+</ul></div>
 <details class="solution"><summary>Reference solution (try it yourself first)</summary>
 <!-- resume: lesson-9.4 lesson-9.5 -->
 <p class="resume">Start this lesson from <code>git checkout lesson-9.4</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/17cec1afe2b7"><code>lesson-9.5</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/95f071824caa...17cec1afe2b7">this lesson's 8 commits</a>).</p>
@@ -394,7 +399,8 @@ func startSpan(ctx context.Context, cfg ConsumerConfig, rec *kgo.Record, env Env
 
 <section class="lesson" id="l9-8">
 <h3><span class="lesson-id">9.8</span> Fees and taxes as a domain service</h3>
-<p>The order total now includes a service fee (a percentage with a minimum) and VAT by venue country. Where does this logic go? Model it as a <code>PricingPolicy</code> domain service, with the specification pattern for fee rules.</p>
+<p>The order total now includes a service fee (a percentage with a minimum) and VAT by venue country. Where does this logic go? Model it as a <code>PricingPolicy</code> domain service, with the specification pattern for fee rules. The rule is TKT-15.</p>
+<div class="callout warn"><span class="label">Found while building it</span><p>Ticketing doesn't know the venue's country. It has to travel Venue → Show → Ticketing as an additive field on <code>venue.activated.v1</code> and <code>show.published.v2</code>, and the Show-side projection has to keep it. Plan the contracts before the domain service. Store the breakdown on the Order: if the rules change later, an existing order must not be repriced.</p></div>
 <details class="solution"><summary>Reference solution (try it yourself first)</summary>
 <!-- resume: lesson-9.7 lesson-9.8 -->
 <p class="resume">Start this lesson from <code>git checkout lesson-9.7</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/ec92254d4900"><code>lesson-9.8</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/9703705a3090...ec92254d4900">this lesson's 7 commits</a>).</p>

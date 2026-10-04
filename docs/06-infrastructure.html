@@ -23,9 +23,10 @@
   <tr><td>SQL → Go codegen</td><td><code>sqlc</code> (tool)</td><td>generates <code>sqlcgen</code> packages</td></tr>
   <tr><td>Kafka client</td><td><code>github.com/twmb/franz-go</code></td><td>platform/kafka, outbox relay</td></tr>
   <tr><td>Test diffs</td><td><code>github.com/google/go-cmp</code></td><td>tests</td></tr>
-  <tr><td>Containers in tests</td><td><code>github.com/testcontainers/testcontainers-go</code> + <code>modules/postgres</code>, <code>modules/kafka</code></td><td>integration tests</td></tr>
+  <tr><td>Containers in tests</td><td><code>github.com/testcontainers/testcontainers-go</code> + <code>modules/postgres</code>, <code>modules/kafka</code></td><td>integration tests. The Kafka module drives <code>confluentinc/confluent-local</code> (KRaft); <code>apache/kafka</code> is only used in Compose.</td></tr>
   <tr><td>Arch test</td><td><code>golang.org/x/tools/go/packages</code></td><td>internal/archtest</td></tr>
   <tr><td>Logging</td><td><code>log/slog</code> (stdlib)</td><td>everywhere outside the domain</td></tr>
+  <tr><td>Tracing (Part 9.7)</td><td><code>go.opentelemetry.io/otel</code> + the OTLP/HTTP trace exporter</td><td>platform/telemetry, httpx middleware, outbox, kafka</td></tr>
 </table></div>
 <div class="callout why"><span class="label">Why so few dependencies?</span><p>Every framework is one more thing between you and the concept you're learning. <code>net/http</code>, <code>log/slog</code> and <code>testing</code> are enough. The only real dependencies are drivers (pgx, franz-go) and the two code tools (sqlc, goose).</p></div>
 
@@ -92,8 +93,18 @@ curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b $(go env GOPATH)/b
       migrate:    { condition: service_completed_successfully }
       kafka-init: { condition: service_completed_successfully }
 
+  jaeger:                               # Part 9.7: traces at http://localhost:16686
+    image: jaegertracing/jaeger:2.10.0
+    ports: ["16686:16686", "4318:4318"]
+
 volumes: { pgdata: {} }</code></pre>
-<p><strong>The image is a multi-stage Dockerfile</strong>: <code>golang:1.27</code> builds a static binary (<code>CGO_ENABLED=0</code>), and <code>gcr.io/distroless/static</code> runs it. One binary, <code>stagehand</code>, with two subcommands: <code>serve</code> and <code>migrate</code>.</p>
+<div class="callout"><span class="label">What the reference Compose file grew while building it</span><ul>
+  <li><code>kafka-init</code> also creates each topic's <code>.dlq</code> (auto-creation is off, so the runner couldn't dead-letter otherwise).</li>
+  <li>The app has a healthcheck (<code>stagehand healthcheck</code>, a subcommand, because distroless has no curl), so <code>up --wait</code> and the e2e tests start only when the API answers.</li>
+  <li>Since 9.6 the app connects to Postgres as one role per context (<code>VENUE_DATABASE_URL</code>, …); <code>migrate</code> keeps the owner's <code>DATABASE_URL</code>.</li>
+  <li>The app passes <code>HOLD_TTL</code>, <code>HOLD_SWEEP_INTERVAL</code> and <code>SAGA_STYLE</code> through from the shell (<code>${HOLD_TTL:-10m}</code>), so <code>make test-e2e</code> can shorten them.</li>
+</ul></div>
+<p><strong>The image is a multi-stage Dockerfile</strong>: <code>golang:1.27</code> builds a static binary (<code>CGO_ENABLED=0</code>), and <code>gcr.io/distroless/static</code> runs it. One binary, <code>stagehand</code>, with subcommands <code>serve</code>, <code>migrate</code> and <code>healthcheck</code>.</p>
 
 <h2>Postgres: one database, one schema per context</h2>
 <pre><code>db/migrations/
@@ -102,7 +113,7 @@ volumes: { pgdata: {} }</code></pre>
   00003_show_tables.sql               -- show.shows, show.venue_layouts (projection), show.outbox
   00004_ticketing_tables.sql          -- ticketing.inventories, ticketing.seats, ticketing.holds, orders, tickets, outbox
   …</code></pre>
-<div class="callout why"><span class="label">Why schemas and not separate databases?</span><p>Schemas give each context its own namespace and make ownership visible (<code>ticketing.orders</code>), while running one Postgres. The rule "no cross-schema joins or FKs" keeps contexts separable. A stretch exercise is to give each context its own DB role with privileges only on its schema, so the database enforces the boundary too.</p></div>
+<div class="callout why"><span class="label">Why schemas and not separate databases?</span><p>Schemas give each context its own namespace and make ownership visible (<code>ticketing.orders</code>), while running one Postgres. The rule "no cross-schema joins or FKs" keeps contexts separable. Part 9.6 gives each context its own DB role (<code>stagehand_venue</code>, …) with privileges only on its schema, so the database enforces the boundary too.</p></div>
 <h3>goose migration format</h3>
 <pre><code>-- +goose Up
 CREATE TABLE venue.venues (
@@ -156,7 +167,11 @@ WHERE id = $1 AND version = $5;          -- 0 rows ⇒ someone else saved first 
   <tr><td><code>HOLD_TTL</code></td><td><code>10m</code></td><td>Hold expiry (TKT-4). Shorten it in e2e tests.</td></tr>
   <tr><td><code>HOLD_SWEEP_INTERVAL</code></td><td><code>5s</code></td><td>How often the scheduler expires holds</td></tr>
   <tr><td><code>OUTBOX_POLL_INTERVAL</code></td><td><code>200ms</code></td><td>Relay polling period</td></tr>
-  <tr><td><code>PAYMENT_FAKE_MODE</code></td><td><code>approve</code></td><td><code>approve</code> | <code>decline</code> | <code>delay:3s</code> (for S3)</td></tr>
+  <tr><td><code>PAYMENT_FAKE_MODE</code></td><td><code>approve</code></td><td><code>approve</code> | <code>decline</code> | <code>delay:3s</code> (for S3). An e2e test overrides it per request with the test-only <code>X-Fake-Payment-Mode</code> header, so all scenarios share one app (8.1).</td></tr>
+  <tr><td><code>SAGA_STYLE</code></td><td><code>orchestration</code></td><td><code>orchestration</code> | <code>choreography</code>: how the checkout saga runs (9.4, ADR-014)</td></tr>
+  <tr><td><code>SHOW_SWEEP_INTERVAL</code></td><td><code>1m</code></td><td>How often the scheduler completes ended shows (SHW-9)</td></tr>
+  <tr><td><code>OTEL_EXPORTER_OTLP_ENDPOINT</code></td><td>—</td><td>Where spans go (9.7), e.g. <code>http://jaeger:4318</code>. Empty: no export.</td></tr>
+  <tr><td><code>&lt;CONTEXT&gt;_DATABASE_URL</code></td><td><code>DATABASE_URL</code></td><td><code>VENUE_</code>, <code>SHOW_</code>, <code>TICKETING_</code>, <code>NOTIFICATIONS_DATABASE_URL</code>: each context's own role (9.6)</td></tr>
   <tr><td><code>LOG_LEVEL</code></td><td><code>info</code></td><td>slog level</td></tr>
 </table></div>
 <p>Config is parsed once in <code>platform/config</code> into a typed struct and passed down. Nothing below <code>main</code> reads env vars.</p>
@@ -180,8 +195,11 @@ test:             ## fast tests
 	go test ./...
 test-integration:
 	go test -tags=integration ./...
+test-e2e: export HOLD_TTL = 3s          # short, so S2 and S3 don't take minutes
 test-e2e: up
 	go test -tags=e2e -count=1 ./test/e2e/...
+drills: up        ## failure drills (8.5): stops and starts Compose services on purpose
+	go test -tags=e2e,drills -count=1 -run Drill -v ./test/e2e/...
 run:              ## app on the host against `make infra`
 	go run ./cmd/stagehand serve</code></pre>
 
@@ -189,6 +207,7 @@ run:              ## app on the host against `make infra`
 <ul>
   <li>API: <code>http://localhost:8080</code> (requests in <code>api/*.http</code>)</li>
   <li>Kafka UI: <code>http://localhost:8081</code>, where you can watch the events flow</li>
+  <li>Jaeger (Part 9.7): <code>http://localhost:16686</code>, one trace per request, across Kafka</li>
   <li>Postgres: <code>psql postgres://stagehand:stagehand@localhost:5432/stagehand</code></li>
 </ul>
 </main>

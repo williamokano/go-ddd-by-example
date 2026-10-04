@@ -105,7 +105,9 @@
   <dt>Domain event</dt>
   <dd>A fact that happened and that the business cares about, in the past tense: <code>SeatsHeld</code>, <code>ShowCancelled</code>. The aggregate records it, and it's published later. <a href="02-ddd-building-blocks.html#domain-event">More →</a></dd>
   <dt>Domain service</dt>
-  <dd>Business logic that doesn't belong to any single entity, usually because it spans several aggregates. It's stateless and pure. Example: <code>SchedulingPolicy</code> (no two shows overlap at a venue). <a href="02-ddd-building-blocks.html#domain-service">More →</a></dd>
+  <dd>Business logic that doesn't belong to any single entity, usually because it spans several aggregates. It's stateless and pure. Examples: <code>SchedulingPolicy</code> (no two shows overlap at a venue), <code>ShowSoldOut</code> (9.1: is every section sold out?), <code>PricingPolicy</code> (9.8: fees and VAT). <a href="02-ddd-building-blocks.html#domain-service">More →</a></dd>
+  <dt>Specification</dt>
+  <dd>A small predicate object (<code>IsSatisfiedBy(x) bool</code>) that can be combined with <code>And</code>, <code>Or</code>, <code>Not</code>, so a business rule reads as a sentence instead of an if-else chain. Example (9.8): the group fee applies when <code>SeatsAtLeast(6)</code>.</dd>
   <dt>Application service / use case</dt>
   <dd>The coordinator for one user intention: parse input, load, call the domain, save. It contains <strong>no business rules</strong>. Example: <code>PublishShowHandler</code>. <a href="02-ddd-building-blocks.html#application-service">More →</a></dd>
   <dt>Command / query</dt>
@@ -119,7 +121,7 @@
   <dt>Policy</dt>
   <dd>"Whenever X happens, do Y." Example: whenever a venue retires, cancel its future shows.</dd>
   <dt>Saga / process manager</dt>
-  <dd>A multi-step business process across aggregates or contexts, driven by events, with <em>compensating actions</em> if a later step fails. Example: checkout, which refunds if the seats couldn't be confirmed. <a href="02-ddd-building-blocks.html#policy">More →</a></dd>
+  <dd>A multi-step business process across aggregates or contexts, driven by events, with <em>compensating actions</em> if a later step fails. Example: checkout, which refunds if the seats couldn't be confirmed. <em>Choreographed</em> (each step reacts to the last) or <em>orchestrated</em> (a stateful <code>CheckoutProcess</code> decides the next step, 9.4). <a href="02-ddd-building-blocks.html#policy">More →</a></dd>
   <dt>Anemic domain model</dt>
   <dd>The anti-pattern: entities that are bags of getters and setters, with all the rules in services. We avoid it.</dd>
 </dl>

@@ -290,6 +290,7 @@ func (r *Relay) Tick(ctx context.Context) (n int, err error) {
   <li>A produced message reaches the handler with a decoded envelope.</li>
   <li>The offset is committed only after the handler succeeds. After a restart, a message whose handler failed is delivered again.</li>
   <li>After N failures the message goes to <code>&lt;topic&gt;.dlq</code> with an <code>error</code> header, and consumption continues.</li>
+</ol><p><em>Keep this simple for now. Drill 4 in lesson 8.5 will show you what "after N failures" costs when the failure is a database outage (ADR-015).</em></p><ol class="tests" start="4">
   <li>Context cancellation stops the runner cleanly.</li>
 </ol></div>
 <details class="solution"><summary>Reference solution (try it yourself first)</summary>
