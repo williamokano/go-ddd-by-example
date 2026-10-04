@@ -180,6 +180,13 @@ func (inv *ShowInventory) ConfirmHold(id HoldID, order OrderID, now time.Time) e
 	return nil
 }
 
+// RejectConfirmation records why a paid order's hold could not be confirmed
+// (expired, released, inventory closed). The saga answers with a refund: the
+// compensation (TKT-8). Nothing else changes.
+func (inv *ShowInventory) RejectConfirmation(id HoldID, order OrderID, reason error, now time.Time) {
+	inv.events.Record(HoldConfirmationFailed{ShowID: inv.showID, HoldID: id, OrderID: order, Reason: reason.Error(), At: now})
+}
+
 // Close stops all sales: active holds are released and no new hold is
 // accepted (TKT-11, TKT-12). Closing twice is a no-op.
 func (inv *ShowInventory) Close(now time.Time) {

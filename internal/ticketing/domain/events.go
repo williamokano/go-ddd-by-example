@@ -146,10 +146,15 @@ func (OrderPaymentFailed) EventName() string { return "ticketing.OrderPaymentFai
 // OccurredAt implements DomainEvent.
 func (e OrderPaymentFailed) OccurredAt() time.Time { return e.At }
 
-// OrderFulfilled records that the order's tickets were issued.
+// OrderFulfilled records that the order's tickets were issued, with where to
+// send them.
 type OrderFulfilled struct {
-	OrderID OrderID
-	At      time.Time
+	OrderID      OrderID
+	ShowID       ShowID
+	CustomerID   CustomerID
+	ContactEmail ContactEmail
+	Tickets      []IssuedTicket
+	At           time.Time
 }
 
 // EventName implements DomainEvent.
@@ -173,3 +178,47 @@ func (OrderRefunded) EventName() string { return "ticketing.OrderRefunded" }
 
 // OccurredAt implements DomainEvent.
 func (e OrderRefunded) OccurredAt() time.Time { return e.At }
+
+// HoldConfirmationFailed records that a paid order's hold could not be confirmed (TKT-8).
+type HoldConfirmationFailed struct {
+	ShowID  ShowID
+	HoldID  HoldID
+	OrderID OrderID
+	Reason  string
+	At      time.Time
+}
+
+// EventName implements DomainEvent.
+func (HoldConfirmationFailed) EventName() string { return "ticketing.HoldConfirmationFailed" }
+
+// OccurredAt implements DomainEvent.
+func (e HoldConfirmationFailed) OccurredAt() time.Time { return e.At }
+
+// TicketIssued records a new ticket for a sold seat (TKT-9).
+type TicketIssued struct {
+	TicketID TicketID
+	Code     TicketCode
+	ShowID   ShowID
+	OrderID  OrderID
+	Seat     SeatRef
+	At       time.Time
+}
+
+// EventName implements DomainEvent.
+func (TicketIssued) EventName() string { return "ticketing.TicketIssued" }
+
+// OccurredAt implements DomainEvent.
+func (e TicketIssued) OccurredAt() time.Time { return e.At }
+
+// TicketVoided records that a ticket is no longer valid (TKT-11).
+type TicketVoided struct {
+	TicketID TicketID
+	ShowID   ShowID
+	At       time.Time
+}
+
+// EventName implements DomainEvent.
+func (TicketVoided) EventName() string { return "ticketing.TicketVoided" }
+
+// OccurredAt implements DomainEvent.
+func (e TicketVoided) OccurredAt() time.Time { return e.At }

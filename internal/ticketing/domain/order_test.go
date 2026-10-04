@@ -97,7 +97,7 @@ func TestOrder_Lifecycle(t *testing.T) {
 	commands := map[string]func(o *domain.Order) error{
 		"paid":      func(o *domain.Order) error { return o.MarkPaid(ref, now) },
 		"failed":    func(o *domain.Order) error { return o.MarkPaymentFailed("card declined", now) },
-		"fulfilled": func(o *domain.Order) error { return o.MarkFulfilled(now) },
+		"fulfilled": func(o *domain.Order) error { return o.MarkFulfilled(nil, now) },
 		"refunded":  func(o *domain.Order) error { return o.MarkRefunded(now) },
 	}
 	type outcome struct {
@@ -147,10 +147,10 @@ func TestOrder_RepeatedFactsRecordNothing(t *testing.T) {
 	o := placed(t)
 	ref, _ := domain.NewPaymentRef("pay_123")
 	_ = o.MarkPaid(ref, now)
-	_ = o.MarkFulfilled(now)
+	_ = o.MarkFulfilled(nil, now)
 	o.PullEvents()
 
-	_ = o.MarkFulfilled(now.Add(time.Minute)) // the saga redelivered SeatsSold
+	_ = o.MarkFulfilled(nil, now.Add(time.Minute)) // the saga redelivered SeatsSold
 
 	if ev := o.PullEvents(); len(ev) != 0 {
 		t.Errorf("events = %v, want none", ev)

@@ -127,14 +127,24 @@ func (o *Order) MarkPaymentFailed(reason string, now time.Time) error {
 	}
 }
 
-// MarkFulfilled records that the tickets were issued (TKT-9).
-func (o *Order) MarkFulfilled(now time.Time) error {
+// IssuedTicket is a ticket as the order reports it.
+type IssuedTicket struct {
+	Seat SeatRef
+	Code TicketCode
+}
+
+// MarkFulfilled records that the tickets were issued (TKT-9). The event
+// carries the tickets and the contact email: Notifications sends them.
+func (o *Order) MarkFulfilled(tickets []IssuedTicket, now time.Time) error {
 	switch o.status {
 	case Fulfilled:
 		return nil
 	case Paid:
 		o.status = Fulfilled
-		o.events.Record(OrderFulfilled{OrderID: o.id, At: now})
+		o.events.Record(OrderFulfilled{
+			OrderID: o.id, ShowID: o.showID, CustomerID: o.customer, ContactEmail: o.email,
+			Tickets: slices.Clone(tickets), At: now,
+		})
 		return nil
 	default:
 		return o.illegal("mark fulfilled")
