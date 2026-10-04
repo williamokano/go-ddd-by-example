@@ -3,7 +3,7 @@
 Source of truth for *where we are* in the course. Lessons live in `docs/part-*.html`.
 Tick a lesson when its "Done when" checks pass; add a one-line note (date, anything notable).
 
-**Current lesson:** 9.5 — Show lifecycle completion and back-on-sale
+**Current lesson:** 9.6 — Database-enforced boundaries
 
 ## Part 0 — Orientation & setup (`docs/part-0-orientation.html`)
 - [x] 0.1 Event storming on paper
@@ -117,7 +117,8 @@ Tick a lesson when its "Done when" checks pass; add a one-line note (date, anyth
   - Additive `accessible_seats` kept venue.activated at v1; seat-by-seat restructure made show.published.v2. Ticketing skips v1 once it reads v2 (v1 arrives first on the same key).
 - [x] 9.4 Orchestration instead of choreography
   - `CheckoutProcess` state machine + orchestrator over the same steps; `SAGA_STYLE` switches. Comparison in `notes/orchestration.md`.
-- [ ] 9.5 Show lifecycle completion and back-on-sale
+- [x] 9.5 Show lifecycle completion and back-on-sale
+  - SHW-9 sweep (`SHOW_SWEEP_INTERVAL`); TKT-14 returns free seats; any section back on sale → inventory_available_again.v1 → SHW-10. No cross-section policy: it would race.
 - [ ] 9.6 Database-enforced boundaries
 - [ ] 9.7 Distributed tracing with OpenTelemetry
 - [ ] 9.8 Fees and taxes as a domain service
