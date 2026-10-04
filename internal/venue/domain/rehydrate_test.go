@@ -1,6 +1,7 @@
 package domain_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -45,4 +46,41 @@ func TestRehydrateVenue(t *testing.T) {
 			t.Errorf("state mismatch (-want +got):\n%s", diff)
 		}
 	})
+
+	t.Run("records no events: nothing new happened", func(t *testing.T) {
+		venue := domain.RehydrateVenue(activeVenueState(t))
+
+		if got := venue.PullEvents(); len(got) != 0 {
+			t.Errorf("PullEvents() = %v, want none", got)
+		}
+	})
+
+	t.Run("a rehydrated active venue still enforces VEN-4", func(t *testing.T) {
+		venue := domain.RehydrateVenue(activeVenueState(t))
+
+		err := venue.AddSection(gaSection(t, "BALCONY", 100), fixedNow)
+
+		if !errors.Is(err, domain.ErrVenueNotDraft) {
+			t.Errorf("AddSection() error = %v, want %v", err, domain.ErrVenueNotDraft)
+		}
+	})
+
+	t.Run("does not share the state's sections slice", func(t *testing.T) {
+		state := activeVenueState(t)
+		venue := domain.RehydrateVenue(state)
+
+		state.Sections[0] = gaSection(t, "HACK", 1)
+
+		if diff := cmp.Diff([]string{"ORCH", "FLOOR"}, sectionCodes(venue.Sections())); diff != "" {
+			t.Errorf("Sections() changed with the state (-want +got):\n%s", diff)
+		}
+	})
+}
+
+func TestRegisterVenue_StartsAtVersionZero(t *testing.T) {
+	venue := newDraftVenue(t)
+
+	if got := venue.Version(); got != 0 {
+		t.Errorf("Version() = %d, want 0", got)
+	}
 }
