@@ -1,6 +1,8 @@
 package domain_test
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -29,6 +31,30 @@ func TestRegisterVenue(t *testing.T) {
 		}
 		if got, want := venue.Status(), domain.Draft; got != want {
 			t.Errorf("Status() = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("rejects a blank or too long name (VEN-1)", func(t *testing.T) {
+		tests := []struct{ name, venueName string }{
+			{"blank", "   "},
+			{"121 characters", strings.Repeat("x", 121)},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				_, err := domain.RegisterVenue(aVenueID(), tt.venueName, mustAddress(t))
+
+				if !errors.Is(err, domain.ErrInvalidVenueName) {
+					t.Errorf("RegisterVenue() error = %v, want %v", err, domain.ErrInvalidVenueName)
+				}
+			})
+		}
+	})
+
+	t.Run("accepts a name of exactly 120 characters, counted in runes (VEN-1)", func(t *testing.T) {
+		_, err := domain.RegisterVenue(aVenueID(), strings.Repeat("é", 120), mustAddress(t))
+
+		if err != nil {
+			t.Errorf("RegisterVenue() error = %v", err)
 		}
 	})
 }

@@ -3,6 +3,8 @@ package domain_test
 import (
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/williamokano/go-ddd-by-example/internal/venue/domain"
 )
 
@@ -31,4 +33,8 @@ func mustAddress(t *testing.T) domain.Address {
 		t.Fatalf("NewAddress() error = %v", err)
 	}
 	return addr
+}
+
+func aVenueID() domain.VenueID {
+	return domain.NewVenueID(uuid.MustParse("0192f5e0-7c1a-7b3e-9d2a-3f4b5c6d7e8f"))
 }

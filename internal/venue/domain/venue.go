@@ -1,6 +1,13 @@
 package domain
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+	"unicode/utf8"
+)
+
+// maxVenueNameLength is VEN-1's limit, in characters.
+const maxVenueNameLength = 120
 
 // Venue is the aggregate root of Venue Management: a place where shows happen,
 // with its seating layout.
@@ -13,7 +20,11 @@ type Venue struct {
 
 // RegisterVenue registers a new venue. It starts as a Draft.
 func RegisterVenue(id VenueID, name string, addr Address) (*Venue, error) {
-	return &Venue{id: id, name: strings.TrimSpace(name), address: addr, status: Draft}, nil
+	name = strings.TrimSpace(name)
+	if name == "" || utf8.RuneCountInString(name) > maxVenueNameLength {
+		return nil, fmt.Errorf("%w: %q must be 1 to %d characters", ErrInvalidVenueName, name, maxVenueNameLength)
+	}
+	return &Venue{id: id, name: name, address: addr, status: Draft}, nil
 }
 
 // ID returns the venue's identity.

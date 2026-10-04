@@ -6,6 +6,7 @@ import "errors"
 // violation the domain can report. Callers check them with errors.Is.
 var (
 	ErrInvalidVenueID     = errors.New("venue: invalid venue id")
+	ErrInvalidVenueName   = errors.New("venue: invalid venue name")   // VEN-1
 	ErrInvalidAddress     = errors.New("venue: invalid address")      // VEN-1
 	ErrInvalidSectionCode = errors.New("venue: invalid section code") // VEN-2
 	ErrInvalidSection     = errors.New("venue: invalid section")      // VEN-3
