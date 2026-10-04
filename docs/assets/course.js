@@ -154,11 +154,44 @@
     });
   }
 
+  // Reference-solution snippets: Markdown notes are rendered, code is
+  // highlighted. The libraries are vendored (assets/vendor) and loaded only on
+  // pages that have snippets; without them the plain text stays readable.
+  const ASSETS = (document.currentScript && document.currentScript.src.replace(/[^/]*$/, "")) || "assets/";
+
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const s = el("script", { src: ASSETS + src });
+      s.onload = resolve; s.onerror = reject;
+      document.head.append(s);
+    });
+  }
+
+  async function enhanceSnippets(main) {
+    const notes = [...main.querySelectorAll("pre.snippet-md > code")];
+    const code = [...main.querySelectorAll('pre:not(.snippet-md) > code[class*="language-"]')];
+    if (!notes.length && !code.length) return;
+    try {
+      await loadScript("vendor/highlight.min.js");
+      await loadScript("vendor/highlight-dockerfile.min.js");
+      if (notes.length) await loadScript("vendor/marked.umd.js");
+    } catch (_) { return; /* offline or blocked: keep the plain text */ }
+    notes.forEach(c => {
+      const doc = el("div", { class: "snippet-md" });
+      doc.innerHTML = window.marked.parse(c.textContent); // our own notes, from the solution branch
+      doc.querySelectorAll("table").forEach(t => { const w = el("div", { class: "table-wrap" }); t.replaceWith(w); w.append(t); });
+      doc.querySelectorAll('pre > code[class*="language-"]').forEach(b => code.push(b));
+      c.parentElement.replaceWith(doc);
+    });
+    code.forEach(c => { if (!c.dataset.highlighted) window.hljs.highlightElement(c); });
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
     const main = document.querySelector("main.content");
     if (!main) return;
     wrapTables(main);
     wireLessons(main);
+    enhanceSnippets(main);
     const layout = el("div", { class: "layout" });
     const side = buildSidebar();
     const toggle = el("button", { class: "menu-toggle", type: "button", text: "☰ Menu" });

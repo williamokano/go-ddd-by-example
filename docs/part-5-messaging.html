@@ -55,7 +55,7 @@
 </ul>
 <!-- snippet: lesson-5.2 internal/venue/contracts/events.go -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/2dff9e5b5b1f/internal/venue/contracts/events.go"><code>internal/venue/contracts/events.go</code></a> at <code>lesson-5.2</code></div>
-<pre><code>// Package contracts is the Venue context's Published Language: the public,
+<pre><code class="language-go">// Package contracts is the Venue context's Published Language: the public,
 // versioned integration events other contexts may decode. It imports only the
 // standard library and never the domain, so consumers can depend on it without
 // depending on Venue's model. Changes are additive within a version; a
@@ -133,7 +133,7 @@ type VenueRetiredV1 struct {
 </ul>
 <!-- snippet: lesson-5.3 internal/platform/outbox/writer.go#Write -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/c3e60f282872/internal/platform/outbox/writer.go"><code>internal/platform/outbox/writer.go</code></a> at <code>lesson-5.3</code></div>
-<pre><code>// Write inserts msgs into &lt;schema&gt;.outbox inside tx, the transaction that also
+<pre><code class="language-go">// Write inserts msgs into &lt;schema&gt;.outbox inside tx, the transaction that also
 // saves the aggregate: both commit, or neither does.
 func Write(ctx context.Context, tx pgx.Tx, schema string, msgs []Message) error {
 	table := pgx.Identifier{schema, "outbox"}.Sanitize()
@@ -151,7 +151,7 @@ func Write(ctx context.Context, tx pgx.Tx, schema string, msgs []Message) error 
 <!-- /snippet -->
 <!-- snippet: lesson-5.3 internal/venue/adapters/driven/postgres/events.go#ToOutboxMessages -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/c3e60f282872/internal/venue/adapters/driven/postgres/events.go"><code>internal/venue/adapters/driven/postgres/events.go</code></a> at <code>lesson-5.3</code></div>
-<pre><code>// ToOutboxMessages translates domain events into integration events: a small
+<pre><code class="language-go">// ToOutboxMessages translates domain events into integration events: a small
 // anti-corruption layer pointing outward. It decides what leaves the context:
 // VenueRegistered and SectionAdded are internal facts and are not published.
 func ToOutboxMessages(events []domain.DomainEvent, newID func() uuid.UUID) ([]outbox.Message, error) {
@@ -213,7 +213,7 @@ func ToOutboxMessages(events []domain.DomainEvent, newID func() uuid.UUID) ([]ou
 </ul>
 <!-- snippet: lesson-5.4 internal/platform/outbox/relay.go#Relay.Tick -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/781f029ce167/internal/platform/outbox/relay.go"><code>internal/platform/outbox/relay.go</code></a> at <code>lesson-5.4</code></div>
-<pre><code>// Tick publishes one batch of unpublished rows, in id order, and marks them.
+<pre><code class="language-go">// Tick publishes one batch of unpublished rows, in id order, and marks them.
 // The rows stay locked (FOR UPDATE SKIP LOCKED) until the transaction ends, so
 // two relays never publish the same row in the same tick. It returns how many
 // rows it published.
@@ -302,7 +302,7 @@ func (r *Relay) Tick(ctx context.Context) (n int, err error) {
 </ul>
 <!-- snippet: lesson-5.5 internal/platform/kafka/consumer.go#process -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/72f9890a609b/internal/platform/kafka/consumer.go"><code>internal/platform/kafka/consumer.go</code></a> at <code>lesson-5.5</code></div>
-<pre><code>// process handles rec until it succeeds or is parked in the DLQ. It returns
+<pre><code class="language-go">// process handles rec until it succeeds or is parked in the DLQ. It returns
 // false if ctx ended first.
 func process(ctx context.Context, client *kgo.Client, cfg ConsumerConfig, handle Handler, logger *slog.Logger, rec *kgo.Record) bool {
 	var env Envelope
@@ -348,7 +348,7 @@ func process(ctx context.Context, client *kgo.Client, cfg ConsumerConfig, handle
 <!-- /resume -->
 <!-- snippet: lesson-5.6 cmd/stagehand/serve.go#serve -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/de04f266d486/cmd/stagehand/serve.go"><code>cmd/stagehand/serve.go</code></a> at <code>lesson-5.6</code></div>
-<pre><code>// serve is the composition root: the only place that knows every concrete
+<pre><code class="language-go">// serve is the composition root: the only place that knows every concrete
 // type. Plain constructor injection, top to bottom, no container.
 func serve(ctx context.Context) error {
 	cfg, err := config.Load(os.Getenv)

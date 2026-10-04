@@ -54,7 +54,7 @@
 </ul>
 <!-- snippet: lesson-1.1 internal/venue/domain/venue_id.go -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/a5eabf46f2aa/internal/venue/domain/venue_id.go"><code>internal/venue/domain/venue_id.go</code></a> at <code>lesson-1.1</code></div>
-<pre><code>package domain
+<pre><code class="language-go">package domain
 
 import (
 	"errors"
@@ -92,7 +92,7 @@ func (id VenueID) IsZero() bool { return id.value == uuid.Nil }</code></pre>
 <!-- /snippet -->
 <!-- snippet: lesson-1.1 internal/venue/domain/venue_id_test.go#TestParseVenueID -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/a5eabf46f2aa/internal/venue/domain/venue_id_test.go"><code>internal/venue/domain/venue_id_test.go</code></a> at <code>lesson-1.1</code></div>
-<pre><code>func TestParseVenueID(t *testing.T) {
+<pre><code class="language-go">func TestParseVenueID(t *testing.T) {
 	t.Run("accepts a valid UUID and round-trips it", func(t *testing.T) {
 		raw := "0192f5e0-7c1a-7b3e-9d2a-3f4b5c6d7e8f"
 
@@ -153,7 +153,7 @@ func (id VenueID) IsZero() bool { return id.value == uuid.Nil }</code></pre>
 </ul>
 <!-- snippet: lesson-1.2 internal/venue/domain/address.go -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/ac979c6c1802/internal/venue/domain/address.go"><code>internal/venue/domain/address.go</code></a> at <code>lesson-1.2</code></div>
-<pre><code>package domain
+<pre><code class="language-go">package domain
 
 import (
 	"fmt"
@@ -209,7 +209,7 @@ func isTwoLetters(s string) bool {
 <!-- /snippet -->
 <!-- snippet: lesson-1.2 internal/venue/domain/errors.go -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/ac979c6c1802/internal/venue/domain/errors.go"><code>internal/venue/domain/errors.go</code></a> at <code>lesson-1.2</code></div>
-<pre><code>package domain
+<pre><code class="language-go">package domain
 
 import "errors"
 
@@ -222,7 +222,7 @@ var (
 <!-- /snippet -->
 <!-- snippet: lesson-1.2 internal/venue/domain/address_test.go#TestNewAddress -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/ac979c6c1802/internal/venue/domain/address_test.go"><code>internal/venue/domain/address_test.go</code></a> at <code>lesson-1.2</code></div>
-<pre><code>func TestNewAddress(t *testing.T) {
+<pre><code class="language-go">func TestNewAddress(t *testing.T) {
 	t.Run("valid input gives trimmed getters (VEN-1)", func(t *testing.T) {
 		addr, err := domain.NewAddress("  Rua da Alegria 12 ", " Lisboa ", "PT")
 
@@ -312,7 +312,7 @@ var (
 </ul>
 <!-- snippet: lesson-1.3 internal/venue/domain/section_code.go -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/76693fd00621/internal/venue/domain/section_code.go"><code>internal/venue/domain/section_code.go</code></a> at <code>lesson-1.3</code></div>
-<pre><code>package domain
+<pre><code class="language-go">package domain
 
 import (
 	"fmt"
@@ -342,7 +342,7 @@ func (c SectionCode) String() string { return c.value }</code></pre>
 <!-- /snippet -->
 <!-- snippet: lesson-1.3 internal/venue/domain/row.go -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/76693fd00621/internal/venue/domain/row.go"><code>internal/venue/domain/row.go</code></a> at <code>lesson-1.3</code></div>
-<pre><code>package domain
+<pre><code class="language-go">package domain
 
 import (
 	"fmt"
@@ -417,7 +417,7 @@ func (r Row) SeatNumbers() []int {
 </ul>
 <!-- snippet: lesson-1.4 internal/venue/domain/section.go -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/e2abcb19942f/internal/venue/domain/section.go"><code>internal/venue/domain/section.go</code></a> at <code>lesson-1.4</code></div>
-<pre><code>package domain
+<pre><code class="language-go">package domain
 
 import (
 	"fmt"
@@ -490,7 +490,7 @@ func (s Section) Capacity() int {
 <!-- /snippet -->
 <!-- snippet: lesson-1.4 internal/venue/domain/section_test.go#TestSection_Rows_ReturnsACopy,TestNewSeatedSection_CopiesTheGivenRows -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/e2abcb19942f/internal/venue/domain/section_test.go"><code>internal/venue/domain/section_test.go</code></a> at <code>lesson-1.4</code></div>
-<pre><code>func TestSection_Rows_ReturnsACopy(t *testing.T) {
+<pre><code class="language-go">func TestSection_Rows_ReturnsACopy(t *testing.T) {
 	section, err := domain.NewSeatedSection(mustCode(t, "ORCH"), "Orchestra", []domain.Row{mustRow(t, "A", 10)})
 	if err != nil {
 		t.Fatal(err)
@@ -549,7 +549,7 @@ func TestNewSeatedSection_CopiesTheGivenRows(t *testing.T) {
 </ul>
 <!-- snippet: lesson-1.5 internal/venue/domain/venue.go -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/8308f8db6fef/internal/venue/domain/venue.go"><code>internal/venue/domain/venue.go</code></a> at <code>lesson-1.5</code></div>
-<pre><code>package domain
+<pre><code class="language-go">package domain
 
 import (
 	"fmt"
@@ -598,7 +598,7 @@ func (v *Venue) Status() Status { return v.status }</code></pre>
 <!-- /snippet -->
 <!-- snippet: lesson-1.5 internal/venue/domain/status.go -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/8308f8db6fef/internal/venue/domain/status.go"><code>internal/venue/domain/status.go</code></a> at <code>lesson-1.5</code></div>
-<pre><code>package domain
+<pre><code class="language-go">package domain
 
 // Status is where a venue is in its lifecycle: Draft → Active → Retired.
 type Status uint8
@@ -651,7 +651,7 @@ func (s Status) String() string {
 </ul>
 <!-- snippet: lesson-1.6 internal/venue/domain/venue.go#Venue.AddSection,Venue.Sections,Venue.Capacity -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/b9bbf0c29158/internal/venue/domain/venue.go"><code>internal/venue/domain/venue.go</code></a> at <code>lesson-1.6</code></div>
-<pre><code>// AddSection adds a section to the venue's layout. Section codes are unique
+<pre><code class="language-go">// AddSection adds a section to the venue's layout. Section codes are unique
 // within the venue (VEN-2): only the root sees all the sections, so only the
 // root can enforce it.
 func (v *Venue) AddSection(s Section) error {
@@ -683,7 +683,7 @@ func (v *Venue) Capacity() int {
 <!-- /snippet -->
 <!-- snippet: lesson-1.6 internal/venue/domain/helpers_test.go#venueOption,venueSpec,withSection,newDraftVenue -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/b9bbf0c29158/internal/venue/domain/helpers_test.go"><code>internal/venue/domain/helpers_test.go</code></a> at <code>lesson-1.6</code></div>
-<pre><code>// venueOption customises the venue built by newDraftVenue.
+<pre><code class="language-go">// venueOption customises the venue built by newDraftVenue.
 type venueOption func(*venueSpec)
 
 type venueSpec struct {
@@ -743,7 +743,7 @@ func newDraftVenue(t *testing.T, opts ...venueOption) *domain.Venue {
 </ul>
 <!-- snippet: lesson-1.7 internal/venue/domain/venue.go#Venue.Activate,Venue.Retire -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/5a422d2804ac/internal/venue/domain/venue.go"><code>internal/venue/domain/venue.go</code></a> at <code>lesson-1.7</code></div>
-<pre><code>// Activate opens the venue for shows. Only a draft venue with at least one
+<pre><code class="language-go">// Activate opens the venue for shows. Only a draft venue with at least one
 // section can be activated (VEN-5).
 func (v *Venue) Activate() error {
 	if v.status != Draft {
@@ -768,7 +768,7 @@ func (v *Venue) Retire() error {
 <!-- /snippet -->
 <!-- snippet: lesson-1.7 internal/venue/domain/venue_test.go#TestVenue_IllegalTransitions -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/5a422d2804ac/internal/venue/domain/venue_test.go"><code>internal/venue/domain/venue_test.go</code></a> at <code>lesson-1.7</code></div>
-<pre><code>func TestVenue_IllegalTransitions(t *testing.T) {
+<pre><code class="language-go">func TestVenue_IllegalTransitions(t *testing.T) {
 	tests := []struct {
 		name       string
 		venue      func(t *testing.T) *domain.Venue
@@ -831,7 +831,7 @@ func (v *Venue) Retire() error {
 </ul>
 <!-- snippet: lesson-1.8 internal/venue/domain/events.go#DomainEvent,Events,Events.Record,Events.PullEvents,VenueActivated -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/5b1fe67de839/internal/venue/domain/events.go"><code>internal/venue/domain/events.go</code></a> at <code>lesson-1.8</code></div>
-<pre><code>// DomainEvent is something that happened in the Venue Management domain that
+<pre><code class="language-go">// DomainEvent is something that happened in the Venue Management domain that
 // domain experts care about. Events are named in the past tense and immutable.
 type DomainEvent interface {
 	EventName() string
@@ -863,7 +863,7 @@ type VenueActivated struct {
 <!-- /snippet -->
 <!-- snippet: lesson-1.8 internal/venue/domain/venue.go#Venue,Venue.Activate,Venue.PullEvents -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/5b1fe67de839/internal/venue/domain/venue.go"><code>internal/venue/domain/venue.go</code></a> at <code>lesson-1.8</code></div>
-<pre><code>// Venue is the aggregate root of Venue Management: a place where shows happen,
+<pre><code class="language-go">// Venue is the aggregate root of Venue Management: a place where shows happen,
 // with its seating layout.
 type Venue struct {
 	id       VenueID
@@ -897,7 +897,7 @@ func (v *Venue) PullEvents() []DomainEvent { return v.events.PullEvents() }</cod
 <!-- /snippet -->
 <!-- snippet: lesson-1.8 internal/venue/domain/events_test.go#TestVenue_Activate_RecordsVenueActivatedWithTheLayout -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/5b1fe67de839/internal/venue/domain/events_test.go"><code>internal/venue/domain/events_test.go</code></a> at <code>lesson-1.8</code></div>
-<pre><code>func TestVenue_Activate_RecordsVenueActivatedWithTheLayout(t *testing.T) {
+<pre><code class="language-go">func TestVenue_Activate_RecordsVenueActivatedWithTheLayout(t *testing.T) {
 	orch := seatedSection(t, "ORCH", mustRow(t, "A", 10), mustRow(t, "B", 12))
 	floor := gaSection(t, "FLOOR", 500)
 	venue := newDraftVenue(t, withSection(orch), withSection(floor))
@@ -947,7 +947,7 @@ func (v *Venue) PullEvents() []DomainEvent { return v.events.PullEvents() }</cod
 </ul>
 <!-- snippet: lesson-1.9 internal/venue/domain/rehydrate.go -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/ce591ff023a7/internal/venue/domain/rehydrate.go"><code>internal/venue/domain/rehydrate.go</code></a> at <code>lesson-1.9</code></div>
-<pre><code>package domain
+<pre><code class="language-go">package domain
 
 import "slices"
 
@@ -980,7 +980,7 @@ func RehydrateVenue(s VenueState) *Venue {
 <!-- /snippet -->
 <!-- snippet: lesson-1.9 internal/venue/domain/rehydrate_test.go#stateOf -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/ce591ff023a7/internal/venue/domain/rehydrate_test.go"><code>internal/venue/domain/rehydrate_test.go</code></a> at <code>lesson-1.9</code></div>
-<pre><code>// stateOf reads a venue back through its getters, the way a repository does.
+<pre><code class="language-go">// stateOf reads a venue back through its getters, the way a repository does.
 func stateOf(v *domain.Venue) domain.VenueState {
 	return domain.VenueState{
 		ID:       v.ID(),
@@ -1019,7 +1019,7 @@ func stateOf(v *domain.Venue) domain.VenueState {
 </ul>
 <!-- snippet: lesson-1.10 internal/venue/domain/errors.go -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/1340008d6cb6/internal/venue/domain/errors.go"><code>internal/venue/domain/errors.go</code></a> at <code>lesson-1.10</code></div>
-<pre><code>package domain
+<pre><code class="language-go">package domain
 
 import "errors"
 
@@ -1053,7 +1053,7 @@ var (
 <!-- /snippet -->
 <!-- snippet: lesson-1.10 .golangci.yml -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/1340008d6cb6/.golangci.yml"><code>.golangci.yml</code></a> at <code>lesson-1.10</code></div>
-<pre><code>version: "2"
+<pre><code class="language-yaml">version: "2"
 
 linters:
   default: standard
