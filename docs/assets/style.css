@@ -89,6 +89,9 @@ li { margin: 4px 0; }
 code { font-family: var(--mono); font-size: .86em; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
 pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; overflow-x: auto; line-height: 1.5; }
 pre code { background: none; padding: 0; font-size: .84rem; }
+:not(pre) > code { overflow-wrap: anywhere; }
+.table-wrap code { overflow-wrap: normal; }
+table.rules td:first-child { white-space: nowrap; }
 pre.diagram { font-size: .8rem; line-height: 1.35; }
 pre.diagram code { font-size: inherit; }
 
@@ -117,7 +120,7 @@ th { background: var(--surface-2); font-weight: 600; }
 .lesson .done-toggle { margin-left: auto; font-size: .8rem; font-weight: 400; color: var(--muted); display: flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
 .meta { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: .92rem; margin: 8px 0 12px; }
 .meta dt { font-weight: 600; color: var(--muted); }
-.meta dd { margin: 0; }
+.meta dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 ol.tests { counter-reset: t; list-style: none; padding-left: 0; }
 ol.tests li { counter-increment: t; padding-left: 34px; position: relative; }
 ol.tests li::before { content: counter(t); position: absolute; left: 0; top: 1px; width: 24px; height: 24px; border-radius: 50%; background: var(--tdd-bg); color: var(--tdd); font-size: .75rem; font-weight: 700; display: grid; place-items: center; }

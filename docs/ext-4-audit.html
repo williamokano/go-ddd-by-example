@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Extension E4 · Audit Trail</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main class="content">
+<header>
+  <div class="kicker">Extension track · E4 · needs E2 and Part 8</div>
+  <h1>Audit trail: who did what, and when</h1>
+  <p class="lead">With real users (E2) we can finally answer "who retired that venue?" and "who refunded that order?". An audit trail is not a log file: it's a durable, queryable, tamper-resistant record that the business, support and sometimes regulators rely on. You'll build it from two complementary sources, and compare them.</p>
+</header>
+
+<h2>Two ways to know "who did what"</h2>
+<div class="table-wrap"><table>
+  <tr><th></th><th>A · Command-level (decorator)</th><th>B · Integration events + actor</th></tr>
+  <tr><td>Records</td><td>The <em>attempt</em>: actor, command name, target, outcome (succeeded / denied / failed)</td><td>The published <em>facts</em>, attributed to whoever caused them</td></tr>
+  <tr><td>Sees denied and failed attempts?</td><td><strong>Yes</strong> (security-relevant)</td><td>No: nothing happened, so no event</td></tr>
+  <tr><td>Sees changes that never become integration events?</td><td><strong>Yes</strong></td><td>No. <code>VenueRegistered</code> and <code>SectionAdded</code> never leave Venue (5.3)</td></tr>
+  <tr><td>Sees system-initiated changes (expiry, policies reacting to other contexts)?</td><td>Only if they run through decorated use cases with a system principal</td><td><strong>Yes</strong>, with the causing event</td></tr>
+  <tr><td>Domain model changes?</td><td>None</td><td>None; the actor travels as envelope metadata</td></tr>
+</table></div>
+<div class="callout why"><span class="label">Design decision (ADR-E09)</span><p>We do both, and neither touches an aggregate. The important constraint is ownership: each context owns its schema, and a Venue transaction must not write into an <code>audit</code> table. So the decorator writes an <em>audit record</em> into the acting context's <strong>own outbox</strong>, in the same transaction as the change (8.4's <code>TxManager</code> makes that possible). The relay publishes it to an <code>audit.records</code> topic, and the <code>audit</code> context consumes it, together with the actor-stamped integration events, into an append-only store. It's the outbox pattern from Part 5, reused for a new kind of message.</p></div>
+
+<section class="lesson" id="le4-1">
+<h3><span class="lesson-id">E4.1</span> Decide what belongs in the trail</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Write the rules before the code.</dd>
+  <dt>Rules</dt><dd>AUD-1, AUD-2, AUD-3</dd>
+</dl>
+<div class="table-wrap"><table class="rules">
+  <tr><th>Id</th><th>Rule</th></tr>
+  <tr><td>AUD-1</td><td>Every entry records: when, <code>actor</code> (user id or system name), <code>action</code> (a stable name, e.g. <code>venue.retire</code>), <code>target</code> (type + id), <code>outcome</code> (<code>succeeded</code>, <code>denied</code>, <code>failed</code>), <code>requestId</code>/<code>correlationId</code>, and the client IP when there is one.</td></tr>
+  <tr><td>AUD-2</td><td>Entries are immutable and append-only. There is no update or delete path in the application, and the application's database role has no UPDATE/DELETE privilege on the table.</td></tr>
+  <tr><td>AUD-3</td><td>Entries never contain secrets or sensitive personal data: no passwords, tokens, full card data, or free-text bodies. Store <em>identifiers and the names of changed fields</em>, not full before/after documents, unless a rule says otherwise.</td></tr>
+</table></div>
+<div class="callout do"><span class="label">Your turn (paper first)</span><ol>
+  <li>List ten actions in Stagehand that must be auditable (hint: anything money-, access- or lifecycle-related) and five that need not be.</li>
+  <li>For each, decide: command-level, event-level, or both?</li>
+  <li>Who reads this data (support, a manager, an auditor), and what question will each ask? Design the query shape from those questions.</li>
+</ol></div>
+</section>
+
+<section class="lesson" id="le4-2">
+<h3><span class="lesson-id">E4.2</span> The audit entry, a port and an append-only table</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>A small <code>audit</code> context: entry value object, <code>AuditLog</code> port, fake, Postgres adapter.</dd>
+  <dt>Creates</dt><dd><code>internal/audit/{domain,application,contracts}</code> (the contract is the <code>audit.command_attempted.v1</code> record every context publishes), <code>db/migrations/0000N_audit.sql</code>, the Postgres adapter</dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li><code>NewEntry(...)</code> validates (non-empty actor, action, target) and stamps time from the injected clock (ADR-008).</li>
+  <li>The <code>AuditLog</code> port has <code>Append(ctx, Entry)</code> and a query method, and <em>no</em> update or delete method. The fake and Postgres adapter run one contract suite.</li>
+  <li>Integration (testcontainers): <code>UPDATE audit.entries …</code> and <code>DELETE …</code> must fail. Enforce it in the database, not with good intentions: a <code>BEFORE UPDATE OR DELETE</code> trigger that raises works even for the table owner, and if you did 9.6, also revoke those privileges from the application role.</li>
+  <li>Index for the real questions: by target, by actor, by time range.</li>
+</ol></div>
+</section>
+
+<section class="lesson" id="le4-3">
+<h3><span class="lesson-id">E4.3</span> A command-level audit decorator</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Record every attempt, including the denied ones, with one decorator.</dd>
+  <dt>Rules</dt><dd>AUD-4</dd>
+</dl>
+<div class="table-wrap"><table class="rules">
+  <tr><th>Id</th><th>Rule</th></tr>
+  <tr><td>AUD-4</td><td>An attempt that is denied by authorization is audited as <code>denied</code> with the actor. A failure to <em>write</em> the audit entry for a state-changing command fails the command (we don't change state we can't account for). For read-only queries, it degrades to a logged warning.</td></tr>
+</table></div>
+<div class="callout do"><span class="label">Your turn</span><ol>
+  <li>Write <code>Audit[C,R](action, targetOf, next)</code> with the same shape as E2's <code>Require</code>. <code>targetOf</code> extracts a target type and id from the command; keep it a small function per use case, written in the composition root.</li>
+  <li>On success, the record goes into the context's outbox <em>inside</em> the use case's transaction: wrap the inner call in <code>TxManager.WithinTx</code> (8.4) so the repository's save and the audit record commit together. On a denial or a failure there is nothing to commit, so record the attempt in its own small transaction after the rollback.</li>
+  <li>Decide and test the stack order: <code>Audit(Observe(Require(useCase)))</code> versus alternatives. Which order records denied attempts? Which hides them?</li>
+  <li>The <code>audit</code> context consumes <code>audit.records</code> through the inbox (8.4), so redeliveries don't duplicate entries.</li>
+</ol></div>
+<div class="callout warn"><span class="label">Pitfall</span><p>Don't serialise the whole command into the audit row "just in case". Commands can contain emails, addresses and tokens. AUD-3 says identifiers and field <em>names</em>. Write the test that a command with a password field leaves no password in the row.</p></div>
+</section>
+
+<section class="lesson" id="le4-4">
+<h3><span class="lesson-id">E4.4</span> Attribute state changes: the actor in event metadata</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Know who caused each integration event, <em>without</em> adding the actor to any domain event payload.</dd>
+  <dt>Rules</dt><dd>AUD-5</dd>
+  <dt>Touches (additively)</dt><dd>The outbox envelope (next to 8.3's correlation and causation ids), the consumer runner</dd>
+</dl>
+<div class="table-wrap"><table class="rules">
+  <tr><th>Id</th><th>Rule</th></tr>
+  <tr><td>AUD-5</td><td>When a repository writes an outbox row, it stamps the envelope with the current actor from <code>context</code>. Events caused by consumers carry the <em>causing event's</em> actor forward, with a system principal for time-triggered ones.</td></tr>
+</table></div>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>Saving an aggregate in a context carrying user <code>u1</code> writes an outbox row whose envelope has <code>actor=u1</code>; the domain event payload is byte-for-byte unchanged (golden test from 5.2 still green).</li>
+  <li>A consumer handling that event, then saving its own aggregate, produces outbox rows with <code>actor=u1</code> and <code>causation_id=&lt;event id&gt;</code>: the consumer runner restores the actor into the context exactly as 8.3 restores the correlation id.</li>
+  <li>The expiry scheduler (7.9) runs as <code>system:scheduler</code>.</li>
+  <li>The <code>audit</code> consumer subscribes to the public integration topics and turns each envelope into an entry with outcome <code>succeeded</code>; the inbox drops duplicates.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>Why attach the actor to the <em>envelope</em> instead of every event's payload? Think about contract versioning (9.3) and about who owns the published language.</p></div>
+</section>
+
+<section class="lesson" id="le4-5">
+<h3><span class="lesson-id">E4.5</span> Reading the trail: a protected query API</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd><code>GET /audit?targetType=venue&amp;targetId=…&amp;from=…</code>, for staff only.</dd>
+  <dt>Rules</dt><dd>AUD-6</dd>
+</dl>
+<div class="table-wrap"><table class="rules">
+  <tr><th>Id</th><th>Rule</th></tr>
+  <tr><td>AUD-6</td><td>Reading the audit trail needs <code>audit:read</code>, and <em>reading it is itself audited</em> (who looked at what).</td></tr>
+</table></div>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>Customer → 403; Staff → 200 with entries newest first, with <strong>keyset</strong> pagination (<code>before=&lt;cursor&gt;</code>), not <code>OFFSET</code>.</li>
+  <li>A query writes its own audit entry (AUD-6).</li>
+  <li>The response shape is a read model (as in 2.5): never expose the table row structure directly.</li>
+</ol></div>
+</section>
+
+<section class="lesson" id="le4-6">
+<h3><span class="lesson-id">E4.6</span> Stretch: tamper evidence</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Make "someone edited the table with superuser rights" detectable.</dd>
+</dl>
+<div class="callout do"><span class="label">Your turn</span><ol>
+  <li>Add a <code>prev_hash</code> and <code>hash</code> column: each row's hash covers its content plus the previous row's hash (a hash chain, per target or global).</li>
+  <li>Write a <code>stagehand audit verify</code> subcommand that walks the chain and reports the first break.</li>
+  <li>Discuss what this does <em>not</em> protect against: a superuser can rewrite the whole chain. What would fix that (periodically anchoring the latest hash somewhere the DB admin can't edit)?</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>Personal data in an immutable log collides with "right to erasure". What would you store so that deleting a person doesn't require editing the trail? (Hint: identifiers you can later unlink from the person.)</p></div>
+</section>
+</main>
+<script src="assets/course.js"></script>
+</body>
+</html>

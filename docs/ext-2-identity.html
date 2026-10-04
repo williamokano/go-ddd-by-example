@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Extension E2 · Identity & Access</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main class="content">
+<header>
+  <div class="kicker">Extension track · E2 · needs Part 4</div>
+  <h1>Identity &amp; access</h1>
+  <p class="lead">Until now anyone can call anything. You'll add a small identity module of your own (local username/password <em>and</em> room for any number of SSO providers), then enforce what each person may do. The point is where each piece lives in the hexagon: authentication at the edge, coarse authorization around the use cases, fine-grained rules in the domain.</p>
+</header>
+
+<h2>The shape of the solution</h2>
+<p>Authentication and authorization are cross-cutting: every context needs the answer, but none of them should own the machinery. The trick is to separate three questions that are easy to blur together:</p>
+<div class="table-wrap"><table>
+  <tr><th>Question</th><th>Name</th><th>Where it lives</th><th>Why there</th></tr>
+  <tr><td>Who is this?</td><td>Authentication</td><td>Driving adapter (HTTP middleware) → <code>Principal</code> in <code>context</code></td><td>It's about the <em>transport</em> (headers, cookies, tokens). A use case shouldn't know how the caller proved who they are.</td></tr>
+  <tr><td>May this kind of actor do this kind of action?</td><td>Authorization, coarse (RBAC)</td><td>A decorator around each use case, assembled in the composition root</td><td>The check is the same shape for every use case, so it doesn't belong in any one of them, and the use-case tests don't need to change.</td></tr>
+  <tr><td>May <em>this</em> actor do this to <em>this</em> thing?</td><td>Authorization, fine-grained (ownership)</td><td>Domain / use case</td><td>It depends on business data ("is this user the venue's manager?"), which only the model knows.</td></tr>
+</table></div>
+
+<pre><code>Request:
+ HTTP ─► authn ─► Principal ─► authz decorator ─► use case ─► aggregate
+         (driving   (platform/ (RBAC: permission)    (ownership: VEN-8)
+          adapter)   actor)
+
+Login:
+ credentials ─► IdentityProvider ─► verified identity ─► link to local User
+                (password | oidc:google | oidc:entra | ...)        │
+                                                                   ▼
+                                                  TokenIssuer ─► our own signed token</code></pre>
+
+<div class="callout why"><span class="label">Design decisions (ADR-E05, ADR-E06, ADR-E07)</span>
+<p><code>Principal</code> is a plain value in <code>internal/platform/actor</code> (stdlib only). Application layers may import it; the <strong>domain may not</strong>. When the domain needs "who", the use case passes a plain id in (<code>venue.ManagedBy(userID)</code>), the same way time and ids are inputs (ADR-008). Identity is its own bounded context (<code>internal/identity</code>) with a Users table and its own login use cases; other contexts only ever see a <code>UserID</code> and a set of permissions.</p></div>
+
+<section class="lesson" id="le2-1">
+<h3><span class="lesson-id">E2.1</span> Principal, permissions and roles</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Define the vocabulary of "who" and "what may they do", with no I/O.</dd>
+  <dt>Rules</dt><dd>AUTH-1, AUTH-2</dd>
+  <dt>Creates</dt><dd><code>internal/platform/actor/{principal,permission,errors}.go</code> (the <code>Principal</code>, the <code>Permission</code> string type, <code>ErrForbidden</code>), <code>internal/identity/domain/role.go</code> (which role grants which permissions) + tests</dd>
+</dl>
+<div class="table-wrap"><table class="rules">
+  <tr><th>Id</th><th>Rule</th></tr>
+  <tr><td>AUTH-1</td><td>A <code>Principal</code> is either a user (<code>UserID</code> + permissions) or a system actor (<code>"scheduler"</code>, <code>"payments-webhook"</code>). Anonymous is its own explicit value, never <code>nil</code>.</td></tr>
+  <tr><td>AUTH-2</td><td>Permissions are <code>resource:action</code> strings (<code>venue:register</code>, <code>show:publish</code>, <code>order:refund</code>, <code>audit:read</code>). Roles are named sets of permissions. <strong>Code checks permissions, never role names.</strong></td></tr>
+</table></div>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>A user principal reports <code>Can(perm)</code> true only for permissions it holds; <code>Anonymous.Can(x)</code> is always false.</li>
+  <li><code>actor.From(ctx)</code> on a context with no principal returns <code>Anonymous</code> (not a panic, not <code>nil</code>); <code>actor.With(ctx, p)</code> round-trips.</li>
+  <li>The built-in role table: <code>Customer</code> has <code>order:place</code> but not <code>venue:register</code>; <code>VenueManager</code> has <code>venue:register</code> and <code>venue:manage</code> (<em>which</em> venues is VEN-8's job, not RBAC's); <code>Promoter</code> has <code>show:draft</code> and <code>show:publish</code>; <code>Staff</code> has <code>order:refund</code> and <code>audit:read</code>.</li>
+  <li>A user with several roles gets the union of permissions.</li>
+  <li>Unknown role name from storage → error (don't silently grant nothing, and don't silently grant everything).</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>Why "check permissions, not roles"? What breaks when a rule is written <code>if p.HasRole("staff")</code> and the business invents "Senior Support" next quarter?</p></div>
+</section>
+
+<section class="lesson" id="le2-2">
+<h3><span class="lesson-id">E2.2</span> The <code>User</code> aggregate and local credentials</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Model a user, and keep "how they prove themselves" separate from "who they are".</dd>
+  <dt>Rules</dt><dd>AUTH-3, AUTH-4</dd>
+  <dt>Creates</dt><dd><code>internal/identity/domain/{user,email,credential}.go</code>, <code>application.PasswordHasher</code> port, an in-memory fake hasher</dd>
+</dl>
+<div class="table-wrap"><table class="rules">
+  <tr><th>Id</th><th>Rule</th></tr>
+  <tr><td>AUTH-3</td><td>A user has a unique, normalised (trimmed, lower-cased) email, a status (Active/Disabled) and a set of roles. A disabled user can never authenticate, via any source.</td></tr>
+  <tr><td>AUTH-4</td><td>A user may have several <em>credentials</em> of different kinds: a password hash, and/or any number of external identities <code>(issuer, subject)</code>. The user aggregate does not know how any of them is verified.</td></tr>
+</table></div>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li><code>NewEmail</code> normalises and rejects malformed addresses; <code>Email</code> is a value object (equality by value).</li>
+  <li><code>RegisterUser(id, email, roles, now)</code> records <code>UserRegistered</code>; a new user is Active with the <code>Customer</code> role by default.</li>
+  <li><code>Disable()</code> / <code>Enable()</code> and their idempotence.</li>
+  <li><code>LinkExternalIdentity(issuer, subject)</code>: linking the same pair twice is a no-op; linking a pair <em>another</em> user already owns is rejected at the application layer (uniqueness lives in the repository, as with TKT-3).</li>
+  <li><code>SetPassword(hash)</code> accepts only a <code>PasswordHash</code> value, never a plain string, so the domain can't store a plaintext password by accident.</li>
+</ol></div>
+<div class="callout warn"><span class="label">Pitfall</span><p>Hashing is infrastructure. The domain holds an opaque <code>PasswordHash</code>; the <code>PasswordHasher</code> port (<code>Hash</code>, <code>Verify</code>) is declared in <code>application</code> and implemented later with <strong>argon2id</strong> (<code>golang.org/x/crypto/argon2</code>). Don't write your own scheme, and don't use a fast hash (SHA-256, MD5) for passwords. A fake hasher in tests keeps them fast.</p></div>
+</section>
+
+<section class="lesson" id="le2-3">
+<h3><span class="lesson-id">E2.3</span> Login use cases and the <code>IdentityProvider</code> port</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>One login use case that works for <em>any</em> identity source, so adding Google or Entra later doesn't change it.</dd>
+  <dt>Rules</dt><dd>AUTH-5, AUTH-6</dd>
+  <dt>Concepts</dt><dd>Strategy pattern, ports &amp; adapters, <a href="03-hexagonal-architecture.html">driven ports</a></dd>
+</dl>
+<div class="table-wrap"><table class="rules">
+  <tr><th>Id</th><th>Rule</th></tr>
+  <tr><td>AUTH-5</td><td>Every identity source reduces to the same output: a <code>VerifiedIdentity{Issuer, Subject, Email?, EmailVerified}</code>. The <code>Login</code> use case passes the proof through without ever inspecting it: it never reads a password, parses a JWT from Google, or knows what a SAML assertion is.</td></tr>
+  <tr><td>AUTH-6</td><td>Login failure responses are indistinguishable: unknown user, wrong password and disabled account all return <code>ErrInvalidCredentials</code>. (No account enumeration.)</td></tr>
+</table></div>
+<pre><code>// internal/identity/application/ports.go (a sketch to design from, not to copy)
+type IdentityProvider interface {
+    Name() string  // "password", "oidc:google", ...
+    Authenticate(ctx context.Context, proof Proof) (VerifiedIdentity, error)
+}
+// Proof is provider-specific ({"email","password"} or {"id_token"});
+// opaque to the use case.
+type Proof map[string]string</code></pre>
+<div class="callout do"><span class="label">Your turn</span><ol>
+  <li>Declare <code>IdentityProvider</code>, <code>TokenIssuer</code> (<code>Issue(Claims) (Token, error)</code>) and <code>UserRepository</code> in <code>identity/application</code>.</li>
+  <li>Write <code>Login</code> as a use case that takes a provider <em>name</em> and a <code>Proof</code>, looks the provider up in a registry, resolves the <code>VerifiedIdentity</code> to a <code>User</code>, and issues a token.</li>
+  <li>The "password" provider is itself an adapter (<code>identity/adapters/driven/password</code>): it looks the user up by email, runs the hasher, and returns a <code>VerifiedIdentity</code> with Stagehand as the issuer. Write it against fakes.</li>
+</ol></div>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>Login with the right password → a token for that user's <code>UserID</code>.</li>
+  <li>Wrong password, unknown email, disabled user → the <em>same</em> error (AUTH-6). Add a test that the password provider still calls the hasher for an unknown email, so timing doesn't leak existence.</li>
+  <li>Unknown provider name → <code>ErrUnknownProvider</code>.</li>
+  <li>A fake second provider (<code>"fake-sso"</code>) logs in a linked user without any change to <code>Login</code>. <strong>This test is the point of the lesson.</strong></li>
+  <li>Token claims are minimal: subject, expiry, a token id. Permissions are looked up per request or embedded with a short expiry (see Discuss).</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>Embedded permissions make requests cheap but go stale: a fired employee keeps access until the token expires. Per-request lookup is always fresh but costs a read. Which would you start with, and what is the smallest mitigation for the other?</p></div>
+</section>
+
+<section class="lesson" id="le2-4">
+<h3><span class="lesson-id">E2.4</span> Persistence and the token adapter</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Postgres-backed users and a real signed token, following the same moves as Part 3.</dd>
+  <dt>Creates</dt><dd><code>db/migrations/0000N_identity.sql</code> (<code>identity</code> schema: <code>users</code>, <code>user_roles</code>, <code>external_identities</code> with <code>UNIQUE (issuer, subject)</code>), <code>db/queries/identity/*.sql</code>, <code>identity/adapters/driven/postgres</code>, <code>identity/adapters/driven/token</code> (JWT or PASETO); a <code>stagehand users add --email … --role staff</code> subcommand</dd>
+</dl>
+<div class="callout do"><span class="label">Your turn</span><ol>
+  <li>Write the migration and queries; reuse the <strong>repository contract suite</strong> idea from 2.6 for <code>UserRepository</code> and run it against both the fake and Postgres.</li>
+  <li>Write the token adapter: sign with a key from config, set <code>exp</code>, <code>iat</code>, <code>jti</code>, <code>aud</code>, <code>iss</code>; on verify, <strong>pin the algorithm</strong> and reject <code>alg: none</code> and algorithm switches.</li>
+  <li>Add a unique-violation to domain-error mapping for duplicate email, as you did for optimistic concurrency in 3.6.</li>
+  <li>Public sign-up only ever creates Customers. Add a <code>users add</code> subcommand (next to <code>serve</code> and <code>migrate</code>) to bootstrap the first Staff user, and use it in the e2e setup.</li>
+</ol></div>
+<div class="callout warn"><span class="label">Pitfall</span><p>Key handling is configuration, not code: the signing key comes from an environment variable or file, rotates by supporting a <code>kid</code> and verifying against more than one key, and is never logged or committed. Write the "expired token", "tampered token" and "wrong audience" tests <em>first</em>.</p></div>
+</section>
+
+<section class="lesson" id="le2-5">
+<h3><span class="lesson-id">E2.5</span> The authentication middleware (a driving adapter)</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Turn an <code>Authorization: Bearer …</code> header into a <code>Principal</code> in the request context, and nothing more.</dd>
+  <dt>Rules</dt><dd>AUTH-7</dd>
+  <dt>Creates</dt><dd><code>platform/httpx/authn.go</code> (the middleware, plus a small <code>TokenVerifier</code> interface it consumes, implemented by identity's token adapter and wired in <code>cmd/stagehand</code>); <code>identity/adapters/driving/httpapi</code> with <code>POST /auth/login</code> and <code>GET /auth/me</code></dd>
+</dl>
+<div class="table-wrap"><table class="rules">
+  <tr><th>Id</th><th>Rule</th></tr>
+  <tr><td>AUTH-7</td><td>Missing or invalid credentials on a protected route → <strong>401</strong>. Valid credentials but insufficient permission → <strong>403</strong>. Never the other way round, and never leak <em>why</em> a token was rejected.</td></tr>
+</table></div>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>No header → the handler runs with <code>Anonymous</code> in context (the middleware identifies; it does not decide). A separate <code>httpx.Authenticated(h)</code> wrapper turns Anonymous into 401 on protected routes.</li>
+  <li>Valid token → the downstream handler sees the right <code>Principal</code>.</li>
+  <li>Expired / tampered token → 401 with a generic body.</li>
+  <li><code>POST /auth/login</code> with a provider name and proof → token; same status and body shape for all failure causes (AUTH-6).</li>
+  <li>Health and metrics endpoints stay public (an explicit allow-list, not an accident).</li>
+  <li>Every context's error table (4.2) maps <code>actor.ErrForbidden</code> to 403.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>The middleware is in the <em>adapter</em>, but <code>actor.Principal</code> is in <code>platform</code>. Draw the import arrows. What would go wrong if the use cases imported <code>net/http</code> to read the header themselves? Which of the two is tested more cheaply?</p></div>
+</section>
+
+<section class="lesson" id="le2-6">
+<h3><span class="lesson-id">E2.6</span> RBAC as a decorator: protect every use case without editing one</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Enforce coarse permissions across Venue, Show and Ticketing by wrapping use cases in the composition root.</dd>
+  <dt>Rules</dt><dd>AUTH-8</dd>
+  <dt>Concepts</dt><dd>Decorator pattern, <a href="03-hexagonal-architecture.html">composition root</a></dd>
+</dl>
+<div class="table-wrap"><table class="rules">
+  <tr><th>Id</th><th>Rule</th></tr>
+  <tr><td>AUTH-8</td><td>Each use case declares the single permission it requires. A denied call returns <code>ErrForbidden</code> <em>before</em> any domain code runs and before any state is loaded.</td></tr>
+</table></div>
+<pre><code>// internal/platform/authz: one generic decorator for every use case that
+// returns a result. The handlers already have this shape (chapter 3).
+type handler[C, R any] interface {
+    Handle(ctx context.Context, cmd C) (R, error)
+}
+
+type Authorized[C, R any] struct {
+    perm actor.Permission
+    next handler[C, R]
+}
+
+func Require[C, R any](perm actor.Permission, next handler[C, R]) Authorized[C, R] {
+    return Authorized[C, R]{perm: perm, next: next}
+}
+
+func (a Authorized[C, R]) Handle(ctx context.Context, cmd C) (R, error) {
+    if !actor.From(ctx).Can(a.perm) {
+        var zero R
+        return zero, actor.ErrForbidden
+    }
+    return a.next.Handle(ctx, cmd)
+}
+// Use cases whose Handle returns only error (AddSection) need a twin, RequireCmd.</code></pre>
+<div class="callout do"><span class="label">Your turn</span><ol>
+  <li>Write the decorator test-first with a stub use case. Then wrap <code>RegisterVenue</code>, <code>PublishShow</code>, <code>PlaceOrder</code> and the rest in <code>cmd/stagehand</code>. The HTTP adapters don't notice: their one-method interfaces (chapter 3, "Driving ports in Go") accept the decorated handler as they accepted the plain one.</li>
+  <li><strong>Do not open any existing use-case file.</strong> If you feel you must, write down why: that's a design smell worth discussing.</li>
+  <li><strong>One change you can't avoid:</strong> today the requests carry <code>customerId</code> and <code>promoterId</code> in their bodies (<a href="01-the-domain.html">chapter 1</a>), so anyone can act as anyone. Take the ids from the principal instead and drop those fields from the DTOs. That's a change to the <em>driving adapters</em>, which is exactly where it belongs: the commands still receive a customer id, they just get a trustworthy one.</li>
+  <li><strong>One thing that does <em>not</em> change:</strong> the contact email on <code>POST /orders</code> (TKT-6). Identity owns the <em>account</em> email, the address you log in with; the order owns the <em>contact</em> email, the address the tickets go to. They are different concepts that often hold the same value (someone buying for a friend uses the friend's address). The checkout page may pre-fill the contact email from the account, but Ticketing never reads Identity's data.</li>
+  <li>Run the existing suite. Domain, application and adapter tests pass untouched, because they build use cases without the decorator. The e2e suite now gets 401s: give it a login helper (one user per role, created with <code>users add</code>) and send tokens. That is the honest cost of the feature.</li>
+  <li>Add one e2e test per role showing which of the three journeys (S1, S3, S6) each can and can't run.</li>
+</ol></div>
+<div class="callout warn"><span class="label">Pitfall: the forgotten route</span><p>With decoration in the composition root, a <em>new</em> use case is unprotected until someone wraps it. Add an architecture test: every handler registered on the router must be built through <code>Require(...)</code> or be on an explicit <code>public</code> list. Make forgetting loud.</p></div>
+</section>
+
+<section class="lesson" id="le2-7">
+<h3><span class="lesson-id">E2.7</span> Ownership: a rule that needs business data</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>"A venue manager may only change venues they manage." Extend the existing <code>Venue</code> aggregate without breaking it.</dd>
+  <dt>Rules</dt><dd>VEN-8</dd>
+  <dt>Touches</dt><dd><code>venue/domain</code> (additively), the <code>RegisterVenue</code> command, one guard line in <code>AddSection</code>, <code>ActivateVenue</code> and <code>RetireVenue</code>, a nullable <code>manager_id</code> column. No contract changes: no other context needs to know who manages a venue.</dd>
+</dl>
+<div class="table-wrap"><table class="rules">
+  <tr><th>Id</th><th>Rule</th></tr>
+  <tr><td>VEN-8</td><td>A venue is managed by one user (<code>ManagerID</code>, set at registration to the registering user). Only its manager, or a principal with <code>venue:admin</code>, may add sections, activate or retire it.</td></tr>
+</table></div>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li><code>RegisterVenue</code> gains a <code>ManagerID</code> input. Test helpers that build a venue get one more argument; no behaviour test changes its assertions.</li>
+  <li><code>venue.ManagedBy(userID) bool</code>: true only for the manager. The domain <em>answers</em> the question; it doesn't know about permissions or admins.</li>
+  <li>Application: <code>AddSection</code> by a non-manager → <code>ErrNotVenueManager</code> and nothing saved; by the manager → OK; by a principal with <code>venue:admin</code> → OK. Same for activate and retire. This is the one place E2 opens existing use cases, and each gets a single guard after the load.</li>
+  <li><code>RegisterVenue</code> takes the manager from the principal, never from a header or the request body.</li>
+  <li>Venues created before this change have no manager. Decide what that means (only admins may change them) and test it, including reconstitution from a row with a NULL <code>manager_id</code>.</li>
+</ol></div>
+<div class="callout why"><span class="label">Why not put the check inside <code>AddSection</code> itself?</span><p>You could: <code>venue.AddSection(by, section)</code> would make the rule impossible to forget, at the price of changing every behaviour method's signature and every test that calls it. The admin bypass would still have to live outside, because the domain doesn't import <code>actor</code>. Try both on paper and choose. The lesson is that either way the <em>knowledge</em> of who manages the venue sits in the aggregate, and the knowledge of permissions sits in the application.</p></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>Could RBAC alone express this rule? ("manager of <em>which</em> venue?") Where would "permissions per resource" tempt you to put business data in the identity context, and why is that a leak between contexts?</p></div>
+</section>
+
+<section class="lesson" id="le2-8">
+<h3><span class="lesson-id">E2.8</span> A second source: SSO through OpenID Connect</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Add "Sign in with an external IdP" as a new <code>IdentityProvider</code> adapter. Local password login keeps working <em>alongside</em> it.</dd>
+  <dt>Rules</dt><dd>AUTH-9, AUTH-10</dd>
+  <dt>Creates</dt><dd><code>identity/adapters/driven/oidc</code> (one generic adapter configured per provider), config for N providers, a fake IdP for tests</dd>
+</dl>
+<div class="table-wrap"><table class="rules">
+  <tr><th>Id</th><th>Rule</th></tr>
+  <tr><td>AUTH-9</td><td>An external identity is identified by <code>(issuer, subject)</code>, <strong>never by email alone</strong>. The first successful login with an unknown pair either auto-provisions a Customer user or is rejected, per config.</td></tr>
+  <tr><td>AUTH-10</td><td>An external identity may be linked to an <em>existing</em> user by email only when the provider asserts <code>email_verified</code> and the provider is configured as trusted for linking. Otherwise it creates a separate user.</td></tr>
+</table></div>
+<div class="callout do"><span class="label">Your turn</span><ol>
+  <li>Implement one <code>oidc</code> adapter that validates an <strong>ID token</strong>: signature against the provider's JWKS, <code>iss</code>, <code>aud</code>, <code>exp</code>, and nonce when used. Configure it per provider (<code>google</code>, <code>entra</code>, …) from a list in config. Adding a provider is a config change.</li>
+  <li>Test it with an in-process fake IdP (<code>httptest.Server</code> serving a discovery document and a JWKS you sign with a test key). No real network.</li>
+  <li>Register both <code>password</code> and <code>oidc:*</code> providers in the registry at startup; each can be disabled by config. Test the matrix: password off / oidc on, and the reverse.</li>
+  <li>The browser flow (redirect, code exchange) is a driving-adapter concern. Keep it out of <code>Login</code>: by the time we reach the use case, we hold a verified ID token.</li>
+</ol></div>
+<div class="callout warn"><span class="label">Pitfall: account takeover by email</span><p>If you link by email without <code>email_verified</code> and trust, an attacker who creates an account at a lax provider with your email becomes you. AUTH-10 exists because of that. Write the attack as a test first.</p></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>You added a whole new authentication mechanism and changed <em>zero</em> lines of <code>Login</code>, <code>User</code>, the token issuer, the middleware or any other context. Which design choice made that true? What would have broken it?</p></div>
+</section>
+
+<section class="lesson" id="le2-9">
+<h3><span class="lesson-id">E2.9</span> Extend the architecture test, and a threat checklist</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Make the new boundaries enforceable and review the obvious attack surface.</dd>
+</dl>
+<div class="callout do"><span class="label">Your turn</span><ol>
+  <li>Extend the architecture test: <code>domain</code> packages may not import <code>platform/actor</code>; other contexts may not import <code>identity/*</code> (only <code>platform/actor</code> and, if you publish them, <code>identity/contracts</code>).</li>
+  <li>Walk the checklist and file a note or a follow-up for each: rate limiting and lockout on <code>/auth/login</code>; password length/breach policy; token revocation (a denylist keyed by <code>jti</code>, or short expiry); CSRF if you ever move tokens into cookies; audit of login attempts (E4).</li>
+  <li>Record any decision that changed in <a href="ext-decisions.html">the extension ADR log</a>.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>Where would multi-tenancy (one Stagehand, many ticketing companies) enter? Is it a new permission, a new field on <code>Principal</code>, or a new bounded context? What would you want to know before answering?</p></div>
+</section>
+</main>
+<script src="assets/course.js"></script>
+</body>
+</html>

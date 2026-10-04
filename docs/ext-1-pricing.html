@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Extension E1 · Pricing</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main class="content">
+<header>
+  <div class="kicker">Extension track · E1 · needs Part 7</div>
+  <h1>Pricing: dynamic prices, discounts, fees and taxes</h1>
+  <p class="lead">So far a seat costs exactly what the promoter wrote in the price list. Real ticketing prices move with demand, get discounted, carry fees and owe tax, and every cent of that has to add up, survive refunds, and be explainable to the customer. This extension is almost pure domain modelling: value objects, domain services, one aggregate learning a new trick, and very little infrastructure. It's the best place in the track to practise TDD on rich, rule-heavy code.</p>
+</header>
+
+<div class="callout why"><span class="label">How this relates to lesson 9.8</span><p><a href="part-9-stretch.html#l9-8">Stretch 9.8</a> asks for a service fee and VAT in a <code>PricingPolicy</code>. This extension is the full treatment of the same area. If you did 9.8, you'll recognise E1.6–E1.7 and can reuse your code; E1.9 revisits 9.8's idea of fees as a domain service once the rules justify one.</p></div>
+
+<h2>Who owns which price?</h2>
+<p>"Price" means different things in different contexts. Pin it down before writing any code:</p>
+<div class="table-wrap"><table>
+  <tr><th>Term</th><th>Owner</th><th>Meaning</th></tr>
+  <tr><td><strong>List price</strong></td><td>Show (SHW-4)</td><td>What the promoter set per section. It arrives in Ticketing through the <code>show.published.v1</code> snapshot and doesn't change in this extension.</td></tr>
+  <tr><td><strong>Selling price</strong></td><td>Ticketing</td><td>The list price after demand adjustment, at the moment a customer holds a seat. Locked for that hold.</td></tr>
+  <tr><td><strong>Discount</strong></td><td>Ticketing</td><td>A reduction from a promotion: automatic (early bird, group) or a promo code.</td></tr>
+  <tr><td><strong>Fee</strong></td><td>Ticketing</td><td>What Stagehand charges on top: a per-ticket service fee and a per-order fee.</td></tr>
+  <tr><td><strong>Tax</strong></td><td>Ticketing, using the venue's jurisdiction</td><td>VAT or sales tax, either <em>included</em> in the price or <em>added</em> to it, depending on the country.</td></tr>
+  <tr><td><strong>Price breakdown</strong></td><td>Ticketing</td><td>The itemised, all-in result for an order: what the customer pays and why.</td></tr>
+</table></div>
+
+<div class="callout why"><span class="label">Design decision (ADR-E02): pricing is a module of Ticketing, not a new context</span><p>Every one of these numbers has to be consistent with a specific hold and order, which Ticketing owns. So pricing lives in <code>internal/ticketing/domain/pricing</code>: a sub-package of the domain, pure Go, imported by Ticketing's domain and application layers and by nobody else. If a revenue-management team later owns pricing rules, it could become its own context. The package boundary makes that move cheap.</p></div>
+
+<h2>The pricing pipeline</h2>
+<pre><code>list price (Show snapshot)
+   │  demand adjustment       DemandPolicy       E1.3  ┐ inside ShowInventory.Hold,
+   ▼                                                    │ locked for the hold (E1.4)
+selling price per seat ─────────────────────────────────┘
+   │  discounts               DiscountPolicy     E1.5  ┐
+   ▼                                                    │
+discounted ticket price                                 │ at PlaceOrder,
+   │  + fees                  FeeSchedule        E1.6  │ by the OrderPricing
+   ▼                                                    │ domain service (E1.8)
+   │  + taxes                 TaxPolicy          E1.7  │
+   ▼                                                    │
+PriceBreakdown (all-in total) ──► Order ──► payment ────┘</code></pre>
+
+<h3>Rules</h3>
+<div class="table-wrap"><table class="rules">
+  <tr><th>Id</th><th>Rule</th></tr>
+  <tr><td>PRC-1</td><td>Money arithmetic never uses floating point. Amounts are integer minor units (<code>Money</code>), rates are integer <em>basis points</em> (1 bp = 0.01%), and rounding happens only at named steps, with one documented mode.</td></tr>
+  <tr><td>PRC-2</td><td>The pipeline order is fixed: list price → demand adjustment → discounts → fees → taxes. Each step sees only the output of the previous one. Discounts never reduce fees or taxes.</td></tr>
+  <tr><td>PRC-3</td><td>Demand pricing is <em>off</em> unless configured for the show. When on, a seat's selling price stays within a floor and ceiling of its list price (default 80%–150%), changes in steps, and is rounded to a price point (default: the nearest 0.50 of the currency).</td></tr>
+  <tr><td>PRC-4</td><td><strong>Price lock.</strong> The selling price is decided when seats are held and is what the customer pays for that hold, whatever demand does afterwards. All seats of one section in one hold get the same unit price. A preview quote is never binding.</td></tr>
+  <tr><td>PRC-5</td><td>At most one promo code per order. Automatic discounts don't stack with each other (the best one wins), but the best one stacks with a promo code. Total discount is capped (default 50% of the discountable amount). An ineligible code is rejected with a reason, never silently ignored.</td></tr>
+  <tr><td>PRC-6</td><td>The service fee is a rate of the discounted ticket price, clamped to a minimum and maximum per ticket. The order fee is a flat amount once per order. Fees are always shown and never discounted.</td></tr>
+  <tr><td>PRC-7</td><td>The tax rule comes from the venue's country. A rule is either <em>inclusive</em> (the price already contains tax, as with EU VAT) or <em>exclusive</em> (tax is added, as with most US sales tax), and says whether fees are taxable. Tax is computed per line and summed.</td></tr>
+  <tr><td>PRC-8</td><td>A breakdown is internally consistent: every amount ≥ 0, one currency, the total equals the sum of its lines, and the price shown to the customer is the all-in total.</td></tr>
+</table></div>
+
+<section class="lesson" id="le1-1">
+<h3><span class="lesson-id">E1.1</span> Money you can trust: rates, rounding and allocation</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>The arithmetic everything else is built on. Small, boring and completely reliable.</dd>
+  <dt>Rules</dt><dd>PRC-1</dd>
+  <dt>Concepts</dt><dd><a href="02-ddd-building-blocks.html#value-object">Value object</a>, <a href="02-ddd-building-blocks.html#shared-kernel">shared kernel</a></dd>
+  <dt>Creates</dt><dd><code>internal/ticketing/domain/pricing/{rate,rounding,allocate}.go</code> + tests</dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li><code>NewRate(bp int)</code>: <code>1000</code> is 10%. Negative rates are rejected. Is a rate over 100% valid? Yes for a demand multiplier (150%), no for a discount: make that a decision of the <em>caller</em>, not of <code>Rate</code>.</li>
+  <li><code>ApplyRate(m Money, r Rate) Money</code> rounds the result <strong>half up</strong> (away from zero): 10% of 0.05 = 0.01; 10% of 0.04 = 0.00. Table-test the boundaries.</li>
+  <li><code>Allocate(total Money, weights []int64) []Money</code> splits an amount by weights so the parts <em>always</em> sum to the total (largest-remainder method). Splitting 10.00 three ways gives 3.34, 3.33, 3.33, never 3.33 × 3 = 9.99.</li>
+  <li><code>RoundTo(m, step)</code>: rounds to a price point such as 0.50 (needed by E1.3).</li>
+  <li>A currency mismatch in any operation is an error, as <code>Money</code> already enforces.</li>
+</ol></div>
+<div class="callout warn"><span class="label">Pitfall: the shared kernel</span><p>It's tempting to add <code>Rate</code> and <code>Allocate</code> to <code>internal/sharedkernel</code>. Don't, yet: ADR-009 keeps the kernel small because every change to it touches every context. They stay in Ticketing's <code>pricing</code> package until a second context really needs them. (Payments in E5 will need <code>Allocate</code> for partial refunds. That's when you have the conversation.)</p></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>Half up or half even ("banker's rounding")? Half even removes a tiny upward bias over millions of operations; half up is what customers expect on a receipt. Pick one, record it as part of ADR-E03, and explain who could ever notice the difference.</p></div>
+</section>
+
+<section class="lesson" id="le1-2">
+<h3><span class="lesson-id">E1.2</span> The <code>PriceBreakdown</code> value object</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Model the result first. Every later step produces or refines one of these.</dd>
+  <dt>Rules</dt><dd>PRC-2, PRC-8</dd>
+  <dt>Creates</dt><dd><code>pricing/breakdown.go</code> + tests</dd>
+</dl>
+<pre><code>// A shape to react to, not to copy.
+PriceBreakdown
+  Lines []LineBreakdown          // one per seat
+    SeatRef
+    ListPrice      Money         // from the snapshot
+    SellingPrice   Money         // after demand (locked at hold)
+    Discounts      []Adjustment  // {Source: "early_bird" | "code:SPRING10", Amount}
+    ServiceFee     Money
+    Tax            TaxAmount     // {Rate, Amount, Inclusive bool}
+  OrderFee         Money
+  OrderFeeTax      TaxAmount
+  Total            Money         // what the customer pays</code></pre>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>A breakdown whose lines don't add up to <code>Total</code> can't be constructed (PRC-8). The constructor computes the total; nobody passes it in.</li>
+  <li>Mixed currencies → error. Any negative component → error.</li>
+  <li>Exclusive tax adds to the total; inclusive tax is <em>reported</em> but not added. Test both with the same numbers.</li>
+  <li>Accessors the business will ask for: <code>Subtotal()</code>, <code>TotalDiscount()</code>, <code>TotalFees()</code>, <code>TotalTax()</code>, <code>LineTotal(seat)</code>. The last one is what a per-ticket refund will need later.</li>
+  <li>Equality by value: two breakdowns built from the same inputs are equal (<code>cmp.Equal</code>).</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>Why store every component instead of just the total? Think about a support agent explaining a charge, a partial refund (E5.9), and a tax report. Which of these is impossible if only <code>Total</code> survives?</p></div>
+</section>
+
+<section class="lesson" id="le1-3">
+<h3><span class="lesson-id">E1.3</span> Demand pricing as a pure policy</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Turn "how full is this section, and how soon is the show?" into a price, with no aggregate and no clock in sight.</dd>
+  <dt>Rules</dt><dd>PRC-3</dd>
+  <dt>Concepts</dt><dd><a href="02-ddd-building-blocks.html#domain-service">Domain service</a> as a pure function; ADR-008 (time is an input)</dd>
+  <dt>Creates</dt><dd><code>pricing/demand.go</code> (<code>DemandRules</code> value object, <code>DemandPolicy</code>) + tests</dd>
+</dl>
+<p>Example rules, as data: occupancy ≥ 70% → +10%; occupancy ≥ 90% → +25%; less than 24 h before the show and occupancy &lt; 50% → −15%. Floor 80%, ceiling 150%, price point 0.50.</p>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li><code>DemandRules{}</code> (the zero value) means <em>off</em>: the selling price equals the list price for every input. This is what keeps every existing test green in E1.4.</li>
+  <li><code>policy.Price(list, occupancy, untilShow)</code>, table-tested: each tier, the boundaries (exactly 70%), and the last-minute markdown.</li>
+  <li>Floor and ceiling clamp the result even with a silly configuration (+300%).</li>
+  <li>The result is rounded to the price point with <code>RoundTo</code> from E1.1, and the rounding never crosses the floor or the ceiling.</li>
+  <li><code>NewDemandRules</code> rejects overlapping or unordered tiers and a floor above the ceiling.</li>
+  <li>Occupancy is a value object (<code>sold + held</code> over capacity, per section). Building it from counts belongs to the aggregate (E1.4); the policy only reads it.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>Should <em>held</em> seats count toward occupancy, or only sold ones? A bot that holds 8 seats in a loop could push prices up for everyone. Which choice resists that, and what does it cost?</p></div>
+</section>
+
+<section class="lesson" id="le1-4">
+<h3><span class="lesson-id">E1.4</span> The price lock: teach <code>ShowInventory</code> to quote</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Decide the selling price at the moment of the hold, inside the aggregate that knows the occupancy, without breaking a single existing test.</dd>
+  <dt>Rules</dt><dd>PRC-3, PRC-4; extends TKT-2 and TKT-6</dd>
+  <dt>Touches (additively)</dt><dd><code>ticketing/domain/{inventory,hold,events}.go</code>, the <code>SeatsHeld</code> event, the <code>holds</code> table (a price column per held seat)</dd>
+</dl>
+<div class="callout do"><span class="label">Your turn (keep the suite green throughout)</span><ol>
+  <li>Give <code>ShowInventory</code> a <code>DemandRules</code> field, zero by default, and a new behaviour <code>ConfigureDemandPricing(rules, now)</code> that records <code>DemandPricingConfigured</code>. Refuse it on a closed inventory. Leave the signatures of <code>OpenInventory</code> and <code>Hold</code> alone.</li>
+  <li>Inside <code>Hold</code>, compute each section's occupancy <em>before</em> the hold and ask the policy for the unit price. Store it on the <code>Hold</code> entity per seat, and add it to <code>SeatsHeld</code>.</li>
+  <li>Run the whole suite. With zero rules every price equals the list price, so every existing test passes unchanged. If one doesn't, you've changed behaviour, not added it.</li>
+  <li>Make <code>PlaceOrder</code> take its prices from the hold view instead of the section price list (TKT-6's "the sum of the line prices" now means the <em>locked</em> prices).</li>
+  <li>Add the use case <code>ConfigureDemandPricing</code> and a Postgres column for the rules (JSON is fine; it's a value object). After E2 it gets a permission.</li>
+</ol></div>
+<div class="callout tdd"><span class="label">TDD script (new behaviour)</span><ol class="tests">
+  <li>With rules on and a section at 75%: a hold gets list + 10%, rounded to the price point.</li>
+  <li><strong>Price lock:</strong> a hold at 69% occupancy, then another customer's hold pushes the section past 70%: the first hold's price doesn't change, and its order uses the old price (PRC-4).</li>
+  <li>Four seats in one section in one hold, even if the hold itself crosses a tier boundary, all get the same unit price: the one computed from occupancy before the hold.</li>
+  <li>Released and expired holds give their seats back, so occupancy falls and the next quote can drop.</li>
+  <li>Reconstituting an inventory and its holds from storage keeps the locked prices exactly.</li>
+</ol></div>
+<div class="callout why"><span class="label">Why inside the aggregate and not in the use case? (ADR-E04)</span><p>The occupancy and the hold must be consistent. If the use case read occupancy, computed a price and then called <code>Hold</code>, another hold could land in between and the price would be based on stale numbers. Passing the <em>rules</em> into the aggregate keeps the decision inside the consistency boundary that ADR-005 already pays for, and the policy itself stays a pure function you tested in E1.3.</p></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>Dynamic pricing for live events is controversial with fans. Which rule in this lesson protects the customer, and which additional rule (published ceilings, a visible "price may change" notice, a per-customer cap) would you add if the business asked for fairness?</p></div>
+</section>
+
+<section class="lesson" id="le1-5">
+<h3><span class="lesson-id">E1.5</span> Discounts: specifications and stacking</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Model promotions whose eligibility rules change every month, without a growing <code>if</code> ladder.</dd>
+  <dt>Rules</dt><dd>PRC-2, PRC-5</dd>
+  <dt>Concepts</dt><dd>Specification pattern, <a href="02-ddd-building-blocks.html#policy">policy</a></dd>
+  <dt>Creates</dt><dd><code>pricing/{promotion,specification,discount_policy}.go</code>; a read-only <code>Promotions</code> port in <code>application</code> with an in-memory adapter</dd>
+</dl>
+<div class="table-wrap"><table>
+  <tr><th>Promotion</th><th>Kind</th><th>Eligibility (specification)</th><th>Benefit</th></tr>
+  <tr><td>Early bird</td><td>automatic</td><td>ordered more than 30 days before the show</td><td>10% off tickets</td></tr>
+  <tr><td>Group</td><td>automatic</td><td>6 or more seats in the order</td><td>5% off tickets</td></tr>
+  <tr><td><code>SPRING10</code></td><td>code</td><td>valid between two dates, for these shows only</td><td>10.00 off the order, allocated across tickets</td></tr>
+  <tr><td><code>FRONTROW</code></td><td>code</td><td>section <code>ORCH</code> only, at least 2 seats</td><td>15% off the matching tickets</td></tr>
+</table></div>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>A <code>Specification</code> is <code>IsSatisfiedBy(PricingContext) (bool, Reason)</code>, where <code>PricingContext</code> carries the order's lines, the show, the customer id and <code>now</code>. Write <code>MinSeats</code>, <code>DaysBeforeShow</code>, <code>ValidBetween</code>, <code>ForShows</code>, <code>ForSections</code>, plus <code>And</code>, <code>Or</code>, <code>Not</code>.</li>
+  <li>An ineligible code returns <em>why</em> (<code>ErrPromotionNotApplicable{Reason: "min_seats"}</code>), which the HTTP adapter can show.</li>
+  <li>Codes are normalised (trimmed, upper-cased) and unknown codes → <code>ErrUnknownPromotion</code>.</li>
+  <li>Stacking (PRC-5): two automatic promotions → only the better one applies; one automatic plus a code → both apply; a second code → error.</li>
+  <li>The cap: a 40% code on top of a 20% automatic discount is limited to 50% total.</li>
+  <li>A fixed amount off the order is spread across the lines with <code>Allocate</code> (weighted by line price), so every line knows its share. A section-specific discount touches only its lines.</li>
+  <li>Discounts reduce ticket prices only. Fees and taxes are computed afterwards from the discounted price (PRC-2), so a discount can never make a fee negative.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>"Max 100 redemptions" is a rule that crosses orders. Can a specification enforce it? (No: a specification sees one order.) Keep that thought for the stretch in E1.10.</p></div>
+</section>
+
+<section class="lesson" id="le1-6">
+<h3><span class="lesson-id">E1.6</span> Fees</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Add what Stagehand charges for its service, transparently.</dd>
+  <dt>Rules</dt><dd>PRC-6</dd>
+  <dt>Creates</dt><dd><code>pricing/fees.go</code> (<code>FeeSchedule</code> value object) + tests; a <code>FeeSchedules</code> port with a config-backed adapter</dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>Service fee 10% with a minimum of 1.50 and a maximum of 15.00 per ticket: a 10.00 ticket pays 1.50; a 40.00 ticket pays 4.00; a 300.00 ticket pays 15.00.</li>
+  <li>The fee base is the <em>discounted</em> ticket price: a 20.00 ticket discounted to 15.00 pays 10% of 15.00 (subject to the minimum).</li>
+  <li>The order fee (say 2.00) is charged once per order, not per ticket.</li>
+  <li>A zero-priced ticket (a 100%-discounted comp, if the cap ever allows one) pays no service fee. Decide, test, document.</li>
+  <li>The schedule is chosen per currency (an order fee in EUR can't be added to a USD order).</li>
+</ol></div>
+<div class="callout warn"><span class="label">Pitfall: "drip pricing"</span><p>Showing a low ticket price and revealing fees at the last step is illegal for event tickets in several places (for example, the US FTC's 2025 rule on unfair or deceptive fees requires the total price, including mandatory fees, up front). That's why PRC-8 says the customer-facing price is the all-in total, and why fees live in the breakdown from the start instead of being bolted on at payment.</p></div>
+</section>
+
+<section class="lesson" id="le1-7">
+<h3><span class="lesson-id">E1.7</span> Taxes, and the one fact no contract carries</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Compute inclusive and exclusive taxes correctly, and get the venue's country into Ticketing.</dd>
+  <dt>Rules</dt><dd>PRC-7</dd>
+  <dt>Creates</dt><dd><code>pricing/tax.go</code> (<code>TaxRule</code>, <code>TaxPolicy</code>) + tests; a <code>TaxRules</code> port with a config table</dd>
+  <dt>Touches (additively)</dt><dd><code>venue.activated.v1</code> and <code>show.published.v1</code> each gain an optional <code>country</code> field; Show's <code>VenueLayout</code> projection (6.5) stores it</dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li><strong>Exclusive:</strong> 8.25% on 39.99 → 3.299… → tax 3.30, line total 43.29.</li>
+  <li><strong>Inclusive:</strong> 20% VAT in a gross price of 48.00 → tax = 48.00 × 20 / 120 = 8.00; the line total stays 48.00. Write it in basis points: <code>tax = round(gross × bp / (10000 + bp))</code>.</li>
+  <li>Fees taxable or not, per rule: with taxable fees, the service fee and the order fee get their own tax amounts.</li>
+  <li><strong>Per-line rounding:</strong> three lines of 0.10 at 25% exclusive → 0.03 + 0.03 + 0.03 = 0.09, not round(0.075) = 0.08. Document that tax is rounded per line (PRC-7), because the per-ticket refund will need it.</li>
+  <li>An unknown country → <code>ErrNoTaxRule</code>, never a silent 0%.</li>
+  <li>Some real rates don't fit in whole basis points (New York City's combined 8.875% is 887.5 bp). Decide whether <code>Rate</code> needs a finer unit, and change E1.1's tests first if it does.</li>
+</ol></div>
+<div class="callout do"><span class="label">Your turn: the missing fact</span><ol>
+  <li>Taxes depend on the venue's country, and today no event carries it. The snapshot principle (<a href="01-the-domain.html">chapter 1</a>: Ticketing never asks Venue or Show anything) tells you where it must go: into the snapshot.</li>
+  <li>Add an <em>optional</em> <code>country</code> to <code>venue.activated.v1</code>; Show's projection stores it; <code>show.published.v1</code> carries it; <code>OpenInventory</code> keeps it. Update the golden files and keep the "old payload still parses" test green: no v2 needed (that's 9.3's playbook for <em>breaking</em> changes).</li>
+  <li>Inventories opened before this change have no country. Decide what checkout does for them (refuse, or use a configured default) and test it.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>This is the only change in the extension outside Ticketing's domain. Why couldn't Ticketing just look the venue up in the <code>venue</code> schema? Name the ADR it would break and the failure it would cause during an outage.</p></div>
+</section>
+
+<section class="lesson" id="le1-8">
+<h3><span class="lesson-id">E1.8</span> Put it together: the <code>OrderPricing</code> service, checkout and a preview</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>One domain service that runs the pipeline; the order stores the result; the customer can see a quote before holding.</dd>
+  <dt>Rules</dt><dd>PRC-2, PRC-4, PRC-8; extends TKT-6</dd>
+  <dt>Touches</dt><dd><code>Order</code> (stores a <code>PriceBreakdown</code>), the <code>PlaceOrder</code>/<code>Checkout</code> use case (one optional <code>PromoCode</code> field), the HTTP DTOs, the <code>orders</code> table</dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script (outside-in)</span><ol class="tests">
+  <li><strong>Acceptance (red):</strong> early bird on, demand on, 25% VAT inclusive, 10% service fee: a customer holds 2 seats, checks out with <code>SPRING10</code>, and the order total, the payment amount and the tickets-issued email all show the same all-in total, itemised.</li>
+  <li>Domain: <code>OrderPricing.Price(lockedLines, promotions, code, fees, taxRule, ctx)</code> returns a <code>PriceBreakdown</code>, table-tested across combinations. This is a domain service: it coordinates value objects and policies and holds no state.</li>
+  <li><code>Order.Place</code> takes the breakdown; <code>Total()</code> is the breakdown's total; the payment port charges exactly that.</li>
+  <li>Application: <code>PlaceOrder</code> loads the hold's locked lines, the active promotions, the fee schedule and the tax rule through their ports, calls <code>OrderPricing</code>, and passes the result to <code>Order.Place</code>. Still one aggregate saved.</li>
+  <li>A query <code>GET /shows/{id}/quote?seats=…&amp;promo=…</code> runs the same pipeline on the <em>current</em> demand price without holding anything, labelled non-binding (PRC-4).</li>
+  <li>HTTP: the order response and the quote return the itemised breakdown as a DTO; promotion errors map to 422 with the reason.</li>
+  <li>Old orders (placed before this extension) have no breakdown: reconstitute them with a one-line breakdown equal to their total, and test that path.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>Count the files you changed in this extension outside <code>ticketing/domain</code>. Now imagine the same features with pricing logic in HTTP handlers and SQL. Which tests would you be able to write, and how fast would they run?</p></div>
+</section>
+
+<section class="lesson" id="le1-9">
+<h3><span class="lesson-id">E1.9</span> Stretch: fees as a domain service</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>When fee rules stop being a table and start being business logic, give them a home of their own. (This is where 9.8 was heading.)</dd>
+  <dt>Creates</dt><dd><code>pricing/fee_policy.go</code>; <code>FeeSchedule</code> becomes one input of <code>FeePolicy</code></dd>
+</dl>
+<p>New requirements arrive: the service fee is waived for orders made at the box office; venues can add a facility fee per ticket that is passed through untouched; members pay half the service fee; charity shows have no fees at all.</p>
+<div class="callout do"><span class="label">Your turn</span><ol>
+  <li>Write the new requirements as tests against <code>OrderPricing</code> first. Watch the fee code turn into an <code>if</code> ladder, and stop.</li>
+  <li>Extract <code>FeePolicy</code>: an ordered list of <code>FeeRule{When Specification, Apply func(...)}</code>, reusing the specification combinators from E1.5. The default policy reproduces E1.6 exactly; prove it by running E1.6's tests through it unchanged.</li>
+  <li>Add the new rules one test at a time. A facility fee is a separate line in the breakdown, because the venue gets that money, not Stagehand.</li>
+  <li>The sales channel (web or box office) and the membership flag are new inputs in <code>PricingContext</code>. Where do they come from? (The driving adapter knows the channel; membership is a fact about the customer that some context owns. Which one?)</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>When is a domain service the right tool, and when is it an "anemic" escape hatch for logic that belongs in an entity? Apply the test from <a href="02-ddd-building-blocks.html#domain-service">chapter 2</a> to <code>FeePolicy</code>, <code>DemandPolicy</code> and <code>OrderPricing</code>.</p></div>
+</section>
+
+<section class="lesson" id="le1-10">
+<h3><span class="lesson-id">E1.10</span> Stretch: redemption limits, a rule that crosses orders</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>"Each code can be used 100 times, once per customer." Decide the consistency you need and pay for exactly that.</dd>
+  <dt>Concepts</dt><dd><a href="02-ddd-building-blocks.html#aggregate">Aggregate</a> boundaries, ADR-010 (sagas), ADR-011 (optimistic concurrency)</dd>
+</dl>
+<div class="callout do"><span class="label">Your turn (paper first)</span><ol>
+  <li>Compare three designs: (a) a <code>Promotion</code> aggregate with a redemption count, reserved <em>before</em> placing the order and released if the order fails (a small saga); (b) count redemptions after the fact and accept a small overrun; (c) a unique constraint on <code>(code, customer)</code> plus a counter row updated with optimistic concurrency.</li>
+  <li>For each: what happens with 500 customers redeeming the last 10 uses in the same second? Which is "wrong" in a way the business would actually mind?</li>
+  <li>Implement the one you chose, test-first, with the 7.6 race test as a template.</li>
+  <li>Record the decision as a new ADR in the <a href="ext-decisions.html">extension log</a>.</li>
+</ol></div>
+</section>
+</main>
+<script src="assets/course.js"></script>
+</body>
+</html>

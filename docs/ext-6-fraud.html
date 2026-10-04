@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Extension E6 · Fraud Screening</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main class="content">
+<header>
+  <div class="kicker">Extension track · E6 · needs E5</div>
+  <h1>Fraud screening: a vendor we ask, and a vendor we feed</h1>
+  <p class="lead">Fraud vendors (Sift, Riskified, Signifyd, Forter, Kount, Stripe Radar and others) are third parties. We never see their models. We send them a transaction, get back a signal, and later tell them how it turned out. This extension is the best example in the course of two integration directions with different timing: a <strong>synchronous inquiry</strong> in the middle of checkout, and an <strong>asynchronous feed</strong> of outcomes afterwards.</p>
+</header>
+
+<div class="callout why"><span class="label">What we build, and what we don't</span>
+<p>We build the <em>Fraud Screening</em> context and a <strong>fake vendor</strong> with scriptable behaviour. There is no real vendor integration. The goal is to model it so well that swapping the fake for a real one is one adapter. The fake can be a small in-process adapter first; if you want real HTTP and real timeouts, run it as a tiny separate service in Compose (<code>fake-fraud-vendor</code>) that listens for inquiries and posts decisions back.</p></div>
+
+<h2>What a screening integration actually looks like</h2>
+<p>Vendors differ in detail, but the shape is remarkably stable. This is the model we'll use (it's a sketch from common industry practice, not any one vendor's API):</p>
+<div class="table-wrap"><table>
+  <tr><th>Flow</th><th>Direction / timing</th><th>Payload (what we send or learn)</th><th>Our word for it</th></tr>
+  <tr><td><strong>Inquiry</strong> before payment</td><td>Sync request/response, tight timeout (about 1–3 s)</td><td>Order and customer details, amount, items, billing/shipping address, email, client IP, user agent, <strong>device fingerprint / session id from a browser snippet</strong>, account age and history, payment-method hints (brand, BIN, last 4, a card fingerprint: never the number, and obtained from the provider through Payments)</td><td><code>ScreeningRequest</code> → <code>ScreeningResult{Signal, Score?, Reasons[], VendorRef}</code></td></tr>
+  <tr><td>Inquiry <strong>after</strong> authorization (pre-capture)</td><td>Same, later</td><td>Adds issuer outcomes: AVS/CVV results, auth code</td><td>Same type with <code>Stage = BeforeCapture</code></td></tr>
+  <tr><td><strong>Manual review</strong> result</td><td>Async: vendor calls us (webhook) later</td><td>A final Approve/Decline after a human looked at it</td><td><code>ReviewResolved</code></td></tr>
+  <tr><td><strong>Outcome feedback</strong></td><td>Async, <em>we</em> call them, fire-and-retry</td><td>Authorized, declined (with reason), captured, voided, refunded, <strong>chargeback</strong> (with reason code)</td><td><code>TransactionOutcome</code></td></tr>
+  <tr><td><strong>Issuer fraud reports</strong> (Visa TC40, Mastercard SAFE)</td><td>Async inbound, often days or weeks later, through the vendor or the acquirer</td><td>"The cardholder's bank reported this transaction as fraud." Not a dispute, no deadline, nothing to act on, and frequently never followed by a chargeback</td><td><code>IssuerFraudReport</code></td></tr>
+  <tr><td><strong>Pre-dispute alerts</strong> (e.g. Ethoca, Verifi)</td><td>Async inbound, before a chargeback is filed</td><td>"This will become a dispute unless you refund now." Actionable, with a short window</td><td><code>PreDisputeAlert</code></td></tr>
+</table></div>
+<div class="callout warn"><span class="label">Two kinds of bad news, kept apart</span><p>Card schemes and alert networks have their own names and codes: Visa's <strong>TC40</strong> and Mastercard's <strong>SAFE</strong> fraud reports, and pre-dispute alert services such as Ethoca and Verifi. Don't let those names into the model, but don't merge the two kinds either. A fraud report is a <em>signal</em>: it teaches risk (ours and the vendor's) and changes nothing about the money. A pre-dispute alert is a <em>request for action</em> with a deadline. The model has one neutral type for each, <code>IssuerFraudReport{Source, TransactionRef, ReportedAt, FraudType}</code> and <code>PreDisputeAlert{Source, TransactionRef, ReceivedAt, RespondBy}</code>. Each feed you connect is one adapter translation into one of them.</p></div>
+
+<h2>Where it sits in checkout</h2>
+<pre><code>Checkout saga (Ticketing)
+  hold seats
+  place order
+  SCREEN (sync, NEW) ── Block  ─► order Rejected, hold released
+                     ├─ Review ─► wait for async ReviewResolved
+                     └─ Allow  ─┐
+  authorize payment (E5) ◄──────┘
+  (optional) SCREEN again, stage BeforeCapture
+  confirm seats
+  capture
+     │
+     └─ events ─► Fraud context ─► TransactionOutcome feed to the vendor</code></pre>
+
+<div class="callout why"><span class="label">The principle (ADR-E14)</span><p><strong>The vendor gives us a signal; we make the decision.</strong> The vendor's verdict and score are <em>inputs</em> to a <code>RiskPolicy</code> in our domain, which also knows our own rules (allow-list for staff, force review above a value, block on repeat declines, what to do when the vendor is down). That keeps the business rule testable without the vendor and stops a vendor change from silently changing our risk appetite.</p></div>
+
+<h3>Rules</h3>
+<div class="table-wrap"><table class="rules">
+  <tr><th>Id</th><th>Rule</th></tr>
+  <tr><td>FRD-1</td><td>Each order is screened at most once per stage. Re-screening the same <code>(orderRef, stage)</code> returns the stored assessment.</td></tr>
+  <tr><td>FRD-2</td><td>A <code>RiskAssessment</code> ends in exactly one <code>Decision</code>: <code>Allow</code>, <code>Block</code>, or <code>Review</code> (which later resolves to Allow or Block exactly once).</td></tr>
+  <tr><td>FRD-3</td><td><strong>Unavailability policy:</strong> if the vendor times out or errors, the decision is set by configuration: <em>fail-open</em> (Allow, flagged <code>Unscreened</code>) or <em>fail-closed</em> (Review, or Block above a configured value). Orders above a configured value never fail-open. The default is documented and tested.</td></tr>
+  <tr><td>FRD-4</td><td>Our <code>RiskPolicy</code> may override the vendor: an allow-listed customer is never Blocked by a score alone; any order above the review threshold is at least <code>Review</code>.</td></tr>
+  <tr><td>FRD-5</td><td>Every payment and order outcome for a screened transaction is reported to the vendor <strong>at least once, in per-transaction order, idempotently</strong>, even if the vendor is down for hours. Reporting never blocks or fails a customer-facing flow.</td></tr>
+  <tr><td>FRD-6</td><td>Device and network signals are optional. A request without a fingerprint is valid and is screened with fewer signals; the absence is recorded, not an error.</td></tr>
+</table></div>
+
+<section class="lesson" id="le6-1">
+<h3><span class="lesson-id">E6.1</span> Model first: language, signals and the vendor firewall</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Draw the model on paper and decide what is <em>ours</em>.</dd>
+  <dt>Rules</dt><dd>FRD-2, FRD-6</dd>
+</dl>
+<div class="callout do"><span class="label">Your turn (paper first)</span><ol>
+  <li>Event-storm: order screened → Allow; → Block; → Review → approved later; vendor down; the order is later charged back. Where does each fact come from, us or the vendor?</li>
+  <li>Fill in a vocabulary table in the style of E5's: vendor words (<code>score</code>, <code>decision</code>, <code>approve/decline/review</code>, <code>device_id</code>, <code>reason_codes</code>) against ours (<code>Signal</code>, <code>Decision</code>, <code>DeviceSession</code>, <code>RiskReason</code>). Which vendor terms deserve <em>no</em> counterpart in our domain?</li>
+  <li>Design <code>ScreeningRequest</code> to be built from <em>our</em> data (order, customer, amount) and optional <code>DeviceSignals{Fingerprint, ClientIP, UserAgent}</code>. The UI snippet that produces the fingerprint is out of scope; the field just exists and flows through (FRD-6).</li>
+  <li>Decide: does Fraud need its own copy of order/customer data (a local projection, as Show has for venues in 6.5), or does the saga pass what's needed in the request? Compare the coupling.</li>
+</ol></div>
+</section>
+
+<section class="lesson" id="le6-2">
+<h3><span class="lesson-id">E6.2</span> <code>RiskAssessment</code> and <code>RiskPolicy</code></h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>The domain: a small aggregate and one domain service, no vendor in sight.</dd>
+  <dt>Rules</dt><dd>FRD-1, FRD-2, FRD-3, FRD-4</dd>
+  <dt>Creates</dt><dd><code>internal/fraud/domain/{assessment,signal,policy,decision,events,errors}.go</code> + tests</dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li><code>Open(orderRef, stage, now)</code> → a pending assessment; <code>Record(signal, policy, now)</code> turns a vendor <code>Signal{Level, Reasons}</code> into a <code>Decision</code> via the policy, recording <code>AssessmentDecided</code>.</li>
+  <li><code>RiskPolicy</code> (a pure domain service, table-tested): Low → Allow; Medium → Review; High → Block; high-value order + Medium → Block-or-Review per config; allow-listed customer + High → Review (never auto-Block; FRD-4).</li>
+  <li>Unavailable vendor: <code>RecordUnavailable(now)</code> applies FRD-3 for the given order value and config: fail-open → Allow with <code>Unscreened</code>; fail-closed → Review (or Block above the configured value).</li>
+  <li><code>Review</code> → <code>ResolveReview(approved, by, now)</code> exactly once; a second call is rejected or a no-op (decide, say why).</li>
+  <li>Replaying a decided assessment with a different signal doesn't change its decision (FRD-1/FRD-2).</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>Thresholds change weekly and are a business decision. Where do they live so that changing them needs neither a code change nor a vendor change? What would you test to be sure a config change can't silently open the gates?</p></div>
+</section>
+
+<section class="lesson" id="le6-3">
+<h3><span class="lesson-id">E6.3</span> The <code>FraudVendor</code> port and a scriptable fake</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Define the two directions as two ports, and build a fake that misbehaves on demand.</dd>
+  <dt>Creates</dt><dd><code>fraud/application/ports.go</code>, <code>adapters/driven/fakevendor</code></dd>
+</dl>
+<pre><code>// Two driven ports, because the two flows fail differently.
+type Screener interface { // sync: we wait, with a deadline
+    Screen(ctx context.Context, r ScreeningRequest) (ScreeningResult, error)
+}
+type OutcomeReporter interface { // async: we retry; the vendor may be down
+    Report(ctx context.Context, o TransactionOutcome) error // idempotent on o.ID
+}
+// Inbound, via a driving adapter: ReviewResolved, IssuerFraudReport,
+// PreDisputeAlert.</code></pre>
+<div class="callout tdd"><span class="label">TDD script (a contract suite, again)</span><ol class="tests">
+  <li>Scriptable by the request itself so tests are readable: an email like <code>block@fraud.test</code> → High; <code>review@…</code> → Medium; <code>slow@…</code> → sleeps past the deadline; <code>boom@…</code> → 500; otherwise Low.</li>
+  <li>The fake honours the request's <code>context</code> deadline (a fake that ignores it hides bugs).</li>
+  <li>The fake <code>OutcomeReporter</code> is idempotent on the outcome id and can be told to fail N times, then succeed; it records order of arrival so tests can assert ordering.</li>
+  <li>The fake can later post a <code>ReviewResolved</code>, an <code>IssuerFraudReport</code> or a <code>PreDisputeAlert</code> into the webhook adapter.</li>
+</ol></div>
+</section>
+
+<section class="lesson" id="le6-4">
+<h3><span class="lesson-id">E6.4</span> The <code>ScreenOrder</code> use case: timeouts and a circuit breaker</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Keep a sluggish vendor from taking checkout down with it.</dd>
+  <dt>Rules</dt><dd>FRD-1, FRD-3</dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>The use case wraps the call in <code>context.WithTimeout</code> from config. A slow vendor produces <code>RecordUnavailable</code>, not a hung request.</li>
+  <li>Second call for the same <code>(orderRef, stage)</code> returns the stored decision without calling the vendor (FRD-1).</li>
+  <li>A small <strong>circuit breaker</strong> (a decorator in <code>platform/resilience</code>: closed → open after N consecutive failures → half-open probe): when open, we skip the call and apply the unavailability policy immediately. Test it with a fake clock (ADR-008).</li>
+  <li>Metrics (E3): <code>fraud_screenings_total{decision,source=vendor|policy|unavailable}</code> and a latency histogram. A rising <code>unavailable</code> share is the alarm.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>Fail-open sells tickets to fraudsters during an outage; fail-closed turns away every customer. Why is the right answer different for a $30 ticket and a $3,000 package, and what part of the system lets you express that?</p></div>
+</section>
+
+<section class="lesson" id="le6-5">
+<h3><span class="lesson-id">E6.5</span> Insert a new step into the checkout saga</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Add screening to Ticketing's checkout the same way E5.6 added payments: through an ACL over a published client.</dd>
+  <dt>Rules</dt><dd>TKT-18 (new)</dd>
+  <dt>Touches</dt><dd>Ticketing's saga and <code>Order</code> (additively), <code>fraud/contracts.Client</code>, the checkout HTTP DTO (optional <code>device</code> block)</dd>
+</dl>
+<div class="table-wrap"><table class="rules">
+  <tr><th>Id</th><th>Rule</th></tr>
+  <tr><td>TKT-18</td><td>An order is screened after it is placed and before payment is authorized. <code>Block</code> → the order becomes <code>Rejected</code>, the hold is released, no payment is attempted, and the customer sees a generic failure (never the reason). <code>Review</code> → the order waits (<code>UnderReview</code>) and the hold's TTL keeps running; <code>Allow</code> → proceed. (Extends TKT-6/TKT-7.)</td></tr>
+</table></div>
+<div class="callout do"><span class="label">Your turn (outside-in)</span><ol>
+  <li><strong>Acceptance (red):</strong> a customer using <code>block@fraud.test</code> places an order → Rejected, seats back on sale, no payment events.</li>
+  <li>Define <code>fraud/contracts.Client.Screen(…)</code> and its DTOs (Open Host Service, as in E5.5), with an in-process implementation. Add the Ticketing-side adapter. It must map <em>Fraud's</em> decision into a Ticketing-owned type (<code>ScreeningVerdict</code>), not reuse Fraud's.</li>
+  <li>Domain tests for the new <code>Order</code> states and transitions first; then the saga step.</li>
+  <li>Plumb the optional device signals from the HTTP DTO through the use case into <code>ScreeningRequest</code>. A request <em>without</em> them must still pass every test (FRD-6).</li>
+  <li>Make the whole feature switchable (<code>FRAUD_SCREENING=off|on</code>): when off, the saga uses a no-op screener that always Allows. Run the entire pre-existing suite in both modes.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>The customer-facing message must not reveal the decision (fraudsters would probe it). The audit trail (E4) <em>must</em> record it. How do you satisfy both?</p></div>
+</section>
+
+<section class="lesson" id="le6-6">
+<h3><span class="lesson-id">E6.6</span> Asynchronous manual review</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>The vendor answers "Review" now and gives the real verdict minutes or hours later. Resume the saga when it does.</dd>
+  <dt>Rules</dt><dd>FRD-2</dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>A <code>ReviewResolved</code> webhook (signature-verified like E5.8, translated in the adapter) calls <code>ResolveReview</code> and publishes <code>fraud.assessment_decided.v1</code>.</li>
+  <li>Ticketing consumes it: Allow → continue to authorization; Block → Rejected and the hold is released. Duplicate and late deliveries are harmless.</li>
+  <li><strong>Race:</strong> the hold expires while the order is under review. The review later says Allow → the saga must not authorize payment for an expired hold (TKT-8 mindset). Write this test first; it's the interesting one.</li>
+  <li>Staff with <code>fraud:review</code> can also resolve a review by hand through an HTTP endpoint (E2), audited (E4).</li>
+</ol></div>
+</section>
+
+<section class="lesson" id="le6-7">
+<h3><span class="lesson-id">E6.7</span> Outcome feedback: reliably updating a service we don't control</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Consume Payments' and Ticketing's events and tell the vendor what happened, without ever blocking a customer.</dd>
+  <dt>Rules</dt><dd>FRD-5</dd>
+  <dt>Creates</dt><dd><code>fraud.outcome_queue</code> table, an outcome translator (event → <code>TransactionOutcome</code>), a worker, the real/fake <code>OutcomeReporter</code></dd>
+</dl>
+<div class="callout why"><span class="label">Same pattern, other direction (ADR-E15)</span><p>The transactional outbox solves "reliably tell <em>our own</em> Kafka". Calling a third party's API has the same failure modes (down, slow, duplicate) but a different sink, so we use a <strong>durable outbound work queue</strong>: a table written in the same transaction as the consumer's inbox row, and a worker that delivers with retry, backoff and a dead-letter state. Notice it is the outbox idea reused, not a new mechanism.</p></div>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>Translator (pure function, table-driven): <code>payment_authorized</code> → <code>Authorized</code>; <code>payment_declined{InsufficientFunds}</code> → <code>Declined{...}</code>; <code>payment_captured</code> → <code>Captured</code>; <code>payment_voided</code> → <code>Voided</code>; <code>refund_succeeded</code> → <code>Refunded</code> (with the amount, since refunds can be partial); <code>dispute_opened</code> → <code>Chargeback</code>; an <code>IssuerFraudReport</code> → <code>FraudReported</code> (vendors want these even when no chargeback follows). Unknown events are ignored explicitly.</li>
+  <li>Consuming an event enqueues exactly one outcome (inbox de-duplication, 8.4).</li>
+  <li>Worker with the fake reporter failing three times then succeeding: delivered once, attempts recorded, backoff grows (fake clock). After N attempts → <code>DeadLettered</code>, a metric increments, and an operator can requeue.</li>
+  <li><strong>Ordering:</strong> outcomes for one transaction are delivered in the order they happened (<code>Authorized</code> before <code>Captured</code> before <code>Refunded</code>). Use a per-transaction sequence number and have the worker deliver only the next one, or send the sequence so the vendor can order it. Test with a scrambled queue.</li>
+  <li>The vendor being down for an hour does not slow a single checkout. Prove it with the fake's "down" mode and the e2e suite.</li>
+  <li>Reports are idempotent on <code>outcome.ID</code> (derive it from the source event id) so a retry after a timeout cannot double-report.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>Why not call the vendor directly from the Payments context when a capture succeeds ("it's one HTTP call")? Trace what happens to the capture, to the customer, and to the vendor's model when that call fails.</p></div>
+</section>
+
+<section class="lesson" id="le6-8">
+<h3><span class="lesson-id">E6.8</span> Chargebacks, fraud reports and pre-dispute alerts close the loop</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Handle bad news that arrives from the outside, and teach the vendor from it.</dd>
+  <dt>Rules</dt><dd>FRD-5, plus PAY-8 and TKT-17 from E5</dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>An <code>IssuerFraudReport</code> (a TC40-style feed, translated by the adapter) → <code>fraud.fraud_reported.v1</code>. Nothing happens to the money: Payments ignores it. It feeds the vendor (E6.7) and the <code>PriorFraud</code> signal below.</li>
+  <li>A <code>PreDisputeAlert</code> webhook (translated by the adapter) → <code>fraud.pre_dispute_alert.v1</code>.</li>
+  <li>A policy decision <em>in Payments</em> (not Fraud): on an alert for a Captured payment, <strong>proactively refund</strong> when the alert says it will otherwise become a dispute and the amount is under a threshold. This is cheaper than a chargeback fee. Fraud only <em>tells</em>; Payments <em>decides</em> what to do with its money. Test both sides separately.</li>
+  <li>Ticketing must cope with a refund it didn't ask for: its <code>refund_succeeded</code> consumer (E5.9) moves a Paid or Fulfilled order to Refunded and voids its tickets even when the order wasn't <code>RefundPending</code>.</li>
+  <li>The matching outcome (<code>FraudReported</code> / <code>Chargeback</code>) is queued for the vendor via E6.7, so it learns the transaction was bad. Check that the feed contains a fraud-coded chargeback <em>and</em> keeps the earlier <code>Captured</code> first.</li>
+  <li>A charged-back customer never reaches screening: the denylist (E5.12) refuses them first. A fraud report doesn't block anyone, but it is a risk signal: add a <code>PriorFraudReport</code> flag to the screening request, fed by a small local projection built from <code>fraud_reported</code> events (a read model, as in 6.5).</li>
+  <li>Policy decision to make and test: when the vendor's review or a staff member <em>confirms</em> fraud, Fraud asks the denylist to block the customer, email, card and device (a new <code>device</code> kind, DNY-1) with reason <code>fraud_confirmed</code>. Fraud decides; Denylist only stores and answers.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>The denylist and the fraud vendor both judge customers. When should a decision be a hard block in our own list, and when only a signal to the vendor? Which one would you trust with a customer who has spent thousands with you?</p></div>
+</section>
+
+<section class="lesson" id="le6-9">
+<h3><span class="lesson-id">E6.9</span> Failure drills and the retrospective</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Prove checkout and the feed behave under bad vendor days, then look back across the whole extension.</dd>
+</dl>
+<div class="callout do"><span class="label">Your turn</span><ol>
+  <li>Drill table (state of the system at each step, and the test): vendor slow; vendor down for an hour; vendor returns malformed data; duplicate and out-of-order review webhooks; vendor accepts the report but we crash before marking it delivered; the queue grows by 10,000 rows.</li>
+  <li>Restart the app with <code>FRAUD_SCREENING=off</code> while orders are under review (config is read once at startup, chapter 6) and verify those orders still resolve.</li>
+  <li><strong>Retrospective:</strong> list, for E1–E6, the files that changed in <em>existing</em> contexts. Compare with the table in the <a href="ext-0-overview.html">overview</a>. Where was the real cost? Where did the architecture earn its keep?</li>
+  <li>Update the extension ADR log for anything you changed your mind about.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>If you extracted Payments and Fraud into their own deployables tomorrow, what would you have to change in Ticketing? Which of today's in-process <code>Client</code> calls would become network calls, and which of the new timeouts and idempotency rules already protect you?</p></div>
+</section>
+</main>
+<script src="assets/course.js"></script>
+</body>
+</html>

@@ -30,6 +30,16 @@
       { file: "part-8-end-to-end.html", title: "Part 8 · End-to-end & hardening" },
       { file: "part-9-stretch.html", title: "Part 9 · Stretch goals" },
     ]},
+    { group: "Extension track (optional)", pages: [
+      { file: "ext-0-overview.html", title: "Overview: toward production" },
+      { file: "ext-1-pricing.html", title: "E1 · Pricing" },
+      { file: "ext-2-identity.html", title: "E2 · Identity & access" },
+      { file: "ext-3-observability.html", title: "E3 · Observability" },
+      { file: "ext-4-audit.html", title: "E4 · Audit trail" },
+      { file: "ext-5-payments.html", title: "E5 · Payments" },
+      { file: "ext-6-fraud.html", title: "E6 · Fraud screening" },
+      { file: "ext-decisions.html", title: "Extension ADRs" },
+    ]},
   ];
 
   const STORE_KEY = "stagehand-course-progress-v1";
