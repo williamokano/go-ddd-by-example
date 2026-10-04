@@ -1,6 +1,6 @@
 // Command stagehand is the whole platform in one binary (ADR-001).
 //
-//	stagehand migrate up|down|status   apply the embedded migrations to $DATABASE_URL
+//	stagehand migrate up|down|reset|status   apply the embedded migrations to $DATABASE_URL
 package main
 
 import (
@@ -28,5 +28,5 @@ func run(ctx context.Context, args []string) error {
 		}
 		return postgres.Migrate(ctx, os.Getenv("DATABASE_URL"), migrations, args[1])
 	}
-	return fmt.Errorf("usage: stagehand migrate up|down|status")
+	return fmt.Errorf("usage: stagehand migrate up|down|reset|status")
 }

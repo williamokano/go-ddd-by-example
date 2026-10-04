@@ -1,6 +1,6 @@
 DOCS_PORT ?= 8000
 
-.PHONY: docs test lint infra down reset migrate generate
+.PHONY: docs test lint infra down reset migrate generate test-integration
 
 docs: ## serve the course at http://localhost:$(DOCS_PORT)
 	@echo "Course: http://localhost:$(DOCS_PORT)"
@@ -8,6 +8,9 @@ docs: ## serve the course at http://localhost:$(DOCS_PORT)
 
 test: ## fast tests (domain, application, http, contract, arch)
 	go test ./...
+
+test-integration: ## adapter tests against real Postgres (testcontainers; needs Docker)
+	go test -tags=integration ./...
 
 lint: ## golangci-lint (v2)
 	golangci-lint run

@@ -24,3 +24,12 @@ jobs:
         with:
           go-version-file: go.mod
       - run: make test
+
+  test-integration:
+    runs-on: ubuntu-latest          # GitHub runners have Docker for testcontainers
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make test-integration
