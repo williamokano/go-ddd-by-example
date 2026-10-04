@@ -22,7 +22,7 @@ const (
 	KindGA     = "ga"
 )
 
-// VenueActivatedV1: a venue opened for shows. It carries the whole layout, so
+// VenueActivatedV1 announces that a venue opened for shows. It carries the whole layout, so
 // consumers never have to ask Venue anything.
 type VenueActivatedV1 struct {
 	VenueID     string      `json:"venue_id"`
@@ -46,7 +46,7 @@ type RowV1 struct {
 	Seats int    `json:"seats"`
 }
 
-// VenueRetiredV1: a venue closed for good. Shows there must be cancelled (SHW-7).
+// VenueRetiredV1 announces that a venue closed for good; its shows get cancelled (SHW-7).
 type VenueRetiredV1 struct {
 	VenueID   string    `json:"venue_id"`
 	RetiredAt time.Time `json:"retired_at"`
