@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"fmt"
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 
 	"github.com/williamokano/go-ddd-by-example/internal/show/domain"
 )
@@ -173,13 +174,13 @@ func authorise(show *domain.Show, promoterID string) error {
 }
 
 func newPriceList(specs []PriceSpec) (domain.PriceList, error) {
-	prices := make(map[string]domain.Money, len(specs))
+	prices := make(map[string]sharedkernel.Money, len(specs))
 	for _, p := range specs {
-		currency, err := domain.NewCurrency(p.Currency)
+		currency, err := sharedkernel.NewCurrency(p.Currency)
 		if err != nil {
 			return domain.PriceList{}, err
 		}
-		money, err := domain.NewMoney(p.Amount, currency)
+		money, err := sharedkernel.NewMoney(p.Amount, currency)
 		if err != nil {
 			return domain.PriceList{}, err
 		}

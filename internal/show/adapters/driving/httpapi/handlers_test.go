@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"io"
 	"log/slog"
 	"net/http"
@@ -149,8 +150,8 @@ func TestErrorMapping(t *testing.T) {
 		{domain.ErrInvalidID, 422, "Invalid id"},
 		{domain.ErrInvalidTitle, 422, "Invalid title"},
 		{domain.ErrInvalidSchedule, 422, "Invalid schedule"},
-		{domain.ErrInvalidMoney, 422, "Invalid money"},
-		{domain.ErrCurrencyMismatch, 422, "Currency mismatch"},
+		{sharedkernel.ErrInvalidMoney, 422, "Invalid money"},
+		{sharedkernel.ErrCurrencyMismatch, 422, "Currency mismatch"},
 		{domain.ErrInvalidPriceList, 422, "Invalid price list"},
 		{domain.ErrPriceListMismatch, 422, "Price list does not match the venue"},
 		{domain.ErrInvalidCancellationReason, 422, "Invalid cancellation reason"},

@@ -1,8 +1,15 @@
-package domain
+package sharedkernel
 
 import (
+	"errors"
 	"fmt"
 	"strings"
+)
+
+// Money errors.
+var (
+	ErrInvalidMoney     = errors.New("money: invalid money")
+	ErrCurrencyMismatch = errors.New("money: currency mismatch")
 )
 
 // Currency is an ISO-4217 code, e.g. "EUR".

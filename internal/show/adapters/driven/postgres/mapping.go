@@ -3,6 +3,7 @@ package postgres
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"time"
 
 	"github.com/google/uuid"
@@ -67,13 +68,13 @@ func pricesFrom(b []byte) (domain.PriceList, error) {
 	if len(stored) == 0 {
 		return domain.PriceList{}, nil
 	}
-	prices := make(map[string]domain.Money, len(stored))
+	prices := make(map[string]sharedkernel.Money, len(stored))
 	for code, p := range stored {
-		currency, err := domain.NewCurrency(p.Currency)
+		currency, err := sharedkernel.NewCurrency(p.Currency)
 		if err != nil {
 			return domain.PriceList{}, err
 		}
-		if prices[code], err = domain.NewMoney(p.Amount, currency); err != nil {
+		if prices[code], err = sharedkernel.NewMoney(p.Amount, currency); err != nil {
 			return domain.PriceList{}, err
 		}
 	}

@@ -5,6 +5,7 @@ package showrepotest
 import (
 	"context"
 	"errors"
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"sync"
 	"testing"
 	"time"
@@ -174,10 +175,10 @@ func draft(t *testing.T, venue domain.VenueLayout, offset time.Duration) *domain
 
 func prices(t *testing.T) domain.PriceList {
 	t.Helper()
-	eur, _ := domain.NewCurrency("EUR")
-	orch, _ := domain.NewMoney(4500, eur)
-	floor, _ := domain.NewMoney(2500, eur)
-	pl, err := domain.NewPriceList(map[string]domain.Money{"ORCH": orch, "FLOOR": floor})
+	eur, _ := sharedkernel.NewCurrency("EUR")
+	orch, _ := sharedkernel.NewMoney(4500, eur)
+	floor, _ := sharedkernel.NewMoney(2500, eur)
+	pl, err := domain.NewPriceList(map[string]sharedkernel.Money{"ORCH": orch, "FLOOR": floor})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +204,7 @@ func get(t *testing.T, repo application.ShowRepository, id domain.ShowID) *domai
 func assertSameState(t *testing.T, want, got *domain.Show) {
 	t.Helper()
 	opts := cmp.AllowUnexported(domain.ShowID{}, domain.VenueID{}, domain.PromoterID{}, domain.Schedule{},
-		domain.PriceList{}, domain.Money{}, domain.Currency{}, domain.CancellationReason{})
+		domain.PriceList{}, sharedkernel.Money{}, sharedkernel.Currency{}, domain.CancellationReason{})
 	if diff := cmp.Diff(StateOf(want), StateOf(got), opts); diff != "" {
 		t.Errorf("loaded show mismatch (-saved +loaded):\n%s", diff)
 	}

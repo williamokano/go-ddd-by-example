@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"errors"
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"net/http"
 
 	"github.com/williamokano/go-ddd-by-example/internal/platform/httpx"
@@ -19,8 +20,8 @@ var errorStatuses = []struct {
 	{domain.ErrInvalidID, http.StatusUnprocessableEntity, "Invalid id"},
 	{domain.ErrInvalidTitle, http.StatusUnprocessableEntity, "Invalid title"},
 	{domain.ErrInvalidSchedule, http.StatusUnprocessableEntity, "Invalid schedule"},
-	{domain.ErrInvalidMoney, http.StatusUnprocessableEntity, "Invalid money"},
-	{domain.ErrCurrencyMismatch, http.StatusUnprocessableEntity, "Currency mismatch"},
+	{sharedkernel.ErrInvalidMoney, http.StatusUnprocessableEntity, "Invalid money"},
+	{sharedkernel.ErrCurrencyMismatch, http.StatusUnprocessableEntity, "Currency mismatch"},
 	{domain.ErrInvalidPriceList, http.StatusUnprocessableEntity, "Invalid price list"},
 	{domain.ErrPriceListMismatch, http.StatusUnprocessableEntity, "Price list does not match the venue"},
 	{domain.ErrInvalidCancellationReason, http.StatusUnprocessableEntity, "Invalid cancellation reason"},

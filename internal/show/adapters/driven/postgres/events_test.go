@@ -2,6 +2,7 @@ package postgres_test
 
 import (
 	"encoding/json"
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"testing"
 	"time"
 
@@ -24,10 +25,10 @@ func newID() uuid.UUID { return uuid.MustParse("00000000-0000-7000-8000-00000000
 func TestToOutboxMessages_ShowPublished(t *testing.T) {
 	start := at.Add(30 * 24 * time.Hour)
 	schedule, _ := domain.NewSchedule(start.Add(-time.Hour), start, start.Add(2*time.Hour))
-	eur, _ := domain.NewCurrency("EUR")
-	orch, _ := domain.NewMoney(4500, eur)
-	floor, _ := domain.NewMoney(2500, eur)
-	prices, _ := domain.NewPriceList(map[string]domain.Money{"ORCH": orch, "FLOOR": floor})
+	eur, _ := sharedkernel.NewCurrency("EUR")
+	orch, _ := sharedkernel.NewMoney(4500, eur)
+	floor, _ := sharedkernel.NewMoney(2500, eur)
+	prices, _ := domain.NewPriceList(map[string]sharedkernel.Money{"ORCH": orch, "FLOOR": floor})
 	layout := domain.VenueLayout{VenueID: venueID, Active: true, Sections: []domain.LayoutSection{
 		{Code: "ORCH", Kind: "seated", Rows: []domain.LayoutRow{{Label: "A", Seats: 2}}},
 		{Code: "FLOOR", Kind: "ga", Capacity: 3},

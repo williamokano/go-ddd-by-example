@@ -1,6 +1,7 @@
 package domain_test
 
 import (
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"testing"
 	"time"
 
@@ -17,7 +18,7 @@ var (
 	promoterID = domain.NewPromoterID(uuid.MustParse("0192f5e0-0000-7000-8000-000000000003"))
 
 	showValues = cmp.AllowUnexported(domain.ShowID{}, domain.VenueID{}, domain.PromoterID{},
-		domain.Schedule{}, domain.PriceList{}, domain.Money{}, domain.Currency{}, domain.CancellationReason{})
+		domain.Schedule{}, domain.PriceList{}, sharedkernel.Money{}, sharedkernel.Currency{}, domain.CancellationReason{})
 )
 
 // activeLayout is Show's local view of an active venue with ORCH and FLOOR.
@@ -44,7 +45,7 @@ func inAMonth(t *testing.T) domain.Schedule {
 
 func fullPrices(t *testing.T) domain.PriceList {
 	t.Helper()
-	return priceList(t, map[string]domain.Money{"ORCH": eur(t, 4500), "FLOOR": eur(t, 2500)})
+	return priceList(t, map[string]sharedkernel.Money{"ORCH": eur(t, 4500), "FLOOR": eur(t, 2500)})
 }
 
 func pricedShow(t *testing.T) *domain.Show {
@@ -81,4 +82,18 @@ func reason(t *testing.T, r string) domain.CancellationReason {
 		t.Fatal(err)
 	}
 	return cr
+}
+
+func eur(t *testing.T, minor int64) sharedkernel.Money {
+	t.Helper()
+	return mustMoney(t, minor, "EUR")
+}
+
+func mustCurrency(t *testing.T, code string) sharedkernel.Currency {
+	t.Helper()
+	c, err := sharedkernel.NewCurrency(code)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
 }

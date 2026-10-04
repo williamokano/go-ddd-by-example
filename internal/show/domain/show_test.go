@@ -2,6 +2,7 @@ package domain_test
 
 import (
 	"errors"
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"strings"
 	"testing"
 	"time"
@@ -84,7 +85,7 @@ func TestShow_Price(t *testing.T) {
 	t.Run("an incomplete price list is rejected (SHW-4)", func(t *testing.T) {
 		s := draftShow(t)
 
-		err := s.Price(priceList(t, map[string]domain.Money{"ORCH": eur(t, 4500)}), activeLayout(), now)
+		err := s.Price(priceList(t, map[string]sharedkernel.Money{"ORCH": eur(t, 4500)}), activeLayout(), now)
 
 		if !errors.Is(err, domain.ErrPriceListMismatch) {
 			t.Errorf("error = %v, want %v", err, domain.ErrPriceListMismatch)

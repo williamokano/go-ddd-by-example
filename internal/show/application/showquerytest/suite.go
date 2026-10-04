@@ -4,6 +4,7 @@ package showquerytest
 import (
 	"context"
 	"errors"
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"testing"
 	"time"
 
@@ -31,9 +32,9 @@ func Run(t *testing.T, newQueries func(t *testing.T) (application.ShowRepository
 		if err != nil {
 			t.Fatal(err)
 		}
-		eur, _ := domain.NewCurrency("EUR")
-		price, _ := domain.NewMoney(2500, eur)
-		prices, _ := domain.NewPriceList(map[string]domain.Money{"FLOOR": price})
+		eur, _ := sharedkernel.NewCurrency("EUR")
+		price, _ := sharedkernel.NewMoney(2500, eur)
+		prices, _ := domain.NewPriceList(map[string]sharedkernel.Money{"FLOOR": price})
 		if err := show.Price(prices, layout, now); err != nil {
 			t.Fatal(err)
 		}

@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"maps"
 	"slices"
 	"strings"
@@ -9,15 +10,15 @@ import (
 
 // PriceList is one price per section code of the venue (SHW-4). Show prices
 // sections, not seats.
-type PriceList struct{ prices map[string]Money }
+type PriceList struct{ prices map[string]sharedkernel.Money }
 
 // NewPriceList builds a list of strictly positive prices, all in one currency.
-func NewPriceList(prices map[string]Money) (PriceList, error) {
+func NewPriceList(prices map[string]sharedkernel.Money) (PriceList, error) {
 	if len(prices) == 0 {
 		return PriceList{}, fmt.Errorf("%w: no prices", ErrInvalidPriceList)
 	}
-	out := make(map[string]Money, len(prices))
-	var currency Currency
+	out := make(map[string]sharedkernel.Money, len(prices))
+	var currency sharedkernel.Currency
 	for raw, price := range prices {
 		code := strings.ToUpper(strings.TrimSpace(raw))
 		if code == "" {
@@ -26,11 +27,11 @@ func NewPriceList(prices map[string]Money) (PriceList, error) {
 		if !price.IsPositive() {
 			return PriceList{}, fmt.Errorf("%w: section %s costs %s", ErrInvalidPriceList, code, price)
 		}
-		if currency == (Currency{}) {
+		if currency == (sharedkernel.Currency{}) {
 			currency = price.Currency()
 		}
 		if price.Currency() != currency {
-			return PriceList{}, fmt.Errorf("%w: %s and %s in one price list", ErrCurrencyMismatch, currency, price.Currency())
+			return PriceList{}, fmt.Errorf("%w: %s and %s in one price list", sharedkernel.ErrCurrencyMismatch, currency, price.Currency())
 		}
 		out[code] = price
 	}
@@ -38,7 +39,7 @@ func NewPriceList(prices map[string]Money) (PriceList, error) {
 }
 
 // Price returns the price of a section.
-func (p PriceList) Price(sectionCode string) (Money, bool) {
+func (p PriceList) Price(sectionCode string) (sharedkernel.Money, bool) {
 	m, ok := p.prices[strings.ToUpper(sectionCode)]
 	return m, ok
 }
@@ -47,11 +48,11 @@ func (p PriceList) Price(sectionCode string) (Money, bool) {
 func (p PriceList) Sections() []string { return slices.Sorted(maps.Keys(p.prices)) }
 
 // Currency returns the list's single currency.
-func (p PriceList) Currency() Currency {
+func (p PriceList) Currency() sharedkernel.Currency {
 	for _, m := range p.prices {
 		return m.Currency()
 	}
-	return Currency{}
+	return sharedkernel.Currency{}
 }
 
 // IsZero reports whether no price list was set.
