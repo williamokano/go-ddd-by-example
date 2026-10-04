@@ -14,6 +14,8 @@
   <p class="lead">Before writing any Go, we make sure we understand the business and that the toolchain works. A programmer on a new project does the same: talk to the domain experts first, then open the editor.</p>
 </header>
 
+<div class="callout why"><span class="label">Following the course alone?</span><p>Every lesson ends with a collapsed <em>Reference solution</em>: the code as of that lesson's git tag on the <code>solution</code> branch, and where to resume from. See <a href="index.html#reference-solution">Working without a tutor</a>.</p></div>
+
 <section class="lesson" id="l0-1">
 <h3><span class="lesson-id">0.1</span> Event storming on paper</h3>
 <dl class="meta">
@@ -36,6 +38,95 @@
 </ul></div>
 <h4>Done when</h4>
 <ul><li>You can explain the three main contexts and the core domain in two minutes, without notes.</li></ul>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: main lesson-0.1 -->
+<p class="resume">Start this lesson from <code>git checkout main</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/78cac9233daa"><code>lesson-0.1</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/1c6e0237d4b4...78cac9233daa">this lesson's 1 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>Compare your list with this one only after doing your own. The interesting part is the last section: where the two disagree and why.</li>
+</ul>
+<!-- snippet: lesson-0.1 notes/event-storming.md -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/78cac9233daa/notes/event-storming.md"><code>notes/event-storming.md</code></a> at <code>lesson-0.1</code></div>
+<pre><code># Event storming (lesson 0.1)
+
+Done on paper first, from "The business in one paragraph" and "Actors" only.
+Compared with Chapter 1 afterwards (see the last section).
+
+## Domain events in time order
+
+| # | Event (past tense) | Command | Actor |
+|---|---|---|---|
+| 1 | VenueRegistered | RegisterVenue | Venue Manager |
+| 2 | SectionAdded | AddSection | Venue Manager |
+| 3 | VenueActivated | ActivateVenue | Venue Manager |
+| 4 | ShowDrafted | DraftShow | Promoter |
+| 5 | ShowRescheduled | RescheduleShow | Promoter |
+| 6 | ShowPriced | PriceShow | Promoter |
+| 7 | ShowPublished | PublishShow | Promoter |
+| 8 | InventoryOpened | OpenInventory | policy (on ShowPublished) |
+| 9 | SeatsHeld | HoldSeats | Customer |
+| 10 | HoldReleased | ReleaseHold | Customer |
+| 11 | HoldExpired | ExpireHolds | The Clock |
+| 12 | OrderPlaced | PlaceOrder | Customer |
+| 13 | PaymentCaptured | Charge | Payment Provider |
+| 14 | PaymentFailed | Charge | Payment Provider |
+| 15 | OrderPaid | MarkPaid | policy (on PaymentCaptured) |
+| 16 | SeatsSold | ConfirmHold | policy (on OrderPaid) |
+| 17 | HoldConfirmationFailed | ConfirmHold | policy (on OrderPaid, hold already gone) |
+| 18 | TicketsIssued | IssueTickets | policy (on SeatsSold) |
+| 19 | TicketsEmailed | SendTicketsEmail | policy (on TicketsIssued) |
+| 20 | InventorySoldOut | (raised by SellSeats) | policy |
+| 21 | ShowSoldOut | MarkSoldOut | policy (on InventorySoldOut) |
+| 22 | VenueRetired | RetireVenue | Venue Manager |
+| 23 | ShowCancelled | CancelShow | Promoter, or policy (on VenueRetired) |
+| 24 | InventoryClosed | CloseInventory | policy (on ShowCancelled) |
+| 25 | TicketsVoided | VoidTickets | policy (on ShowCancelled) |
+| 26 | OrderRefunded | RefundOrder | policy (on ShowCancelled / HoldConfirmationFailed) |
+| 27 | RefundEmailed | SendRefundEmail | policy (on OrderRefunded) |
+| 28 | ShowCompleted | CompleteShow | The Clock |
+
+## Policies ("whenever X, then Y")
+
+- Whenever a **show is published**, open its inventory.
+- Whenever a **hold's time runs out**, release its seats.
+- Whenever **payment is captured**, mark the order paid; whenever an **order is paid**, confirm the hold.
+- Whenever **confirming a hold fails** (it expired while paying), refund the order.
+- Whenever **seats are sold**, issue one ticket per seat; whenever **tickets are issued**, email them.
+- Whenever the **last seat is sold**, the show is sold out.
+- Whenever a **venue retires**, cancel each of its future shows.
+- Whenever a **show is cancelled**, close the inventory, void its tickets, refund its orders, email the customers.
+
+## Where the language changes (candidate bounded contexts)
+
+```
+Venue Management | Show Scheduling | Ticketing (holds, orders, tickets) | Notifications
+                                     ↕ Payment Provider (external)
+```
+
+- **Seat**: a physical chair in Venue (section/row/number, accessible?);
+  barely exists in Show (Show prices *sections*); a sellable unit with a state
+  (Available/Held/Sold) and a price in Ticketing.
+- **Event**: the business says "event" for a concert. We say **Show**, and keep
+  "event" for domain events.
+
+## Discuss
+
+- *Which event would hurt most if lost?* `SeatsSold` / `TicketsIssued`: a customer
+  who paid and got nothing, or a seat sold twice. That points at **Ticketing** as
+  the core domain.
+- *Is `PaymentCaptured` ours?* No, it's the provider's fact. We translate it into
+  our own `OrderPaid`. Payments is a generic subdomain behind a port (ACL).
+
+## Differences from Chapter 1
+
+- I had `ShowRescheduled` and `ShowCompleted`. Chapter 1 doesn't put them on the
+  big picture but does model them (SHW-2, SHW-5, the Completed state). Keep them.
+- I had `PaymentFailed`. Chapter 1 folds it into the Order lifecycle (TKT-7:
+  Pending → PaymentFailed). Same thing, it's a state, not a separate flow.
+- Chapter 1 names `HoldConfirmationFailed` only in ADR-010. I found it by asking
+  "what if the hold expired while paying?". That's scenario S3.</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l0-2">
@@ -50,6 +141,38 @@
   <li>Which side owns the interface of a driven port, the core or the adapter? Why?</li>
   <li>Why does the domain layer not import <code>context</code>?</li>
 </ul></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-0.1 lesson-0.2 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-0.1</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/21c9e8080313"><code>lesson-0.2</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/78cac9233daa...21c9e8080313">this lesson's 1 commits</a>).</p>
+<!-- /resume -->
+<!-- snippet: lesson-0.2 notes/reading-notes.md -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/21c9e8080313/notes/reading-notes.md"><code>notes/reading-notes.md</code></a> at <code>lesson-0.2</code></div>
+<pre><code># Reading notes (lesson 0.2)
+
+Answers to the "Discuss" questions, written before re-checking the chapters.
+
+**Why is the aggregate root the root?** Invariants span the whole cluster, and
+only the object that sees the whole cluster can enforce them. VEN-2 ("section
+codes are unique within a venue") can't be checked by a `Section`, because it
+doesn't know its siblings. Only `Venue.AddSection` can reject the duplicate.
+
+**Domain service vs application service.** A domain service holds a business
+rule that doesn't fit one aggregate, and it is pure: `SchedulingPolicy`
+(SHW-3, no overlapping shows at a venue). An application service holds no rules.
+It runs the recipe "parse → load → call the domain → save" through ports:
+`PublishShowHandler`.
+
+**Who owns a driven port's interface?** The core (`application`). The core
+declares what it needs (`VenueRepository`), and the adapter (Postgres) implements
+it. Dependencies point inward, so the core can be tested with a fake and
+Postgres can be swapped without touching a rule.
+
+**Why does the domain not import `context`?** `context` exists for
+cancellation, deadlines and I/O-scoped values. A pure domain does no I/O, so a
+`ctx` parameter would be an invitation to start doing some. Time and IDs come in
+as plain values (ADR-008).</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l0-3">
@@ -67,7 +190,60 @@
 </ol></div>
 <div class="callout why"><span class="label">Why <code>testpackage</code>?</span><p>It pushes tests into <code>package xxx_test</code>, so tests can only use the exported API, the same API other packages use. If you can't test something through the public API, either it isn't behaviour or your API is missing something.</p></div>
 <h4>Done when</h4>
-<ul><li><code>make test</code> prints "no packages to test" without error, and <code>make lint</code> passes.</li></ul>
+<ul><li><code>make test</code> runs <code>go test ./...</code>. With no packages yet it prints <code>no packages to test</code> and exits 1, which is expected until 1.1 adds the first package. <code>make lint</code> runs (locally or in CI).</li></ul>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-0.2 lesson-0.3 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-0.2</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/732625311221"><code>lesson-0.3</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/21c9e8080313...732625311221">this lesson's 1 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li><code>go mod init</code> writes <code>go 1.27.0</code>; <code>mise.toml</code> pins the toolchain for everyone.</li>
+  <li>With no packages yet, <code>go test ./...</code> prints <code>no packages to test</code> and <em>exits 1</em>. That is expected until 1.1 adds the first package.</li>
+</ul>
+<!-- snippet: lesson-0.3 Makefile -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/732625311221/Makefile"><code>Makefile</code></a> at <code>lesson-0.3</code></div>
+<pre><code>DOCS_PORT ?= 8000
+
+.PHONY: docs test lint
+
+docs: ## serve the course at http://localhost:$(DOCS_PORT)
+	@echo "Course: http://localhost:$(DOCS_PORT)"
+	python3 -m http.server $(DOCS_PORT) --bind 127.0.0.1 --directory docs
+
+test: ## fast tests (domain, application, http, contract, arch)
+	go test ./...
+
+lint: ## golangci-lint (v2)
+	golangci-lint run</code></pre>
+<!-- /snippet -->
+<!-- snippet: lesson-0.3 .golangci.yml -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/732625311221/.golangci.yml"><code>.golangci.yml</code></a> at <code>lesson-0.3</code></div>
+<pre><code>version: "2"
+
+linters:
+  default: standard
+  enable:
+    - errorlint
+    - gocritic
+    - revive
+    - testpackage
+    - wrapcheck
+  exclusions:
+    rules:
+      # The domain returns its own sentinel errors; there is nothing foreign to wrap.
+      - path: internal/.*/domain/
+        linters: [wrapcheck]
+
+formatters:
+  enable:
+    - gofmt
+    - goimports</code></pre>
+<!-- /snippet -->
+<!-- snippet: lesson-0.3 mise.toml -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/732625311221/mise.toml"><code>mise.toml</code></a> at <code>lesson-0.3</code></div>
+<pre><code>[tools]
+go = "1.27"</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l0-4">
@@ -83,6 +259,43 @@
 </ul>
 <h4>Done when</h4>
 <ul><li>The first commit is on <code>main</code>, and you know which lesson comes next: 1.1.</li></ul>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-0.3 lesson-0.4 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-0.3</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/e42f1058c021"><code>lesson-0.4</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/732625311221...e42f1058c021">this lesson's 1 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>The reference solution is one linear branch with a tag per lesson rather than a branch per Part, so you can check out any lesson and diff any two.</li>
+</ul>
+<!-- snippet: lesson-0.4 .github/workflows/ci.yml -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/e42f1058c021/.github/workflows/ci.yml"><code>.github/workflows/ci.yml</code></a> at <code>lesson-0.4</code></div>
+<pre><code>name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make test</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 </main>
 <script src="assets/course.js"></script>

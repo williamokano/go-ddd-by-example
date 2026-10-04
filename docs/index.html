@@ -91,6 +91,24 @@
   <li>Comfortable Go basics: structs, methods, interfaces, errors, <code>context</code>, table-driven tests.</li>
 </ul>
 
+<h2 id="reference-solution">Working without a tutor: the reference solution</h2>
+<p>The course is written to be followed with an AI tutor, but you can also follow it alone. A complete, test-driven implementation lives on the <code>solution</code> branch. It was built the same way the course asks you to work: one red-green-refactor commit at a time, a tag at the end of every lesson, and a tag at the end of every Part. <code>main</code> stays code-free on purpose, so a fresh clone is a blank slate.</p>
+<ul>
+  <li><strong>Inside each lesson</strong>, a collapsed <em>Reference solution</em> block at the end shows the key code as of that lesson's tag, notes on the decisions it made, and a link to that lesson's commits. Try the lesson first and open the block to compare.</li>
+  <li><strong>Stuck, or want to skip ahead?</strong> Every lesson starts from the previous lesson's tag:</li>
+</ul>
+<pre><code>git fetch origin solution --tags
+git switch -c my-part-2 part-1          # resume at the start of Part 2
+git switch -c my-1.6 lesson-1.5         # or at the start of lesson 1.6
+
+git log --oneline lesson-1.5..lesson-1.6   # every TDD step of lesson 1.6
+git diff lesson-1.5 lesson-1.6             # everything lesson 1.6 changed
+git diff lesson-1.6 -- internal/           # your code vs the reference</code></pre>
+<p>Tags are named <code>lesson-X.Y</code> (end of a lesson) and <code>part-N</code> (end of a Part). The reference is <em>a</em> correct answer, not <em>the</em> answer. If yours differs, use the Discuss questions to work out whether the difference matters.</p>
+<p>Part 9's stretch goals are independent, but the reference builds them in order, one tag each, so <code>lesson-9.4</code> also contains 9.1 to 9.3. To try one goal on its own, start from <code>part-8</code> and compare with <code>git diff lesson-9.3 lesson-9.4</code>. The optional extension track (E1 to E6) has no reference solution.</p>
+<p>The <code>solution</code> branch also has a <code>README.md</code> that maps every DDD and hexagonal concept to the file that shows it, and a <code>notes/</code> folder with the design work the lessons ask for: event storming, aggregate design and its measurements, failure drills, the orchestration comparison, and the retrospective.</p>
+<p>The snippets in these pages are generated from the tagged code (<code>make docs-snippets</code>), and <code>make docs-check</code> fails when a page no longer matches the code, so they can't drift.</p>
+
 <h2>Viewing these docs</h2>
 <p>Opening <code>docs/index.html</code> directly works. Serving the folder over HTTP is nicer, though: one stable URL, and lesson progress that survives across browsers on the same address.</p>
 <pre><code>make docs                                             # http://localhost:8000

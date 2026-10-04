@@ -33,16 +33,16 @@
 <p><strong>Consequences:</strong> The names describe <em>who initiates</em>, which is what decides who owns the interface. "Inbound/outbound" describe data direction, which is ambiguous for queries.</p>
 
 <h2>ADR-004 — Kafka integration via transactional outbox; <code>Save</code> writes the outbox</h2>
-<p><strong>Status:</strong> accepted.</p>
+<p><strong>Status:</strong> accepted; refined by ADR-012 (a use case may open the transaction its repositories join).</p>
 <p><strong>Decision:</strong> Repositories persist the aggregate and insert its translated events into <code>&lt;schema&gt;.outbox</code> in one transaction. A relay publishes outbox rows to Kafka (one topic per producing context, keyed by aggregate ID). Consumers are idempotent.</p>
 <p><strong>Consequences:</strong> (+) No lost or phantom events. (+) Per-aggregate ordering. (−) At-least-once delivery means duplicates, so handlers must be idempotent. (−) Up to ~poll-interval latency.</p>
 <p><strong>Alternatives:</strong> CDC with Debezium (an extra moving part); publishing after commit (loses events on crash).</p>
 
 <h2>ADR-005 — <code>ShowInventory</code> is one aggregate per show</h2>
-<p><strong>Status:</strong> accepted, <em>to be revisited in Part 9</em>.</p>
+<p><strong>Status:</strong> superseded by ADR-013 (lesson 9.1).</p>
 <p><strong>Context:</strong> TKT-5 (never double-sell) and TKT-2 (all-or-nothing multi-seat holds) must hold <em>immediately</em>, so they need a single consistency boundary.</p>
 <p><strong>Decision:</strong> One aggregate holds every seat state and active hold for a show, with an optimistic <code>version</code>.</p>
-<p><strong>Consequences:</strong> (+) The invariants are trivially correct in memory and easy to test. (−) Every hold on the same show serialises on one row's version. Under a hot on-sale, many requests get <code>ErrConcurrentModification</code>; the application service retries a few times. (−) Loading a 50k-seat inventory per request is heavy. The Part 7 load test makes this cost visible.</p>
+<p><strong>Consequences:</strong> (+) The invariants are trivially correct in memory and easy to test. (−) Every hold on the same show serialises on one row's version. Under a hot on-sale, many requests get <code>ErrConcurrentModification</code>; the application service retries a few times. (−) Loading a 50k-seat inventory per request is heavy. The Part 7 load test makes this cost visible. <em>Measured in 7.6:</em> 200 concurrent holds on 200 <em>different</em> seats of one show, and only 3 succeed within 3 retries (594 conflicts, p50 ≈ 0.8 s).</p>
 <p><strong>Alternatives:</strong> per-section aggregates (holds limited to one section, much less contention); per-seat rows with a DB unique constraint (scales, but moves the invariant into the database).</p>
 
 <h2>ADR-006 — sqlc + pgx instead of an ORM</h2>
@@ -66,15 +66,41 @@
 <p><strong>Consequences:</strong> (+) The kernel is justified by real reuse. (−) Every change to it is a cross-context change, so it has to stay tiny.</p>
 
 <h2>ADR-010 — Checkout as a choreographed saga with compensation</h2>
-<p><strong>Status:</strong> accepted.</p>
+<p><strong>Status:</strong> accepted; since ADR-014 the default driver is an orchestrator, and choreography stays selectable.</p>
 <p><strong>Decision:</strong> PlaceOrder → Charge → OrderPaid → ConfirmHold → SeatsSold → IssueTickets, with HoldConfirmationFailed → RefundOrder as compensation. Each step is its own transaction on one aggregate, linked by events on <code>ticketing.internal</code>.</p>
 <p><strong>Consequences:</strong> (+) Respects aggregate boundaries; each step is retryable. (−) The flow is spread across handlers. The Chapter 4 diagram and the e2e scenarios S1/S3 are its documentation.</p>
-<p><strong>Alternatives:</strong> an orchestrator (an explicit state machine aggregate <code>Checkout</code>). Worth comparing in Part 9.</p>
+<p><strong>Alternatives:</strong> an orchestrator (an explicit state machine aggregate <code>Checkout</code>). Compared in Part 9: see ADR-014.</p>
 
 <h2>ADR-011 — Optimistic concurrency with a version column</h2>
 <p><strong>Status:</strong> accepted.</p>
 <p><strong>Decision:</strong> Each aggregate root table has a <code>version</code>. <code>UPDATE … WHERE id=$1 AND version=$n</code> affecting 0 rows → <code>application.ErrConcurrentModification</code>. The application layer may retry the whole load-decide-save cycle (bounded, e.g. 3×).</p>
 <p><strong>Consequences:</strong> (+) No long-held locks, and conflicts are explicit. (−) Hot aggregates see retries (ADR-005).</p>
+
+<p class="lead">ADR-012 to ADR-015 record what the reference solution decided in Parts 8 and 9. Yours may differ; the point is to write them down.</p>
+
+<h2>ADR-012 — A use case may open the transaction its repositories join</h2>
+<p><strong>Status:</strong> accepted (lesson 8.4).</p>
+<p><strong>Context:</strong> ADR-004 made <code>Save</code> the transaction, which was right while every use case touched one aggregate. The inbox breaks that: claiming an event and the handler's own work must commit together, or a failed handler leaves a claim behind and the redelivery is skipped.</p>
+<p><strong>Decision:</strong> A <code>TxManager</code> port (<code>WithinTx(ctx, fn)</code>) carries a <code>pgx.Tx</code> in the context. Repositories start their transaction with <code>postgres.Begin</code>, which opens a <em>savepoint</em> inside an ambient transaction and a real one otherwise; reads use <code>postgres.Conn</code>. The inbox is a <code>(consumer, event_id)</code> table per schema.</p>
+<p><strong>Consequences:</strong> (+) No repository signature changed and every contract suite still passes. (+) Effectively-once handling where idempotency isn't natural (sending an email). (−) A use case that opens a transaction must keep it short: it holds row locks while it runs.</p>
+<p><strong>Alternatives:</strong> passing a <code>Tx</code> through every port (leaks pgx into the application); a unit-of-work object collecting aggregates (more machinery than Stagehand needs). We didn't start here because the simple rule held for seven Parts.</p>
+
+<h2>ADR-013 — One <code>SectionInventory</code> per (show, section)</h2>
+<p><strong>Status:</strong> accepted (lesson 9.1); supersedes ADR-005.</p>
+<p><strong>Context:</strong> ADR-005's measured cost (3 of 200 concurrent holds succeed on one show).</p>
+<p><strong>Decision:</strong> The inventory aggregate is per section; a hold is for seats of one section. TKT-3 (one active hold per customer) becomes per section. TKT-10 (sold out) spans sections, so it is a domain service, <code>ShowSoldOut</code>, run by a policy on every <code>SectionSoldOut</code>; <code>OrderPaid</code> carries the section so the saga finds the right inventory.</p>
+<p><strong>Consequences:</strong> (+) Ten sections: 30 of 200 holds succeed, p50 0.3 s instead of 0.8 s. (−) A hold can't mix sections; a customer may hold in two sections at once. (−) Show-wide rules need a domain service and an eventually-consistent policy. Contention within a section remains: the next levers are the retry policy and per-seat locking.</p>
+
+<h2>ADR-014 — The checkout is orchestrated by a <code>CheckoutProcess</code></h2>
+<p><strong>Status:</strong> accepted (lesson 9.4); ADR-010's choreography stays available with <code>SAGA_STYLE=choreography</code>.</p>
+<p><strong>Decision:</strong> A <code>CheckoutProcess</code> aggregate per order (<code>started → awaiting_seats → completed | compensated</code>) decides each next step; a <code>CheckoutOrchestrator</code> runs it, then saves the process. The steps are the same use cases as in ADR-010, and the saga consumer is unchanged: the composition root swaps the steps.</p>
+<p><strong>Consequences:</strong> (+) The flow is one readable state machine, testable without I/O. (+) "Where is order X?" is one row. (−) A table, a repository and a migration path (orders paid before the switch have no process and finish as choreography would). See <code>notes/orchestration.md</code> on the <code>solution</code> branch.</p>
+
+<h2>ADR-015 — Only permanent failures go to the dead-letter queue</h2>
+<p><strong>Status:</strong> accepted (lesson 8.5); refines the consumer runner of lesson 5.5.</p>
+<p><strong>Context:</strong> The runner dead-lettered a message after N attempts. Drill 4 showed a short Postgres outage sending <code>show.published.v1</code> and an email to the DLQ: an outage turned into lost work.</p>
+<p><strong>Decision:</strong> A handler marks poison explicitly with <code>kafka.Permanent(err)</code> (a payload that doesn't decode, for example), and the runner dead-letters it at once. Every other error is transient: the runner retries it with exponential backoff, capped at <code>MaxBackoff</code>, until it succeeds. Business outcomes such as an expired hold are results, not errors.</p>
+<p><strong>Consequences:</strong> (+) Outages delay events; they don't lose them. (−) A bug that returns a plain error blocks its partition until it is fixed. Alert on the <code>kafka handler</code> warning.</p>
 
 <h2>Template for new ADRs</h2>
 <pre><code>&lt;h2&gt;ADR-0XX — Title in the imperative or as a statement&lt;/h2&gt;

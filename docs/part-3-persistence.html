@@ -22,6 +22,30 @@
   <dt>Creates</dt><dd><code>docker-compose.yml</code> (postgres only), Makefile targets <code>infra</code>, <code>down</code>, <code>reset</code></dd>
 </dl>
 <div class="callout do"><span class="label">Your turn</span><p>Write the <code>postgres</code> service with a healthcheck. Run <code>make infra</code>, then <code>psql postgres://stagehand:stagehand@localhost:5432/stagehand -c 'select version()'</code>.</p></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: part-2 lesson-3.1 -->
+<p class="resume">Start this lesson from <code>git checkout part-2</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/fc7d8184ca77"><code>lesson-3.1</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/b26f10e0919c...fc7d8184ca77">this lesson's 1 commits</a>).</p>
+<!-- /resume -->
+<!-- snippet: lesson-3.1 docker-compose.yml -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/fc7d8184ca77/docker-compose.yml"><code>docker-compose.yml</code></a> at <code>lesson-3.1</code></div>
+<pre><code>services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: stagehand
+      POSTGRES_PASSWORD: stagehand
+      POSTGRES_DB: stagehand
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stagehand"]
+      interval: 2s
+      retries: 30
+    volumes: [pgdata:/var/lib/postgresql]
+
+volumes:
+  pgdata: {}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l3-2">
@@ -35,6 +59,48 @@
   <li>Why store the rows as JSONB instead of a <code>venue.rows</code> table? (They're value objects with no identity, never queried on their own, and always loaded with their section.) When would you change your mind?</li>
   <li>The persistence model (two tables plus JSONB) differs from the domain model (aggregate → entities → VOs). Who is responsible for the translation?</li>
 </ul></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-3.1 lesson-3.2 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-3.1</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/37efe23da1b3"><code>lesson-3.2</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/fc7d8184ca77...37efe23da1b3">this lesson's 1 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>Migrations are embedded (<code>db.Migrations</code>), so <code>stagehand migrate</code>, the integration tests and CI all apply exactly the same files.</li>
+  <li>Sections are rows of their own (<code>venue.sections</code>), with seated rows as a JSONB column: the aggregate is loaded and saved as a whole, so normalising rows further buys nothing.</li>
+</ul>
+<!-- snippet: lesson-3.2 db/migrations/00002_venue_tables.sql -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/37efe23da1b3/db/migrations/00002_venue_tables.sql"><code>db/migrations/00002_venue_tables.sql</code></a> at <code>lesson-3.2</code></div>
+<pre><code>-- +goose Up
+CREATE TABLE venue.venues (
+    id         UUID        PRIMARY KEY,
+    name       TEXT        NOT NULL,
+    street     TEXT        NOT NULL,
+    city       TEXT        NOT NULL,
+    country    CHAR(2)     NOT NULL,
+    status     TEXT        NOT NULL,
+    version    INT         NOT NULL,          -- optimistic concurrency (ADR-011)
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- A section belongs to exactly one venue. Its rows are value objects with no
+-- identity, never queried on their own and always loaded with the section,
+-- so they live in a JSONB column: [{"label":"A","seats":20}, ...].
+CREATE TABLE venue.sections (
+    venue_id UUID    NOT NULL REFERENCES venue.venues (id) ON DELETE CASCADE,
+    code     TEXT    NOT NULL,
+    position INT     NOT NULL,                -- keeps the order sections were added in
+    name     TEXT    NOT NULL,
+    kind     TEXT    NOT NULL,                -- 'seated' | 'ga'
+    capacity INT     NOT NULL,
+    rows     JSONB   NOT NULL DEFAULT '[]',
+    PRIMARY KEY (venue_id, code)
+);
+
+-- +goose Down
+DROP TABLE venue.sections;
+DROP TABLE venue.venues;</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l3-3">
@@ -45,6 +111,47 @@
 </dl>
 <p>Queries needed: <code>InsertVenue</code>, <code>UpdateVenue :execrows</code> (with the version check), <code>GetVenue</code>, <code>DeleteSections</code>, <code>InsertSection</code>, <code>ListSections</code>, plus the read-side queries for <code>VenueQueries</code>.</p>
 <div class="callout do"><span class="label">Your turn</span><p>Run <code>make generate</code> and <em>read</em> the generated code. Commit it, because generated code is reviewed like any other code. Add a CI check later (<code>sqlc diff</code>) to catch stale generation.</p></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-3.2 lesson-3.3 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-3.2</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/ef190657eb71"><code>lesson-3.3</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/37efe23da1b3...ef190657eb71">this lesson's 1 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>sqlc runs as a Go tool (<code>go tool sqlc</code>), pinned in <code>go.mod</code>: no separate install, and everyone generates the same code.</li>
+</ul>
+<!-- snippet: lesson-3.3 db/queries/venue/venues.sql -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/ef190657eb71/db/queries/venue/venues.sql"><code>db/queries/venue/venues.sql</code></a> at <code>lesson-3.3</code></div>
+<pre><code>-- name: GetVenue :one
+SELECT id, name, street, city, country, status, version
+FROM venue.venues
+WHERE id = $1;
+
+-- name: ListSections :many
+SELECT code, name, kind, capacity, rows
+FROM venue.sections
+WHERE venue_id = $1
+ORDER BY position;
+
+-- A second registration of the same id inserts nothing: 0 rows ⇒ conflict.
+-- name: InsertVenue :execrows
+INSERT INTO venue.venues (id, name, street, city, country, status, version)
+VALUES ($1, $2, $3, $4, $5, $6, 1)
+ON CONFLICT (id) DO NOTHING;
+
+-- 0 rows ⇒ someone else saved first ⇒ ErrConcurrentModification (ADR-011).
+-- name: UpdateVenue :execrows
+UPDATE venue.venues
+SET name = $2, street = $3, city = $4, country = $5, status = $6,
+    version = version + 1, updated_at = now()
+WHERE id = $1 AND version = sqlc.arg(expected_version);
+
+-- name: DeleteSections :exec
+DELETE FROM venue.sections WHERE venue_id = $1;
+
+-- name: InsertSection :exec
+INSERT INTO venue.sections (venue_id, code, position, name, kind, capacity, rows)
+VALUES ($1, $2, $3, $4, $5, $6, $7);</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l3-4">
@@ -59,6 +166,59 @@
   <li><code>pgtest.New(t)</code> returns a pool where <code>SELECT 1</code> works. The container is shared across the package via <code>TestMain</code>.</li>
 </ol></div>
 <div class="callout warn"><span class="label">Pitfall</span><p>Starting a container per test turns a 2-second suite into 2 minutes. Use one per package and isolate tests with random IDs.</p></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-3.3 lesson-3.4 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-3.3</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/80d2a9cc25e7"><code>lesson-3.4</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/ef190657eb71...80d2a9cc25e7">this lesson's 2 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li><code>pgtest.Main</code> starts one <code>postgres:18</code> container per test package and migrates it; tests share it, each with its own rows (random IDs). The down migrations run too, so they stay reversible.</li>
+</ul>
+<!-- snippet: lesson-3.4 internal/platform/postgres/pgtest/pgtest.go#Main,New -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/80d2a9cc25e7/internal/platform/postgres/pgtest/pgtest.go"><code>internal/platform/postgres/pgtest/pgtest.go</code></a> at <code>lesson-3.4</code></div>
+<pre><code>// Main starts the container, migrates it up, runs the tests and stops it.
+func Main(m *testing.M) int {
+	ctx := context.Background()
+	container, err := tcpostgres.Run(ctx, "postgres:18",
+		tcpostgres.WithDatabase("stagehand"),
+		tcpostgres.WithUsername("stagehand"),
+		tcpostgres.WithPassword("stagehand"),
+		tcpostgres.BasicWaitStrategies(),
+	)
+	if err != nil {
+		log.Printf("pgtest: start postgres: %v", err)
+		return 1
+	}
+	defer func() {
+		if err := container.Terminate(context.Background()); err != nil {
+			log.Printf("pgtest: stop postgres: %v", err)
+		}
+	}()
+
+	databaseURL, err = container.ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		log.Printf("pgtest: connection string: %v", err)
+		return 1
+	}
+	if err := migrateUp(ctx); err != nil {
+		log.Printf("pgtest: %v", err)
+		return 1
+	}
+	return m.Run()
+}
+
+// New returns a pool on the package's (migrated) database, closed when the
+// test ends.
+func New(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	pool, err := postgres.NewPool(context.Background(), URL(t))
+	if err != nil {
+		t.Fatalf("pgtest: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	return pool
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l3-5">
@@ -76,6 +236,63 @@
   <li>Make "Save drains events" pass. For now the events are drained and dropped. Part 5 writes them to the outbox.</li>
 </ol></div>
 <div class="callout why"><span class="label">Why this proves the architecture</span><p>Count the lines you changed in <code>domain</code> and <code>application</code> in this lesson. It should be zero. If you had to change them, something leaked, and we discuss what.</p></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-3.4 lesson-3.5 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-3.4</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/62cfad1f01cc"><code>lesson-3.5</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/80d2a9cc25e7...62cfad1f01cc">this lesson's 1 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>The Postgres repository passes the <em>same</em> contract suite as the memory fake, with one line of test code.</li>
+  <li>Optimistic concurrency is one SQL condition, <code>WHERE version = $expected</code>, and zero affected rows becomes <code>ErrConcurrentModification</code>.</li>
+</ul>
+<!-- snippet: lesson-3.5 internal/venue/adapters/driven/postgres/venue_repository.go#VenueRepository.Save -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/62cfad1f01cc/internal/venue/adapters/driven/postgres/venue_repository.go"><code>internal/venue/adapters/driven/postgres/venue_repository.go</code></a> at <code>lesson-3.5</code></div>
+<pre><code>// Save implements application.VenueRepository: one transaction writes the
+// venue row (insert, or update guarded by the version) and replaces its
+// sections. Replacing is fine: layouts only change while the venue is a draft.
+func (r *VenueRepository) Save(ctx context.Context, v *domain.Venue) (err error) {
+	uid, err := uuid.Parse(v.ID().String())
+	if err != nil {
+		return fmt.Errorf("venue id: %w", err)
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("save venue %s: begin: %w", v.ID(), err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+	q := sqlcgen.New(tx)
+
+	if err := saveVenueRow(ctx, q, uid, v); err != nil {
+		return err
+	}
+	if err := q.DeleteSections(ctx, uid); err != nil {
+		return fmt.Errorf("save venue %s: delete sections: %w", v.ID(), err)
+	}
+	for i, s := range v.Sections() {
+		rows, err := rowsJSON(s)
+		if err != nil {
+			return err
+		}
+		if err := q.InsertSection(ctx, sqlcgen.InsertSectionParams{
+			VenueID: uid, Code: s.Code().String(), Position: int32(i), Name: s.Name(),
+			Kind: kindOf(s), Capacity: int32(s.Capacity()), Rows: rows,
+		}); err != nil {
+			return fmt.Errorf("save venue %s: insert section %s: %w", v.ID(), s.Code(), err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("save venue %s: commit: %w", v.ID(), err)
+	}
+	// Part 5 writes these to the outbox in the same transaction. For now
+	// they are drained and dropped.
+	v.PullEvents()
+	return nil
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l3-6">
@@ -89,6 +306,37 @@
   <li>Add a <code>RetryOnConflict(ctx, attempts, fn)</code> helper to the <em>application</em> layer and use it in <code>AddSectionHandler</code>. Test it with the fake repo by injecting a conflict once.</li>
 </ol></div>
 <div class="callout discuss"><span class="label">Discuss</span><p>Why is retrying the whole load → decide → save cycle safe, but retrying only the save wrong?</p></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-3.5 lesson-3.6 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-3.5</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/39586a616a70"><code>lesson-3.6</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/62cfad1f01cc...39586a616a70">this lesson's 4 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>The race test needed a barrier: without one, the two goroutines rarely overlapped and the test passed for the wrong reason.</li>
+  <li><code>RetryOnConflict</code> retries the whole load → decide → save cycle, never just the save: a retry must re-check the rules against fresh state.</li>
+</ul>
+<!-- snippet: lesson-3.6 internal/venue/application/retry.go#RetryOnConflict -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/39586a616a70/internal/venue/application/retry.go"><code>internal/venue/application/retry.go</code></a> at <code>lesson-3.6</code></div>
+<pre><code>// RetryOnConflict runs fn up to attempts times while it fails with
+// ErrConcurrentModification.
+//
+// fn must be the whole load → decide → save cycle. Retrying only the save
+// would write a decision taken on stale state; reloading lets the domain
+// decide again against what is really stored (ADR-011).
+func RetryOnConflict(ctx context.Context, attempts int, fn func(context.Context) error) error {
+	var err error
+	for range attempts {
+		err = fn(ctx)
+		if !errors.Is(err, ErrConcurrentModification) {
+			return err
+		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return fmt.Errorf("%w (after %w)", ctxErr, err)
+		}
+	}
+	return err
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l3-7">
@@ -102,6 +350,76 @@
 </ol></div>
 <h4>Done when</h4>
 <ul><li><code>make test</code> is fast and green, and <code>make test-integration</code> is green with real Postgres.</li></ul>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-3.6 lesson-3.7 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-3.6</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/9b1ccba1f524"><code>lesson-3.7</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/39586a616a70...9b1ccba1f524">this lesson's 3 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>Capacity is summed by Postgres in the query, not by loading aggregates: the read side may take shortcuts the write side may not.</li>
+</ul>
+<!-- snippet: lesson-3.7 internal/venue/adapters/driven/postgres/venue_queries.go#VenueQueries.List -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/9b1ccba1f524/internal/venue/adapters/driven/postgres/venue_queries.go"><code>internal/venue/adapters/driven/postgres/venue_queries.go</code></a> at <code>lesson-3.7</code></div>
+<pre><code>// List implements application.VenueQueries.
+func (q *VenueQueries) List(ctx context.Context, status string) ([]application.VenueView, error) {
+	db := sqlcgen.New(q.pool)
+	rows, err := db.ListVenueViewsByStatus(ctx, status)
+	if err != nil {
+		return nil, fmt.Errorf("list venues %s: %w", status, err)
+	}
+	ids := make([]uuid.UUID, len(rows))
+	views := make([]application.VenueView, len(rows))
+	index := make(map[uuid.UUID]int, len(rows))
+	for i, r := range rows {
+		ids[i] = r.ID
+		index[r.ID] = i
+		views[i] = application.VenueView{
+			ID: r.ID.String(), Name: r.Name, Street: r.Street, City: r.City,
+			Country: r.Country, Status: r.Status, Capacity: int(r.Capacity),
+		}
+	}
+	sections, err := db.ListSectionsOfVenues(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("list venues %s sections: %w", status, err)
+	}
+	for _, s := range sections {
+		sv, err := sectionView(s.Code, s.Name, s.Kind, s.Capacity, s.Rows)
+		if err != nil {
+			return nil, err
+		}
+		i := index[s.VenueID]
+		views[i].Sections = append(views[i].Sections, sv)
+	}
+	return views, nil
+}</code></pre>
+<!-- /snippet -->
+<!-- snippet: lesson-3.7 db/queries/venue/views.sql -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/9b1ccba1f524/db/queries/venue/views.sql"><code>db/queries/venue/views.sql</code></a> at <code>lesson-3.7</code></div>
+<pre><code>-- The read side: flat views straight from SQL, never through the aggregate.
+
+-- name: GetVenueView :one
+SELECT v.id, v.name, v.street, v.city, v.country, v.status,
+       COALESCE(SUM(s.capacity), 0)::int AS capacity
+FROM venue.venues v
+LEFT JOIN venue.sections s ON s.venue_id = v.id
+WHERE v.id = $1
+GROUP BY v.id;
+
+-- name: ListVenueViewsByStatus :many
+SELECT v.id, v.name, v.street, v.city, v.country, v.status,
+       COALESCE(SUM(s.capacity), 0)::int AS capacity
+FROM venue.venues v
+LEFT JOIN venue.sections s ON s.venue_id = v.id
+WHERE v.status = $1
+GROUP BY v.id
+ORDER BY v.name, v.id;
+
+-- name: ListSectionsOfVenues :many
+SELECT venue_id, code, name, kind, capacity, rows
+FROM venue.sections
+WHERE venue_id = ANY(sqlc.arg(venue_ids)::uuid[])
+ORDER BY venue_id, position;</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 </main>
 <script src="assets/course.js"></script>

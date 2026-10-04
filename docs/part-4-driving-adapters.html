@@ -26,6 +26,49 @@
   <li>The recover middleware turns a panic into a 500 problem and logs it.</li>
 </ol></div>
 <div class="callout discuss"><span class="label">Discuss</span><p>Why does this live in <code>platform</code> and not the shared kernel? (It's technical, not domain. Chapter 2, Shared kernel.)</p></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: part-3 lesson-4.1 -->
+<p class="resume">Start this lesson from <code>git checkout part-3</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/1d7d3b38d4e8"><code>lesson-4.1</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/9b1ccba1f524...1d7d3b38d4e8">this lesson's 2 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>Errors are RFC 9457 <code>application/problem+json</code>; decoding is strict (unknown fields are a 400).</li>
+</ul>
+<!-- snippet: lesson-4.1 internal/platform/httpx/middleware.go#Chain,Recover -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/1d7d3b38d4e8/internal/platform/httpx/middleware.go"><code>internal/platform/httpx/middleware.go</code></a> at <code>lesson-4.1</code></div>
+<pre><code>// Chain applies middleware so the first one listed is the outermost.
+func Chain(h http.Handler, mws ...Middleware) http.Handler {
+	for i := len(mws) - 1; i &gt;= 0; i-- {
+		h = mws[i](h)
+	}
+	return h
+}
+
+// Recover turns a panic into a logged 500 problem instead of a dropped
+// connection.
+func Recover(logger *slog.Logger) Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer func() {
+				if v := recover(); v != nil {
+					logger.ErrorContext(r.Context(), "panic", "panic", v, "path", r.URL.Path, "request_id", RequestIDFrom(r.Context()))
+					WriteProblem(w, http.StatusInternalServerError, "Internal error", "")
+				}
+			}()
+			next.ServeHTTP(w, r)
+		})
+	}
+}</code></pre>
+<!-- /snippet -->
+<!-- snippet: lesson-4.1 internal/platform/httpx/problem.go#WriteProblem -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/1d7d3b38d4e8/internal/platform/httpx/problem.go"><code>internal/platform/httpx/problem.go</code></a> at <code>lesson-4.1</code></div>
+<pre><code>// WriteProblem writes a problem response.
+func WriteProblem(w http.ResponseWriter, status int, title, detail string) {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(Problem{Title: title, Status: status, Detail: detail})
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l4-2">
@@ -52,6 +95,62 @@
 </ol></div>
 <div class="callout warn"><span class="label">Pitfall</span><p>Using <code>domain.Venue</code> as the JSON response type ties your public API to your model, and every internal rename becomes a breaking API change. Keep separate DTOs.</p></div>
 <div class="callout discuss"><span class="label">Discuss</span><p>Why <code>POST /venues/{id}/activation</code> rather than <code>PATCH /venues/{id} {"status":"active"}</code>? (Ubiquitous language and intention, from Chapter 2.)</p></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-4.1 lesson-4.2 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-4.1</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/22c342ba5136"><code>lesson-4.2</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/1d7d3b38d4e8...22c342ba5136">this lesson's 1 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>One table maps domain and application errors to HTTP statuses. Anything unknown is a logged 500 with no details for the client.</li>
+  <li>The adapter depends on <em>interfaces</em> of the handlers it calls (<code>UseCases</code>), so its tests use stubs and never touch a repository.</li>
+</ul>
+<!-- snippet: lesson-4.2 internal/venue/adapters/driving/httpapi/errors.go#errorStatuses -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/22c342ba5136/internal/venue/adapters/driving/httpapi/errors.go"><code>internal/venue/adapters/driving/httpapi/errors.go</code></a> at <code>lesson-4.2</code></div>
+<pre><code>// errorStatuses is the one place that maps core errors to HTTP: invalid
+// input → 422, not found → 404, state or conflict → 409. Anything else is a
+// bug or an outage: 500, logged, details hidden.
+var errorStatuses = []struct {
+	err    error
+	status int
+	title  string
+}{
+	{domain.ErrInvalidVenueID, http.StatusUnprocessableEntity, "Invalid venue id"},
+	{domain.ErrInvalidVenueName, http.StatusUnprocessableEntity, "Invalid venue name"},
+	{domain.ErrInvalidAddress, http.StatusUnprocessableEntity, "Invalid address"},
+	{domain.ErrInvalidSectionCode, http.StatusUnprocessableEntity, "Invalid section code"},
+	{domain.ErrInvalidSection, http.StatusUnprocessableEntity, "Invalid section"},
+	{domain.ErrInvalidRow, http.StatusUnprocessableEntity, "Invalid row"},
+	{domain.ErrDuplicateRowLabel, http.StatusUnprocessableEntity, "Duplicate row label"},
+	{application.ErrVenueNotFound, http.StatusNotFound, "Venue not found"},
+	{domain.ErrDuplicateSectionCode, http.StatusConflict, "Duplicate section code"},
+	{domain.ErrVenueNotDraft, http.StatusConflict, "Venue is not a draft"},
+	{domain.ErrVenueHasNoSections, http.StatusConflict, "Venue has no sections"},
+	{domain.ErrInvalidVenueTransition, http.StatusConflict, "Invalid venue transition"},
+	{application.ErrConcurrentModification, http.StatusConflict, "Concurrent modification"},
+}</code></pre>
+<!-- /snippet -->
+<!-- snippet: lesson-4.2 internal/venue/adapters/driving/httpapi/routes.go#Routes -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/22c342ba5136/internal/venue/adapters/driving/httpapi/routes.go"><code>internal/venue/adapters/driving/httpapi/routes.go</code></a> at <code>lesson-4.2</code></div>
+<pre><code>// Routes returns the Venue API:
+//
+//	POST /venues                     RegisterVenue   201 + Location
+//	POST /venues/{id}/sections       AddSection      204
+//	POST /venues/{id}/activation     ActivateVenue   204
+//	POST /venues/{id}/retirement     RetireVenue     204
+//	GET  /venues/{id}                VenueQueries    200
+//	GET  /venues?status=active       VenueQueries    200
+func Routes(uc UseCases, logger *slog.Logger) http.Handler {
+	h := &amp;handlers{uc: uc, logger: logger}
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /venues", h.register)
+	mux.HandleFunc("POST /venues/{id}/sections", h.addSection)
+	mux.HandleFunc("POST /venues/{id}/activation", h.activate)
+	mux.HandleFunc("POST /venues/{id}/retirement", h.retire)
+	mux.HandleFunc("GET /venues/{id}", h.get)
+	mux.HandleFunc("GET /venues", h.list)
+	return mux
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l4-3">
@@ -66,6 +165,75 @@
   <li>A <code>slog</code> JSON handler at the configured level.</li>
 </ol></div>
 <div class="callout why"><span class="label">Why no DI framework?</span><p>The wiring is about 40 explicit lines. You can read in one screen what talks to what, and the compiler checks every dependency. A container would hide the architecture you're trying to learn.</p></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-4.2 lesson-4.3 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-4.2</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/86d42df17468"><code>lesson-4.3</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/22c342ba5136...86d42df17468">this lesson's 2 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>The composition root is plain constructor injection, top to bottom. Nothing below <code>main</code> reads environment variables: <code>config.Load</code> takes a <code>getenv</code> function, so tests pass a map.</li>
+</ul>
+<!-- snippet: lesson-4.3 cmd/stagehand/serve.go#serve -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/86d42df17468/cmd/stagehand/serve.go"><code>cmd/stagehand/serve.go</code></a> at <code>lesson-4.3</code></div>
+<pre><code>// serve is the composition root: the only place that knows every concrete
+// type. Plain constructor injection, top to bottom, no container.
+func serve(ctx context.Context) error {
+	cfg, err := config.Load(os.Getenv)
+	if err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &amp;slog.HandlerOptions{Level: cfg.LogLevel}))
+
+	pool, err := postgres.NewPool(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("database: %w", err)
+	}
+	defer pool.Close()
+
+	// Driven adapters.
+	clk := clock.System{}
+	venues := venuepg.NewVenueRepository(pool)
+	venueIDs := ids.NewVenueIDs(idgen.UUIDv7{})
+
+	// Use cases, then the driving adapter.
+	venueAPI := httpapi.Routes(httpapi.UseCases{
+		Register:   application.NewRegisterVenueHandler(venues, venueIDs, clk),
+		AddSection: application.NewAddSectionHandler(venues, clk),
+		Activate:   application.NewActivateVenueHandler(venues, clk),
+		Retire:     application.NewRetireVenueHandler(venues, clk),
+		Queries:    venuepg.NewVenueQueries(pool),
+	}, logger)
+
+	mux := http.NewServeMux()
+	mux.Handle("/venues", venueAPI)
+	mux.Handle("/venues/", venueAPI)
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+
+	server := &amp;http.Server{
+		Addr:              cfg.HTTPAddr,
+		Handler:           httpx.Chain(mux, httpx.RequestID, httpx.Recover(logger), httpx.AccessLog(logger)),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	return runServer(ctx, server, logger)
+}</code></pre>
+<!-- /snippet -->
+<!-- snippet: lesson-4.3 internal/platform/config/config.go#Load -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/86d42df17468/internal/platform/config/config.go"><code>internal/platform/config/config.go</code></a> at <code>lesson-4.3</code></div>
+<pre><code>// Load builds the Config from getenv (os.Getenv in main, a map in tests).
+func Load(getenv func(string) string) (Config, error) {
+	cfg := Config{
+		HTTPAddr:    or(getenv("HTTP_ADDR"), ":8080"),
+		DatabaseURL: getenv("DATABASE_URL"),
+	}
+	if cfg.DatabaseURL == "" {
+		return Config{}, errors.New("config: DATABASE_URL is required")
+	}
+	if err := cfg.LogLevel.UnmarshalText([]byte(or(getenv("LOG_LEVEL"), "info"))); err != nil {
+		return Config{}, fmt.Errorf("config: LOG_LEVEL: %w", err)
+	}
+	return cfg, nil
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l4-4">
@@ -76,6 +244,30 @@
 </dl>
 <h4>Done when</h4>
 <ul><li>From a clean checkout: <code>make up</code>, then the requests in <code>api/venue.http</code> register, lay out and activate a venue.</li></ul>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-4.3 lesson-4.4 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-4.3</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/b77e8393c39a"><code>lesson-4.4</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/86d42df17468...b77e8393c39a">this lesson's 1 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>The runtime image is distroless (no shell, no curl), so the container's healthcheck is a subcommand of the binary: <code>stagehand healthcheck</code>.</li>
+</ul>
+<!-- snippet: lesson-4.4 Dockerfile -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/b77e8393c39a/Dockerfile"><code>Dockerfile</code></a> at <code>lesson-4.4</code></div>
+<pre><code># One static binary, two subcommands: serve and migrate.
+FROM golang:1.27 AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /stagehand ./cmd/stagehand
+
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=build /stagehand /stagehand
+EXPOSE 8080
+ENTRYPOINT ["/stagehand"]
+CMD ["serve"]</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l4-5">
@@ -88,6 +280,58 @@
   <li>Register → add 2 sections → activate → GET shows status <code>active</code> and the correct capacity.</li>
   <li>Activating a venue without sections → 409 with the expected problem title.</li>
 </ol></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-4.4 lesson-4.5 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-4.4</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/09581df20b39"><code>lesson-4.5</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/b77e8393c39a...09581df20b39">this lesson's 1 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>The e2e tests use the build tag <code>e2e</code> and talk HTTP only, so <code>make test</code> never needs Docker.</li>
+</ul>
+<!-- snippet: lesson-4.5 test/e2e/venue_test.go -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/09581df20b39/test/e2e/venue_test.go"><code>test/e2e/venue_test.go</code></a> at <code>lesson-4.5</code></div>
+<pre><code>//go:build e2e
+
+package e2e_test
+
+import (
+	"net/http"
+	"testing"
+)
+
+// The wiring, end to end: HTTP → use case → Postgres → HTTP.
+func TestVenue_LayOutAndActivate(t *testing.T) {
+	c := newClient(t)
+	id := c.registerVenue("Coliseu dos Recreios")
+
+	mustStatus(t, c.do(http.MethodPost, "/venues/"+id+"/sections", map[string]any{
+		"code": "ORCH", "name": "Orchestra", "kind": "seated",
+		"rows": []map[string]any{{"label": "A", "seats": 10}, {"label": "B", "seats": 12}},
+	}), http.StatusNoContent)
+	mustStatus(t, c.do(http.MethodPost, "/venues/"+id+"/sections", map[string]any{
+		"code": "FLOOR", "name": "Floor", "kind": "ga", "capacity": 500,
+	}), http.StatusNoContent)
+	mustStatus(t, c.do(http.MethodPost, "/venues/"+id+"/activation", nil), http.StatusNoContent)
+
+	var venue venueJSON
+	mustStatus(t, c.do(http.MethodGet, "/venues/"+id, nil), http.StatusOK).decode(t, &amp;venue)
+	if venue.Status != "active" || venue.Capacity != 522 {
+		t.Errorf("venue = %+v, want active with capacity 522", venue)
+	}
+}
+
+func TestVenue_ActivateWithoutSections(t *testing.T) {
+	c := newClient(t)
+	id := c.registerVenue("Empty Hall")
+
+	var problem problemJSON
+	mustStatus(t, c.do(http.MethodPost, "/venues/"+id+"/activation", nil), http.StatusConflict).decode(t, &amp;problem)
+
+	if problem.Title != "Venue has no sections" {
+		t.Errorf("title = %q, want %q (VEN-5)", problem.Title, "Venue has no sections")
+	}
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l4-6">
@@ -105,6 +349,79 @@
 </ol></div>
 <h4>Done when</h4>
 <ul><li>The Venue context is complete end-to-end (minus events), and the architecture is enforced by CI.</li></ul>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-4.5 lesson-4.6 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-4.5</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/86d1dcc58524"><code>lesson-4.6</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/09581df20b39...86d1dcc58524">this lesson's 1 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>Rules are data (applies, forbidden); <code>golang.org/x/tools/go/packages</code> loads the import graph. A second test checks that only driven adapters call <code>Rehydrate*</code>, which import rules alone can't express.</li>
+</ul>
+<!-- snippet: lesson-4.6 internal/archtest/archtest_test.go#TestDependencyRules -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/86d1dcc58524/internal/archtest/archtest_test.go"><code>internal/archtest/archtest_test.go</code></a> at <code>lesson-4.6</code></div>
+<pre><code>func TestDependencyRules(t *testing.T) {
+	rules := []struct {
+		name      string
+		applies   func(pkg string) bool
+		forbidden func(pkg, imp string) bool
+	}{
+		{
+			"domain imports only stdlib, sharedkernel and uuid",
+			func(p string) bool { return contextOf(p) != "" &amp;&amp; strings.HasSuffix(p, "/domain") },
+			func(_, imp string) bool {
+				return !isStdlib(imp) &amp;&amp; imp != module+"/internal/sharedkernel" &amp;&amp; imp != "github.com/google/uuid"
+			},
+		},
+		{
+			"domain does not import context",
+			func(p string) bool { return contextOf(p) != "" &amp;&amp; strings.HasSuffix(p, "/domain") },
+			func(_, imp string) bool { return imp == "context" },
+		},
+		{
+			"application imports no adapters, platform or drivers",
+			func(p string) bool { return contextOf(p) != "" &amp;&amp; layerIs(p, "application") },
+			func(_, imp string) bool {
+				return layerIs(imp, "adapters") || strings.HasPrefix(imp, module+"/internal/platform") ||
+					strings.HasPrefix(imp, "github.com/jackc/pgx") || strings.HasPrefix(imp, "github.com/twmb/franz-go")
+			},
+		},
+		{
+			"a context imports another context only through its contracts",
+			func(p string) bool { return contextOf(p) != "" },
+			func(p, imp string) bool {
+				other := contextOf(imp)
+				return other != "" &amp;&amp; other != contextOf(p) &amp;&amp; !strings.HasSuffix(imp, "/contracts")
+			},
+		},
+		{
+			"contracts import only the standard library",
+			func(p string) bool { return contextOf(p) != "" &amp;&amp; strings.HasSuffix(p, "/contracts") },
+			func(_, imp string) bool { return !isStdlib(imp) },
+		},
+		{
+			"platform imports no context",
+			func(p string) bool { return strings.HasPrefix(p, module+"/internal/platform") },
+			func(_, imp string) bool { return contextOf(imp) != "" },
+		},
+	}
+
+	pkgs := load(t)
+	for _, rule := range rules {
+		t.Run(rule.name, func(t *testing.T) {
+			for _, pkg := range pkgs {
+				if !rule.applies(pkg.PkgPath) {
+					continue
+				}
+				for imp := range pkg.Imports {
+					if rule.forbidden(pkg.PkgPath, imp) {
+						t.Errorf("%s imports %s", pkg.PkgPath, imp)
+					}
+				}
+			}
+		})
+	}
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 </main>
 <script src="assets/course.js"></script>
