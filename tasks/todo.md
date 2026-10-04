@@ -3,7 +3,7 @@
 Source of truth for *where we are* in the course. Lessons live in `docs/part-*.html`.
 Tick a lesson when its "Done when" checks pass; add a one-line note (date, anything notable).
 
-**Current lesson:** 4.1 — HTTP plumbing in platform/httpx
+**Current lesson:** 5.1 — Kafka in Compose
 
 ## Part 0 — Orientation & setup (`docs/part-0-orientation.html`)
 - [x] 0.1 Event storming on paper
@@ -48,12 +48,14 @@ Tick a lesson when its "Done when" checks pass; add a one-line note (date, anyth
 - [x] 3.7 The query side in Postgres
 
 ## Part 4 — Driving adapters & the composition root (`docs/part-4-driving-adapters.html`)
-- [ ] 4.1 HTTP plumbing in platform/httpx
-- [ ] 4.2 The Venue HTTP adapter
-- [ ] 4.3 Composition root: stagehand serve
-- [ ] 4.4 Dockerfile and the app in Compose
-- [ ] 4.5 The first end-to-end test
-- [ ] 4.6 The architecture test
+- [x] 4.1 HTTP plumbing in platform/httpx
+- [x] 4.2 The Venue HTTP adapter
+- [x] 4.3 Composition root: stagehand serve
+- [x] 4.4 Dockerfile and the app in Compose
+  - Distroless has no curl: `stagehand healthcheck` is the container healthcheck.
+- [x] 4.5 The first end-to-end test
+- [x] 4.6 The architecture test
+  - Also enforces 1.9: only adapters/driven may call domain.Rehydrate*.
 
 ## Part 5 — Integration events: outbox, relay, Kafka (`docs/part-5-messaging.html`)
 - [ ] 5.1 Kafka in Compose
