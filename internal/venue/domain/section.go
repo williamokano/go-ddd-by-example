@@ -55,6 +55,9 @@ func (s Section) Code() SectionCode { return s.code }
 // Name returns the section's display name.
 func (s Section) Name() string { return s.name }
 
+// IsZero reports whether the section is the zero value, which no constructor returns.
+func (s Section) IsZero() bool { return s.kind == 0 }
+
 // Kind returns whether the section is seated or general admission.
 func (s Section) Kind() SectionKind { return s.kind }
 

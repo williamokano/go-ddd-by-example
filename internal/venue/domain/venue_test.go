@@ -104,6 +104,16 @@ func TestVenue_AddSection(t *testing.T) {
 	})
 }
 
+func TestVenue_AddSection_RejectsAZeroSection(t *testing.T) {
+	venue := newDraftVenue(t)
+
+	err := venue.AddSection(domain.Section{})
+
+	if !errors.Is(err, domain.ErrInvalidSection) {
+		t.Errorf("AddSection() error = %v, want %v", err, domain.ErrInvalidSection)
+	}
+}
+
 func TestVenue_Capacity(t *testing.T) {
 	venue := newDraftVenue(t,
 		withSection(seatedSection(t, "ORCH", mustRow(t, "A", 10), mustRow(t, "B", 12))),

@@ -51,6 +51,9 @@ func (v *Venue) Status() Status { return v.status }
 // within the venue (VEN-2): only the root sees all the sections, so only the
 // root can enforce it.
 func (v *Venue) AddSection(s Section) error {
+	if s.IsZero() {
+		return fmt.Errorf("%w: zero section", ErrInvalidSection)
+	}
 	for _, existing := range v.sections {
 		if existing.Code() == s.Code() {
 			return fmt.Errorf("%w: %s", ErrDuplicateSectionCode, s.Code())
