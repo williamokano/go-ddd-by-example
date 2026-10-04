@@ -41,7 +41,7 @@ func config(t *testing.T, topic, group string) kafka.ConsumerConfig {
 	t.Helper()
 	return kafka.ConsumerConfig{
 		Brokers: kafkatest.Brokers(t), Group: group, Topics: []string{topic},
-		MaxAttempts: 3, Backoff: 10 * time.Millisecond,
+		Backoff: 10 * time.Millisecond, MaxBackoff: 20 * time.Millisecond,
 	}
 }
 
@@ -101,7 +101,6 @@ func TestRun_CommitsOnlyAfterSuccess(t *testing.T) {
 	topic := kafkatest.Topic(t)
 	produce(t, topic, "venue.activated.v1")
 	cfg := config(t, topic, uuid.NewString())
-	cfg.MaxAttempts = 1000 // never reach the DLQ in this test
 	failures := &seen{}
 
 	// First run: the handler keeps failing; we stop the consumer meanwhile.
@@ -127,14 +126,14 @@ func TestRun_PoisonMessagesGoToTheDLQAndConsumptionContinues(t *testing.T) {
 	_ = runUntil(t, config(t, topic, uuid.NewString()), func(_ context.Context, env kafka.Envelope) error {
 		if env.EventType == "poison.v1" {
 			attempts++
-			return errors.New("cannot handle this")
+			return kafka.Permanent(errors.New("cannot handle this"))
 		}
 		handled.add(env)
 		return nil
 	}, func() bool { return handled.count() == 1 })
 
-	if attempts != 3 {
-		t.Errorf("poison message tried %d times, want 3 (MaxAttempts)", attempts)
+	if attempts != 1 {
+		t.Errorf("poison message tried %d times, want 1: retrying cannot fix it", attempts)
 	}
 	dead := kafkatest.Consume(t, topic+".dlq", 1)[0]
 	var errHeader string
@@ -195,5 +194,28 @@ func TestRun_PutsTheIDsBackIntoTheContext(t *testing.T) {
 	}
 	if correlation != "purchase-42" || causation != msg.EventID.String() {
 		t.Errorf("correlation %q, causation %q; want purchase-42 and the event id", correlation, causation)
+	}
+}
+
+// A database outage is not poison: the runner backs off and retries, however
+// long it takes, and the event is handled once it is back (8.5, drill 4).
+func TestRun_TransientErrorsAreRetriedUntilTheySucceed(t *testing.T) {
+	topic := kafkatest.Topic(t)
+	produce(t, topic, "venue.activated.v1")
+	var mu sync.Mutex
+	attempts, handled := 0, false
+
+	_ = runUntil(t, config(t, topic, uuid.NewString()), func(context.Context, kafka.Envelope) error {
+		mu.Lock()
+		defer mu.Unlock()
+		if attempts++; attempts <= 10 {
+			return errors.New("database down")
+		}
+		handled = true
+		return nil
+	}, func() bool { mu.Lock(); defer mu.Unlock(); return handled })
+
+	if n := kafkatest.Count(t, topic+".dlq"); n != 0 {
+		t.Errorf("%d messages dead-lettered; a transient error must not lose the event", n)
 	}
 }

@@ -102,3 +102,20 @@ func ProduceRaw(t *testing.T, topic, value string) {
 		t.Fatal(err)
 	}
 }
+
+// Count returns how many records topic holds (its end offsets).
+func Count(t *testing.T, topic string) int64 {
+	t.Helper()
+	client, err := kgo.NewClient(kgo.SeedBrokers(Brokers(t)...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	offsets, err := kadm.NewClient(client).ListEndOffsets(context.Background(), topic)
+	if err != nil {
+		t.Fatalf("kafkatest: end offsets of %s: %v", topic, err)
+	}
+	var n int64
+	offsets.Each(func(o kadm.ListedOffset) { n += o.Offset })
+	return n
+}

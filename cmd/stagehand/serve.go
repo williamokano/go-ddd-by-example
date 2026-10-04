@@ -177,7 +177,7 @@ func serve(ctx context.Context) error {
 func consume(ctx context.Context, wg *sync.WaitGroup, cfg config.Config, group string, topics []string, handle kafka.Handler, logger *slog.Logger) {
 	wg.Go(func() {
 		err := kafka.Run(ctx, kafka.ConsumerConfig{
-			Brokers: cfg.KafkaBrokers, Group: group, Topics: topics, MaxAttempts: 5, Backoff: 100 * time.Millisecond,
+			Brokers: cfg.KafkaBrokers, Group: group, Topics: topics, Backoff: 100 * time.Millisecond, MaxBackoff: 10 * time.Second,
 		}, handle, logger)
 		if err != nil {
 			logger.Error("consumer stopped", "group", group, "error", err)

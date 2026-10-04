@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -12,24 +13,53 @@ import (
 	"github.com/williamokano/go-ddd-by-example/internal/platform/trace"
 )
 
-// Handler handles one message. Returning nil commits it; an error retries it.
-// Handlers must be idempotent: delivery is at least once.
+// Handler handles one message. Returning nil commits it; an error retries it,
+// unless it is Permanent. Handlers must be idempotent: delivery is at least
+// once.
 type Handler func(ctx context.Context, env Envelope) error
+
+// permanentError marks a failure that retrying cannot fix.
+type permanentError struct{ err error }
+
+func (p permanentError) Error() string { return p.err.Error() }
+func (p permanentError) Unwrap() error { return p.err }
+
+// Permanent marks err as poison: a message that will never be handled, such as
+// a payload that does not decode. The runner parks it in the DLQ at once.
+// Anything else is transient (a database outage, a timeout) and is retried
+// until it succeeds (8.5).
+func Permanent(err error) error {
+	if err == nil {
+		return nil
+	}
+	return permanentError{err: err}
+}
+
+// IsPermanent reports whether err, or an error it wraps, is Permanent.
+func IsPermanent(err error) bool {
+	var p permanentError
+	return errors.As(err, &p)
+}
 
 // ConsumerConfig configures a consumer-group runner.
 type ConsumerConfig struct {
-	Brokers     []string
-	Group       string        // one group per consuming context
-	Topics      []string      // their <topic>.dlq must exist
-	MaxAttempts int           // tries per message before it goes to the DLQ
-	Backoff     time.Duration // first retry delay; doubles each attempt
+	Brokers    []string
+	Group      string        // one group per consuming context
+	Topics     []string      // their <topic>.dlq must exist
+	Backoff    time.Duration // first retry delay; doubles each attempt
+	MaxBackoff time.Duration // the longest delay between two attempts
 }
 
 // Run consumes until ctx is done, then returns nil. Each message is handled
 // in partition order; its offset is committed only after the handler
-// succeeds, or after it was parked in <topic>.dlq following MaxAttempts
-// failures (a poison message must never block a partition forever).
+// succeeds, or after a Permanent failure parked it in <topic>.dlq (a poison
+// message must never block a partition forever). A transient failure blocks
+// the partition instead, retrying with backoff: dead-lettering it would lose
+// the event to an outage.
 func Run(ctx context.Context, cfg ConsumerConfig, handle Handler, logger *slog.Logger) error {
+	if cfg.MaxBackoff <= 0 {
+		cfg.MaxBackoff = 30 * time.Second
+	}
 	client, err := kgo.NewClient(
 		kgo.SeedBrokers(cfg.Brokers...),
 		kgo.ConsumerGroup(cfg.Group),
@@ -70,23 +100,23 @@ func process(ctx context.Context, client *kgo.Client, cfg ConsumerConfig, handle
 	}
 	ctx = withTrace(ctx, env)
 	backoff := cfg.Backoff
-	var err error
-	for attempt := 1; attempt <= cfg.MaxAttempts; attempt++ {
-		if err = handle(ctx, env); err == nil {
+	for attempt := 1; ; attempt++ {
+		err := handle(ctx, env)
+		if err == nil {
 			return true
 		}
-		logger.WarnContext(ctx, "kafka handler", "group", cfg.Group, "event_type", env.EventType,
-			"event_id", env.EventID, "attempt", attempt, "error", err)
-		if attempt < cfg.MaxAttempts {
-			select {
-			case <-ctx.Done():
-				return false
-			case <-time.After(backoff):
-			}
-			backoff *= 2
+		if IsPermanent(err) {
+			return deadLetter(ctx, client, cfg, logger, rec, err)
 		}
+		logger.WarnContext(ctx, "kafka handler", "group", cfg.Group, "event_type", env.EventType,
+			"event_id", env.EventID, "attempt", attempt, "retry_in", backoff, "error", err)
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(backoff):
+		}
+		backoff = min(backoff*2, cfg.MaxBackoff)
 	}
-	return deadLetter(ctx, client, cfg, logger, rec, err)
 }
 
 func deadLetter(ctx context.Context, client *kgo.Client, cfg ConsumerConfig, logger *slog.Logger, rec *kgo.Record, cause error) bool {
