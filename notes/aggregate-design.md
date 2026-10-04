@@ -42,3 +42,13 @@ Part 9.1 re-cuts it per section.
 Only on emphasis: the hot path is a hold, and holds conflict with *any*
 other hold on the same show, even for different seats. That is the price of
 a simple, obviously-correct TKT-5. Write the numbers from 7.6 into the ADR.
+
+## Measured (lesson 7.6)
+
+Real Postgres (testcontainers), one inventory, retries = 3:
+
+- S6: 1 available seat, 50 concurrent holds → **1 win**, 49 "seat unavailable", never 2 winners.
+- 1,000 seats, 200 concurrent holds for **200 different seats** → only **3/200 succeeded**,
+  594 conflicts retried, p50 ≈ 0.8 s, p99 ≈ 0.83 s. Every hold races for the
+  same inventory version, whatever seat it wants: the price of ADR-005. Part 9.1
+  (an inventory per section) is the answer when this matters.
