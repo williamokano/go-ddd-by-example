@@ -239,3 +239,17 @@ func (TicketVoided) EventName() string { return "ticketing.TicketVoided" }
 
 // OccurredAt implements DomainEvent.
 func (e TicketVoided) OccurredAt() time.Time { return e.At }
+
+// TicketCheckedIn records a ticket let in at the gate (TKT-13).
+type TicketCheckedIn struct {
+	TicketID TicketID
+	ShowID   ShowID
+	Gate     GateID
+	At       time.Time
+}
+
+// EventName implements DomainEvent.
+func (TicketCheckedIn) EventName() string { return "ticketing.TicketCheckedIn" }
+
+// OccurredAt implements DomainEvent.
+func (e TicketCheckedIn) OccurredAt() time.Time { return e.At }

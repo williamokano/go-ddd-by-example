@@ -28,6 +28,11 @@ var (
 	// TKT-7: the order lifecycle.
 	ErrInvalidOrderTransition = errors.New("ticketing: invalid order transition")
 
+	// TKT-13: a ticket is checked in once, never when voided, on the show's day.
+	ErrAlreadyCheckedIn = errors.New("ticketing: ticket already checked in")
+	ErrTicketVoided     = errors.New("ticketing: ticket is voided")
+	ErrNotShowDay       = errors.New("ticketing: not the day of the show")
+
 	// ADR-013: a hold is for seats of one section.
 	ErrHoldSpansSections = errors.New("ticketing: a hold is for one section")
 

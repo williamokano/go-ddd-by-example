@@ -3,9 +3,11 @@ package domain_test
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/domain"
 )
 
@@ -82,4 +84,69 @@ func TestOrder_MarkFulfilled_CarriesTheTickets(t *testing.T) {
 	if len(ev.Tickets) != 1 || ev.ContactEmail.String() != "ana@example.com" {
 		t.Errorf("OrderFulfilled = %+v", ev)
 	}
+}
+
+func TestTicket_CheckIn(t *testing.T) {
+	gate, _ := domain.NewGateID("north-1")
+	issue := func(t *testing.T) *domain.Ticket {
+		t.Helper()
+		ticket, _ := domain.IssueTicket(domain.NewTicketID(uuid.New()), showID, newOrderID(), refs(t, "ORCH/A/1")[0], now)
+		ticket.PullEvents()
+		return ticket
+	}
+	showDay := startsAt.Add(-time.Hour) // doors open an hour before
+
+	t.Run("lets the ticket in once and records the gate (TKT-13)", func(t *testing.T) {
+		ticket := issue(t)
+
+		if err := ticket.CheckIn(gate, startsAt, showDay); err != nil {
+			t.Fatal(err)
+		}
+
+		if ticket.Status() != domain.CheckedInTicket || ticket.CheckedInAt() != showDay || ticket.Gate() != gate {
+			t.Errorf("ticket = %v at %v through %v", ticket.Status(), ticket.CheckedInAt(), ticket.Gate())
+		}
+		want := domain.TicketCheckedIn{TicketID: ticket.ID(), ShowID: showID, Gate: gate, At: showDay}
+		if ev := ticket.PullEvents(); len(ev) != 1 || ev[0] != sharedkernel.DomainEvent(want) {
+			t.Errorf("events = %v, want %v", ev, want)
+		}
+	})
+
+	t.Run("a second check-in is rejected, even through another gate (TKT-13)", func(t *testing.T) {
+		ticket := issue(t)
+		_ = ticket.CheckIn(gate, startsAt, showDay)
+		other, _ := domain.NewGateID("south-2")
+
+		err := ticket.CheckIn(other, startsAt, showDay.Add(time.Minute))
+
+		if !errors.Is(err, domain.ErrAlreadyCheckedIn) {
+			t.Errorf("error = %v, want %v", err, domain.ErrAlreadyCheckedIn)
+		}
+	})
+
+	t.Run("a voided ticket is rejected (TKT-13)", func(t *testing.T) {
+		ticket := issue(t)
+		ticket.Void(now)
+
+		if err := ticket.CheckIn(gate, startsAt, showDay); !errors.Is(err, domain.ErrTicketVoided) {
+			t.Errorf("error = %v, want %v", err, domain.ErrTicketVoided)
+		}
+	})
+
+	for name, at := range map[string]time.Time{
+		"the day before": startsAt.Add(-12*time.Hour - time.Second),
+		"the day after":  startsAt.Add(12*time.Hour + time.Second),
+	} {
+		t.Run("rejects "+name+" (TKT-13)", func(t *testing.T) {
+			if err := issue(t).CheckIn(gate, startsAt, at); !errors.Is(err, domain.ErrNotShowDay) {
+				t.Errorf("error = %v, want %v", err, domain.ErrNotShowDay)
+			}
+		})
+	}
+
+	t.Run("a gate needs a name", func(t *testing.T) {
+		if _, err := domain.NewGateID("  "); !errors.Is(err, domain.ErrInvalidID) {
+			t.Errorf("error = %v, want %v", err, domain.ErrInvalidID)
+		}
+	})
 }
