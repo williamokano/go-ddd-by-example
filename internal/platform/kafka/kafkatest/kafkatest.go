@@ -89,3 +89,16 @@ func Consume(t *testing.T, topic string, n int) []*kgo.Record {
 	}
 	return records
 }
+
+// ProduceRaw writes value as-is to topic, bypassing the envelope.
+func ProduceRaw(t *testing.T, topic, value string) {
+	t.Helper()
+	client, err := kgo.NewClient(kgo.SeedBrokers(Brokers(t)...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	if err := client.ProduceSync(context.Background(), &kgo.Record{Topic: topic, Value: []byte(value)}).FirstErr(); err != nil {
+		t.Fatal(err)
+	}
+}
