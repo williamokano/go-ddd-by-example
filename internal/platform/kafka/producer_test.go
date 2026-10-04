@@ -29,6 +29,7 @@ func TestProducer_PublishesTheEnvelopeKeyedByAggregate(t *testing.T) {
 		EventID: uuid.New(), Topic: topic, Key: "venue-42", Type: "venue.activated.v1",
 		Payload: json.RawMessage(`{"venue_id":"venue-42"}`), OccurredAt: time.Date(2026, 11, 1, 20, 0, 0, 0, time.UTC),
 		CorrelationID: "purchase-42", CausationID: "evt-9",
+		TraceParent: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
 	}
 
 	if err := producer.Publish(context.Background(), []outbox.Message{msg}); err != nil {
@@ -43,7 +44,7 @@ func TestProducer_PublishesTheEnvelopeKeyedByAggregate(t *testing.T) {
 	for _, h := range rec.Headers {
 		headers[h.Key] = string(h.Value)
 	}
-	if headers["event_type"] != "venue.activated.v1" || headers["event_id"] != msg.EventID.String() {
+	if headers["event_type"] != "venue.activated.v1" || headers["event_id"] != msg.EventID.String() || headers["traceparent"] != msg.TraceParent {
 		t.Errorf("headers = %v", headers)
 	}
 	var env kafka.Envelope

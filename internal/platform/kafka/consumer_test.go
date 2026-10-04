@@ -18,6 +18,11 @@ import (
 	"github.com/williamokano/go-ddd-by-example/internal/platform/kafka/kafkatest"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/outbox"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/trace"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
 var discard = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -217,5 +222,45 @@ func TestRun_TransientErrorsAreRetriedUntilTheySucceed(t *testing.T) {
 
 	if n := kafkatest.Count(t, topic+".dlq"); n != 0 {
 		t.Errorf("%d messages dead-lettered; a transient error must not lose the event", n)
+	}
+}
+
+// 9.7: the consumer continues the producer's trace from the traceparent
+// header: its span is a child of the span that wrote the outbox row.
+func TestRun_ContinuesTheTrace(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	otel.SetTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder)))
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	topic := kafkatest.Topic(t)
+	producer, err := kafka.NewProducer(kafkatest.Brokers(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer producer.Close()
+	msg := outbox.Message{
+		EventID: uuid.New(), Topic: topic, Key: "k", Type: "a.v1", Payload: json.RawMessage(`{}`), OccurredAt: time.Now(),
+		TraceParent: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+	}
+	if err := producer.Publish(context.Background(), []outbox.Message{msg}); err != nil {
+		t.Fatal(err)
+	}
+
+	var mu sync.Mutex
+	var traceID string
+	err = runUntil(t, config(t, topic, "otel"), func(ctx context.Context, _ kafka.Envelope) error {
+		mu.Lock()
+		defer mu.Unlock()
+		traceID = oteltrace.SpanContextFromContext(ctx).TraceID().String()
+		return nil
+	}, func() bool { mu.Lock(); defer mu.Unlock(); return traceID != "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if traceID != "4bf92f3577b34da6a3ce929d0e0e4736" {
+		t.Errorf("handler's trace = %s, want the producer's", traceID)
+	}
+	spans := recorder.Ended()
+	if len(spans) != 1 || spans[0].Parent().SpanID().String() != "00f067aa0ba902b7" || spans[0].SpanKind() != oteltrace.SpanKindConsumer {
+		t.Errorf("spans = %v, want one consumer span, child of the producer's", spans)
 	}
 }

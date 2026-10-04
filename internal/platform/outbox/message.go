@@ -22,4 +22,5 @@ type Message struct {
 
 	CorrelationID string // the flow this event belongs to (8.3)
 	CausationID   string // the event that caused it, "" for a command from HTTP
+	TraceParent   string // the W3C trace context of the span that wrote it (9.7)
 }

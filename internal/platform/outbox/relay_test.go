@@ -22,6 +22,9 @@ import (
 	"github.com/williamokano/go-ddd-by-example/internal/platform/outbox"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/postgres/pgtest"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/trace"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
 func TestMain(m *testing.M) { os.Exit(pgtest.Main(m)) }
@@ -39,7 +42,8 @@ func newOutbox(t *testing.T, pool *pgxpool.Pool) string {
 			id BIGSERIAL PRIMARY KEY, event_id UUID NOT NULL UNIQUE, topic TEXT NOT NULL,
 			msg_key TEXT NOT NULL, event_type TEXT NOT NULL, payload JSONB NOT NULL,
 			occurred_at TIMESTAMPTZ NOT NULL, published_at TIMESTAMPTZ,
-			correlation_id TEXT NOT NULL DEFAULT '', causation_id TEXT NOT NULL DEFAULT '')`, schema))
+			correlation_id TEXT NOT NULL DEFAULT '', causation_id TEXT NOT NULL DEFAULT '',
+			trace_parent TEXT NOT NULL DEFAULT '')`, schema))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,6 +193,10 @@ func TestWrite_StampsTheContextsIDsAndTheRelayCarriesThem(t *testing.T) {
 	pool := pgtest.New(t)
 	schema := newOutbox(t, pool)
 	ctx := trace.WithCausationID(trace.WithCorrelationID(context.Background(), "purchase-42"), "evt-9")
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	ctx = oteltrace.ContextWithSpanContext(ctx, oteltrace.NewSpanContext(oteltrace.SpanContextConfig{
+		TraceID: oteltrace.TraceID{0x4b, 0xf9}, SpanID: oteltrace.SpanID{0x01}, TraceFlags: oteltrace.FlagsSampled,
+	}))
 	err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
 		return outbox.Write(ctx, tx, schema, []outbox.Message{{
 			EventID: uuid.New(), Topic: "t", Key: "k", Type: "a.v1", Payload: json.RawMessage(`{}`), OccurredAt: time.Now(),
@@ -205,5 +213,9 @@ func TestWrite_StampsTheContextsIDsAndTheRelayCarriesThem(t *testing.T) {
 
 	if len(pub.sent) != 1 || pub.sent[0].CorrelationID != "purchase-42" || pub.sent[0].CausationID != "evt-9" {
 		t.Errorf("published %+v, want correlation purchase-42 and causation evt-9", pub.sent)
+	}
+	// 9.7: the writer's span travels too, as a W3C traceparent.
+	if want := "00-4bf90000000000000000000000000000-0100000000000000-01"; len(pub.sent) == 1 && pub.sent[0].TraceParent != want {
+		t.Errorf("traceparent = %q, want %q", pub.sent[0].TraceParent, want)
 	}
 }

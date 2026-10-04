@@ -9,7 +9,13 @@ import (
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	oteltrace "go.opentelemetry.io/otel/trace"
 
+	"github.com/williamokano/go-ddd-by-example/internal/platform/telemetry"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/trace"
 )
 
@@ -99,6 +105,8 @@ func process(ctx context.Context, client *kgo.Client, cfg ConsumerConfig, handle
 		return deadLetter(ctx, client, cfg, logger, rec, fmt.Errorf("decode envelope: %w", err))
 	}
 	ctx = withTrace(ctx, env)
+	ctx, span := startSpan(ctx, cfg, rec, env)
+	defer span.End()
 	backoff := cfg.Backoff
 	for attempt := 1; ; attempt++ {
 		err := handle(ctx, env)
@@ -106,6 +114,7 @@ func process(ctx context.Context, client *kgo.Client, cfg ConsumerConfig, handle
 			return true
 		}
 		if IsPermanent(err) {
+			span.SetStatus(codes.Error, err.Error())
 			return deadLetter(ctx, client, cfg, logger, rec, err)
 		}
 		logger.WarnContext(ctx, "kafka handler", "group", cfg.Group, "event_type", env.EventType,
@@ -143,4 +152,23 @@ func withTrace(ctx context.Context, env Envelope) context.Context {
 		correlation = env.EventID
 	}
 	return trace.WithCausationID(trace.WithCorrelationID(ctx, correlation), env.EventID)
+}
+
+// startSpan continues the producer's trace from the record's traceparent
+// header (9.7): one consumer span per message, however many attempts.
+func startSpan(ctx context.Context, cfg ConsumerConfig, rec *kgo.Record, env Envelope) (context.Context, oteltrace.Span) {
+	carrier := propagation.MapCarrier{}
+	for _, h := range rec.Headers {
+		if h.Key == "traceparent" {
+			carrier["traceparent"] = string(h.Value)
+		}
+	}
+	ctx = otel.GetTextMapPropagator().Extract(ctx, carrier)
+	return otel.Tracer(telemetry.TracerName).Start(ctx, "consume "+env.EventType,
+		oteltrace.WithSpanKind(oteltrace.SpanKindConsumer),
+		oteltrace.WithAttributes(
+			attribute.String("messaging.destination.name", rec.Topic),
+			attribute.String("messaging.consumer.group.name", cfg.Group),
+			attribute.String("messaging.message.id", env.EventID),
+		))
 }

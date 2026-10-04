@@ -48,6 +48,7 @@ func (p *Producer) Publish(ctx context.Context, msgs []outbox.Message) error {
 				{Key: "occurred_at", Value: []byte(m.OccurredAt.UTC().Format(time.RFC3339Nano))},
 				{Key: "aggregate_id", Value: []byte(m.Key)},
 				{Key: "correlation_id", Value: []byte(m.CorrelationID)},
+				{Key: "traceparent", Value: []byte(m.TraceParent)},
 			},
 		})
 	}

@@ -70,7 +70,7 @@ func (r *Relay) Tick(ctx context.Context) (n int, err error) {
 	}()
 
 	rows, err := tx.Query(ctx, `
-		SELECT id, event_id, topic, msg_key, event_type, payload, occurred_at, correlation_id, causation_id
+		SELECT id, event_id, topic, msg_key, event_type, payload, occurred_at, correlation_id, causation_id, trace_parent
 		FROM `+table+`
 		WHERE published_at IS NULL
 		ORDER BY id
@@ -88,7 +88,7 @@ func (r *Relay) Tick(ctx context.Context) (n int, err error) {
 			id int64
 			m  Message
 		)
-		if err := rows.Scan(&id, &m.EventID, &m.Topic, &m.Key, &m.Type, &m.Payload, &m.OccurredAt, &m.CorrelationID, &m.CausationID); err != nil {
+		if err := rows.Scan(&id, &m.EventID, &m.Topic, &m.Key, &m.Type, &m.Payload, &m.OccurredAt, &m.CorrelationID, &m.CausationID, &m.TraceParent); err != nil {
 			rows.Close()
 			return 0, fmt.Errorf("relay %s: scan: %w", r.schema, err)
 		}

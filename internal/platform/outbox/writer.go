@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 
 	"github.com/williamokano/go-ddd-by-example/internal/platform/trace"
 )
@@ -21,10 +23,15 @@ func Write(ctx context.Context, tx pgx.Tx, schema string, msgs []Message) error 
 		if m.CausationID == "" {
 			m.CausationID = trace.CausationID(ctx)
 		}
+		if m.TraceParent == "" {
+			carrier := propagation.MapCarrier{}
+			otel.GetTextMapPropagator().Inject(ctx, carrier)
+			m.TraceParent = carrier["traceparent"]
+		}
 		_, err := tx.Exec(ctx,
-			`INSERT INTO `+table+` (event_id, topic, msg_key, event_type, payload, occurred_at, correlation_id, causation_id)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-			m.EventID, m.Topic, m.Key, m.Type, []byte(m.Payload), m.OccurredAt, m.CorrelationID, m.CausationID)
+			`INSERT INTO `+table+` (event_id, topic, msg_key, event_type, payload, occurred_at, correlation_id, causation_id, trace_parent)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+			m.EventID, m.Topic, m.Key, m.Type, []byte(m.Payload), m.OccurredAt, m.CorrelationID, m.CausationID, m.TraceParent)
 		if err != nil {
 			return fmt.Errorf("outbox %s: insert %s: %w", schema, m.Type, err)
 		}

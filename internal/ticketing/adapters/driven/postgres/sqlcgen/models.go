@@ -28,6 +28,7 @@ type ShowOutbox struct {
 	PublishedAt   pgtype.Timestamptz
 	CorrelationID string
 	CausationID   string
+	TraceParent   string
 }
 
 type ShowShow struct {
@@ -98,6 +99,7 @@ type TicketingOutbox struct {
 	PublishedAt   pgtype.Timestamptz
 	CorrelationID string
 	CausationID   string
+	TraceParent   string
 }
 
 type TicketingSeat struct {
@@ -148,6 +150,7 @@ type VenueOutbox struct {
 	PublishedAt   pgtype.Timestamptz
 	CorrelationID string
 	CausationID   string
+	TraceParent   string
 }
 
 type VenueSection struct {

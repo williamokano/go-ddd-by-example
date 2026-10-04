@@ -1,11 +1,14 @@
 // Package trace carries the correlation ID (one per business flow, e.g. one
 // purchase) and the causation ID (the event that caused this work) through
-// context.Context, and adds both to every log line (8.3).
+// context.Context, and adds both to every log line (8.3), with the
+// OpenTelemetry span's IDs when there is one (9.7).
 package trace
 
 import (
 	"context"
 	"log/slog"
+
+	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
 type (
@@ -54,6 +57,9 @@ func (h *Handler) Handle(ctx context.Context, r slog.Record) error {
 	}
 	if id := CausationID(ctx); id != "" {
 		r.AddAttrs(slog.String("causation_id", id))
+	}
+	if sc := oteltrace.SpanContextFromContext(ctx); sc.IsValid() {
+		r.AddAttrs(slog.String("trace_id", sc.TraceID().String()), slog.String("span_id", sc.SpanID().String()))
 	}
 	return h.next.Handle(ctx, r) //nolint:wrapcheck // a decorator: the wrapped handler's error is ours
 }
