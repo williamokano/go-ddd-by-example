@@ -8,6 +8,14 @@ linters:
     - revive
     - testpackage
     - wrapcheck
+  settings:
+    wrapcheck:
+      # Domain errors are the application's own vocabulary and already name
+      # their context ("venue: invalid row"); wrapping them everywhere is noise.
+      # Handlers still add the use case name at their boundary.
+      ignore-package-globs:
+        - github.com/williamokano/go-ddd-by-example/internal/*/domain
+        - github.com/williamokano/go-ddd-by-example/internal/sharedkernel
   exclusions:
     rules:
       # The domain returns its own sentinel errors; there is nothing foreign to wrap.
