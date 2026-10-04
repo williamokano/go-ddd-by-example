@@ -34,3 +34,7 @@ DELETE FROM ticketing.holds WHERE show_id = $1;
 
 -- name: InsertHold :exec
 INSERT INTO ticketing.holds (hold_id, show_id, customer_id, seats, expires_at) VALUES ($1, $2, $3, $4, $5);
+
+-- The read side: seats straight from the table.
+-- name: InventoryExists :one
+SELECT EXISTS (SELECT 1 FROM ticketing.inventories WHERE show_id = $1);

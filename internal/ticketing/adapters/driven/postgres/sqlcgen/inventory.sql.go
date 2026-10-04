@@ -117,6 +117,18 @@ type InsertSeatsParams struct {
 	OrderID     uuid.NullUUID
 }
 
+const inventoryExists = `-- name: InventoryExists :one
+SELECT EXISTS (SELECT 1 FROM ticketing.inventories WHERE show_id = $1)
+`
+
+// The read side: seats straight from the table.
+func (q *Queries) InventoryExists(ctx context.Context, showID uuid.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, inventoryExists, showID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const listHolds = `-- name: ListHolds :many
 SELECT hold_id, customer_id, seats, expires_at FROM ticketing.holds WHERE show_id = $1
 `
