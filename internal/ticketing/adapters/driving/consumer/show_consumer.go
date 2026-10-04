@@ -40,7 +40,7 @@ func (c *ShowConsumer) Handle(ctx context.Context, env kafka.Envelope) error {
 	case showcontracts.TypeShowPublishedV1:
 		var e showcontracts.ShowPublishedV1
 		if err := json.Unmarshal(env.Payload, &e); err != nil {
-			return fmt.Errorf("decode %s: %w", env.EventType, err)
+			return kafka.Permanent(fmt.Errorf("decode %s: %w", env.EventType, err))
 		}
 		if err := c.open.Handle(ctx, toOpenInventory(e)); err != nil {
 			return fmt.Errorf("%s: %w", env.EventType, err)
@@ -49,7 +49,7 @@ func (c *ShowConsumer) Handle(ctx context.Context, env kafka.Envelope) error {
 	case showcontracts.TypeShowCancelledV1:
 		var e showcontracts.ShowCancelledV1
 		if err := json.Unmarshal(env.Payload, &e); err != nil {
-			return fmt.Errorf("decode %s: %w", env.EventType, err)
+			return kafka.Permanent(fmt.Errorf("decode %s: %w", env.EventType, err))
 		}
 		if err := c.close.Handle(ctx, application.CloseInventory{ShowID: e.ShowID}); err != nil {
 			return fmt.Errorf("%s: %w", env.EventType, err)

@@ -78,3 +78,13 @@ func TestShowConsumer_CancelledClosesTheInventory(t *testing.T) {
 		t.Errorf("command = %+v", closer.got)
 	}
 }
+
+// A payload that does not decode is poison: retrying cannot fix it (8.5).
+func TestShowConsumer_AMalformedPayloadIsPermanent(t *testing.T) {
+	c := consumer.NewShowConsumer(&openStub{}, &closeStub{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	for _, typ := range []string{showcontracts.TypeShowPublishedV1, showcontracts.TypeShowCancelledV1} {
+		if err := c.Handle(context.Background(), kafka.Envelope{EventType: typ, Payload: []byte("{")}); !kafka.IsPermanent(err) {
+			t.Errorf("%s: err = %v, want a permanent error", typ, err)
+		}
+	}
+}

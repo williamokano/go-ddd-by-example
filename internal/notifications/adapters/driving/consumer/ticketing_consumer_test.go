@@ -72,10 +72,12 @@ func TestTicketingConsumer_TranslatesTheTwoEventsNotificationsCaresAbout(t *test
 	}
 }
 
-func TestTicketingConsumer_AMalformedPayloadIsAnError(t *testing.T) {
+func TestTicketingConsumer_AMalformedPayloadIsPermanent(t *testing.T) {
 	c := consumer.NewTicketingConsumer(&spy{}, refundSpy{&spy{}})
-	err := c.Handle(context.Background(), kafka.Envelope{EventType: contracts.TypeTicketsIssuedV1, Payload: []byte("{")})
-	if err == nil {
-		t.Error("err = nil, want a decode error (the runner sends it to the DLQ)")
+	for _, typ := range []string{contracts.TypeTicketsIssuedV1, contracts.TypeOrderRefundedV1} {
+		err := c.Handle(context.Background(), kafka.Envelope{EventType: typ, Payload: []byte("{")})
+		if !kafka.IsPermanent(err) {
+			t.Errorf("%s: err = %v, want a permanent error (the runner parks it in the DLQ)", typ, err)
+		}
 	}
 }

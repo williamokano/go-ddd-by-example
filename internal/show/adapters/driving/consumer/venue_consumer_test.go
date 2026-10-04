@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"strings"
 	"testing"
@@ -107,4 +108,15 @@ func TestVenueConsumer(t *testing.T) {
 			t.Error("error = nil, want a decode error")
 		}
 	})
+}
+
+// A payload that does not decode is poison: retrying cannot fix it (8.5).
+func TestVenueConsumer_AMalformedPayloadIsPermanent(t *testing.T) {
+	s := &stubs{}
+	c := consumer.NewVenueConsumer(activatedStub{s}, retiredStub{s}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	for _, typ := range []string{contracts.TypeVenueActivatedV1, contracts.TypeVenueRetiredV1} {
+		if err := c.Handle(context.Background(), kafka.Envelope{EventType: typ, Payload: []byte("{")}); !kafka.IsPermanent(err) {
+			t.Errorf("%s: err = %v, want a permanent error", typ, err)
+		}
+	}
 }

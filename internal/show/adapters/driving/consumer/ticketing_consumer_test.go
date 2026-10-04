@@ -42,3 +42,12 @@ func TestTicketingConsumer_IgnoresTheOtherTicketingFacts(t *testing.T) {
 		t.Errorf("err = %v, called %v", err, stub.got != nil)
 	}
 }
+
+// A payload that does not decode is poison: retrying cannot fix it (8.5).
+func TestTicketingConsumer_AMalformedPayloadIsPermanent(t *testing.T) {
+	c := consumer.NewTicketingConsumer(&soldOutStub{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	err := c.Handle(context.Background(), kafka.Envelope{EventType: contracts.TypeInventorySoldOutV1, Payload: []byte("{")})
+	if !kafka.IsPermanent(err) {
+		t.Errorf("err = %v, want a permanent error", err)
+	}
+}

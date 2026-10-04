@@ -53,22 +53,22 @@ func (c *SagaConsumer) Handle(ctx context.Context, env kafka.Envelope) error {
 	switch env.EventType {
 	case sagamsg.TypeOrderPaid:
 		var m sagamsg.OrderPaid
-		if err = json.Unmarshal(env.Payload, &m); err == nil {
+		if err = decode(env, &m); err == nil {
 			err = c.steps.Confirm.Handle(ctx, application.ConfirmHold{ShowID: m.ShowID, HoldID: m.HoldID, OrderID: m.OrderID})
 		}
 	case sagamsg.TypeSeatsSold:
 		var m sagamsg.SeatsSold
-		if err = json.Unmarshal(env.Payload, &m); err == nil {
+		if err = decode(env, &m); err == nil {
 			err = c.steps.Issue.Handle(ctx, application.IssueTickets{ShowID: m.ShowID, OrderID: m.OrderID, Seats: m.Seats})
 		}
 	case sagamsg.TypeHoldConfirmationFailed:
 		var m sagamsg.HoldConfirmationFailed
-		if err = json.Unmarshal(env.Payload, &m); err == nil {
+		if err = decode(env, &m); err == nil {
 			err = c.steps.Refund.Handle(ctx, application.RefundOrder{OrderID: m.OrderID})
 		}
 	case sagamsg.TypeInventoryClosed:
 		var m sagamsg.InventoryClosed
-		if err = json.Unmarshal(env.Payload, &m); err == nil {
+		if err = decode(env, &m); err == nil {
 			err = c.steps.Closed.Handle(ctx, application.OnInventoryClosed{ShowID: m.ShowID})
 		}
 	default:
@@ -77,6 +77,14 @@ func (c *SagaConsumer) Handle(ctx context.Context, env kafka.Envelope) error {
 	}
 	if err != nil {
 		return fmt.Errorf("%s: %w", env.EventType, err)
+	}
+	return nil
+}
+
+// decode unmarshals the payload; a payload that does not decode is poison.
+func decode(env kafka.Envelope, v any) error {
+	if err := json.Unmarshal(env.Payload, v); err != nil {
+		return kafka.Permanent(fmt.Errorf("decode: %w", err))
 	}
 	return nil
 }

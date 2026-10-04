@@ -42,7 +42,7 @@ func (c *VenueConsumer) Handle(ctx context.Context, env kafka.Envelope) error {
 	case contracts.TypeVenueActivatedV1:
 		var e contracts.VenueActivatedV1
 		if err := json.Unmarshal(env.Payload, &e); err != nil {
-			return fmt.Errorf("decode %s: %w", env.EventType, err)
+			return kafka.Permanent(fmt.Errorf("decode %s: %w", env.EventType, err))
 		}
 		if err := c.activated.Handle(ctx, toOnVenueActivated(e)); err != nil {
 			return fmt.Errorf("%s: %w", env.EventType, err)
@@ -51,7 +51,7 @@ func (c *VenueConsumer) Handle(ctx context.Context, env kafka.Envelope) error {
 	case contracts.TypeVenueRetiredV1:
 		var e contracts.VenueRetiredV1
 		if err := json.Unmarshal(env.Payload, &e); err != nil {
-			return fmt.Errorf("decode %s: %w", env.EventType, err)
+			return kafka.Permanent(fmt.Errorf("decode %s: %w", env.EventType, err))
 		}
 		if err := c.retired.Handle(ctx, application.OnVenueRetired{VenueID: e.VenueID}); err != nil {
 			return fmt.Errorf("%s: %w", env.EventType, err)

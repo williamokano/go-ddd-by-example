@@ -62,7 +62,7 @@ func (c *TicketingConsumer) Handle(ctx context.Context, env kafka.Envelope) erro
 
 func decode(env kafka.Envelope, v any) error {
 	if err := json.Unmarshal(env.Payload, v); err != nil {
-		return fmt.Errorf("decode %s: %w", env.EventType, err)
+		return kafka.Permanent(fmt.Errorf("decode %s: %w", env.EventType, err))
 	}
 	return nil
 }

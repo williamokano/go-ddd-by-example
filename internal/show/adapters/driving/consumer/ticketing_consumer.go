@@ -35,7 +35,7 @@ func (c *TicketingConsumer) Handle(ctx context.Context, env kafka.Envelope) erro
 	}
 	var e contracts.InventorySoldOutV1
 	if err := json.Unmarshal(env.Payload, &e); err != nil {
-		return fmt.Errorf("decode %s: %w", env.EventType, err)
+		return kafka.Permanent(fmt.Errorf("decode %s: %w", env.EventType, err))
 	}
 	if err := c.soldOut.Handle(ctx, application.MarkShowSoldOut{ShowID: e.ShowID}); err != nil {
 		return fmt.Errorf("%s: %w", env.EventType, err)
