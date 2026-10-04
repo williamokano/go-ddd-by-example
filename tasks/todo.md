@@ -3,7 +3,7 @@
 Source of truth for *where we are* in the course. Lessons live in `docs/part-*.html`.
 Tick a lesson when its "Done when" checks pass; add a one-line note (date, anything notable).
 
-**Current lesson:** 8.1 — All six scenarios end to end
+**Current lesson:** 9.2 — Ticket check-in at the gate
 
 ## Part 0 — Orientation & setup (`docs/part-0-orientation.html`)
 - [x] 0.1 Event storming on paper
@@ -95,12 +95,18 @@ Tick a lesson when its "Done when" checks pass; add a one-line note (date, anyth
   - Show's consumer group reads venue.events and ticketing.events, routed by event-type prefix.
 
 ## Part 8 — End-to-end & hardening (`docs/part-8-end-to-end.html`)
-- [ ] 8.1 All acceptance scenarios
-- [ ] 8.2 Notifications: when a transaction script is the right answer
-- [ ] 8.3 Correlation and causation IDs
-- [ ] 8.4 Inbox and a transaction manager
-- [ ] 8.5 Failure drills
-- [ ] 8.6 Retrospective
+- [x] 8.1 All acceptance scenarios
+  - The `X-Fake-Payment-Mode` header switches the fake gateway per request; `make test-e2e` runs with `HOLD_TTL=3s`.
+- [x] 8.2 Notifications: when a transaction script is the right answer
+  - No domain package. The duplicate-email test lives in 8.4 with the inbox it needs.
+- [x] 8.3 Correlation and causation IDs
+  - `outbox.Write` stamps the IDs from ctx, so no context's code mentions them.
+- [x] 8.4 Inbox and a transaction manager
+  - ADR-012: `TxManager` + `postgres.Begin` joins an ambient transaction through a savepoint.
+- [x] 8.5 Failure drills
+  - Drill 4 caught the DLQ swallowing events during an outage; only `kafka.Permanent` errors are dead-lettered now. `notes/failure-drills.md`.
+- [x] 8.6 Retrospective
+  - `README.md` (concept → file map) and `notes/retrospective.md`.
 
 ## Part 9 — Stretch goals (`docs/part-9-stretch.html`)
 - [ ] 9.1 Re-cut the inventory aggregate per section
