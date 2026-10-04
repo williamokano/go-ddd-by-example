@@ -229,3 +229,61 @@ func TestOnSectionSoldOut(t *testing.T) {
 		t.Errorf("SectionSoldOut recorded %d times, want 2", n)
 	}
 }
+
+// TKT-14 → 9.5: the buyer returns a fulfilled order; the saga puts the seats
+// back and voids the tickets. The sold-out section is back on sale.
+func TestReturnOrder_PutsTheShowBackOnSale(t *testing.T) {
+	f := newSaga(t, fakegateway.Mode{})
+	show := f.openShow(t)
+	buy := func(section string, seats ...string) (string, domain.OrderID) {
+		t.Helper()
+		customer := uuid.NewString()
+		hold := f.holdSeats(t, show, customer, seats...)
+		res, err := f.checkout.Handle(f.ctx, application.Checkout{HoldID: hold.String(), CustomerID: customer, ContactEmail: "ana@example.com"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		confirm := application.ConfirmHold{ShowID: show, Section: section, HoldID: hold.String(), OrderID: res.OrderID.String()}
+		if err := f.confirm.Handle(f.ctx, confirm); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.issue.Handle(f.ctx, application.IssueTickets{ShowID: show, OrderID: res.OrderID.String(), Seats: seats}); err != nil {
+			t.Fatal(err)
+		}
+		return customer, res.OrderID
+	}
+	customer, orchOrder := buy("ORCH", "ORCH/A/1", "ORCH/A/2")
+	buy("FLOOR", "FLOOR/GA/0001", "FLOOR/GA/0002", "FLOOR/GA/0003")
+	returnOrder := application.NewReturnOrderHandler(f.orders, memory.NewShowSchedule(f.inventories), f.refund, f.clock)
+	returned := application.NewOnOrderRefundedHandler(f.inventories, f.tickets, f.clock)
+
+	if err := returnOrder.Handle(f.ctx, application.ReturnOrder{OrderID: orchOrder.String(), CustomerID: customer}); err != nil {
+		t.Fatal(err)
+	}
+	if err := returned.Handle(f.ctx, application.OnOrderRefunded{ShowID: show, Section: "ORCH", OrderID: orchOrder.String()}); err != nil {
+		t.Fatal(err)
+	}
+
+	if f.order(t, orchOrder).Status() != domain.Refunded || f.seatStates(t, show)["ORCH/A/1"] != "available" {
+		t.Errorf("order %v, ORCH/A/1 %s; want refunded and available", f.order(t, orchOrder).Status(), f.seatStates(t, show)["ORCH/A/1"])
+	}
+	tickets, _ := f.tickets.ListByOrder(f.ctx, orchOrder)
+	if len(tickets) != 2 || tickets[0].Status() != domain.VoidedTicket {
+		t.Errorf("tickets = %d, first %v; want 2 voided", len(tickets), tickets[0].Status())
+	}
+	if n := count[domain.SectionBackOnSale](f.inventories.Published()); n != 1 {
+		t.Errorf("SectionBackOnSale recorded %d times, want 1", n)
+	}
+}
+
+func TestReturnOrder_OnlyByTheBuyer(t *testing.T) {
+	f := newSaga(t, fakegateway.Mode{})
+	_, _, order := f.paidOrder(t)
+	returnOrder := application.NewReturnOrderHandler(f.orders, memory.NewShowSchedule(f.inventories), f.refund, f.clock)
+
+	err := returnOrder.Handle(f.ctx, application.ReturnOrder{OrderID: order.String(), CustomerID: uuid.NewString()})
+
+	if !errors.Is(err, domain.ErrNotOrderOwner) {
+		t.Errorf("error = %v, want %v (TKT-14)", err, domain.ErrNotOrderOwner)
+	}
+}

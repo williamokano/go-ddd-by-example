@@ -18,24 +18,3 @@ func ShowSoldOut(sections []*SectionInventory, now time.Time) (InventorySoldOut,
 	}
 	return InventorySoldOut{ShowID: sections[0].ShowID(), At: now}, true
 }
-
-// ShowBackOnSale is TKT-10's mirror (9.5): section just went back on sale, so
-// the show is available again if every other section is still sold out. It
-// was then sold out before, and Show must hear about it. If another section
-// already had seats, the show was never sold out: nothing to announce.
-func ShowBackOnSale(sections []*SectionInventory, section string, now time.Time) (InventoryAvailableAgain, bool) {
-	found := false
-	for _, s := range sections {
-		if s.Section() == section {
-			found = !s.IsSoldOut()
-			continue
-		}
-		if !s.IsSoldOut() {
-			return InventoryAvailableAgain{}, false
-		}
-	}
-	if !found {
-		return InventoryAvailableAgain{}, false
-	}
-	return InventoryAvailableAgain{ShowID: sections[0].ShowID(), At: now}, true
-}

@@ -270,7 +270,10 @@ func (SeatsReturned) EventName() string { return "ticketing.SeatsReturned" }
 // OccurredAt implements DomainEvent.
 func (e SeatsReturned) OccurredAt() time.Time { return e.At }
 
-// SectionBackOnSale records a sold-out section with seats again (9.5).
+// SectionBackOnSale records a sold-out section with seats again (9.5). Unlike
+// sold out, which needs every section (ShowSoldOut), "the show has seats
+// again" is true as soon as one section does: no cross-aggregate decision, so
+// it is published as ticketing.inventory_available_again.v1 as is.
 type SectionBackOnSale struct {
 	ShowID  ShowID
 	Section string
@@ -282,16 +285,3 @@ func (SectionBackOnSale) EventName() string { return "ticketing.SectionBackOnSal
 
 // OccurredAt implements DomainEvent.
 func (e SectionBackOnSale) OccurredAt() time.Time { return e.At }
-
-// InventoryAvailableAgain records a sold-out show with seats again (9.5).
-// ShowBackOnSale decides it, across the show's sections.
-type InventoryAvailableAgain struct {
-	ShowID ShowID
-	At     time.Time
-}
-
-// EventName implements DomainEvent.
-func (InventoryAvailableAgain) EventName() string { return "ticketing.InventoryAvailableAgain" }
-
-// OccurredAt implements DomainEvent.
-func (e InventoryAvailableAgain) OccurredAt() time.Time { return e.At }

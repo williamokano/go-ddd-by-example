@@ -3,7 +3,6 @@ package domain_test
 import (
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/domain"
 )
@@ -80,34 +79,5 @@ func TestSectionInventory_ReturnSeats_OnAClosedInventoryIsANoOp(t *testing.T) {
 
 	if states(inv)["ORCH/A/1"] != "sold" || len(inv.PullEvents()) != 0 {
 		t.Error("a cancelled show's seats went back on sale")
-	}
-}
-
-// The show was sold out until this section got seats back: announce it.
-func TestShowBackOnSale(t *testing.T) {
-	sections := openSections(t)
-	orch, floor := sections["ORCH"], sections["FLOOR"]
-	sell := func(inv *domain.SectionInventory) domain.OrderID {
-		var seats []string
-		for _, s := range inv.Seats() {
-			seats = append(seats, s.Ref.String())
-		}
-		order := newOrderID()
-		_ = inv.ConfirmHold(held(t, inv, ana, seats...), order, now)
-		return order
-	}
-	orchOrder := sell(orch)
-	floorOrder := sell(floor)
-	all := []*domain.SectionInventory{orch, floor}
-
-	orch.ReturnSeats(orchOrder, now)
-	ev, back := domain.ShowBackOnSale(all, "ORCH", now.Add(time.Minute))
-	if !back || ev != (domain.InventoryAvailableAgain{ShowID: showID, At: now.Add(time.Minute)}) {
-		t.Errorf("ShowBackOnSale = %v, %v; want the show back on sale", ev, back)
-	}
-
-	floor.ReturnSeats(floorOrder, now)
-	if _, back := domain.ShowBackOnSale(all, "FLOOR", now); back {
-		t.Error("announced twice: ORCH was already back on sale, so the show was not sold out")
 	}
 }
