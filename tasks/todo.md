@@ -3,7 +3,7 @@
 Source of truth for *where we are* in the course. Lessons live in `docs/part-*.html`.
 Tick a lesson when its "Done when" checks pass; add a one-line note (date, anything notable).
 
-**Current lesson:** 9.4 — Orchestration instead of choreography
+**Current lesson:** 9.5 — Show lifecycle completion and back-on-sale
 
 ## Part 0 — Orientation & setup (`docs/part-0-orientation.html`)
 - [x] 0.1 Event storming on paper
@@ -115,7 +115,8 @@ Tick a lesson when its "Done when" checks pass; add a one-line note (date, anyth
   - TKT-13: once, never voided, within 12h of the start (no venue time zone yet). Only the Ticket is written; a `ShowSchedule` read port gives the start.
 - [x] 9.3 Contract evolution: show.published.v2
   - Additive `accessible_seats` kept venue.activated at v1; seat-by-seat restructure made show.published.v2. Ticketing skips v1 once it reads v2 (v1 arrives first on the same key).
-- [ ] 9.4 Orchestration instead of choreography
+- [x] 9.4 Orchestration instead of choreography
+  - `CheckoutProcess` state machine + orchestrator over the same steps; `SAGA_STYLE` switches. Comparison in `notes/orchestration.md`.
 - [ ] 9.5 Show lifecycle completion and back-on-sale
 - [ ] 9.6 Database-enforced boundaries
 - [ ] 9.7 Distributed tracing with OpenTelemetry
