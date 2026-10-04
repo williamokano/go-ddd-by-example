@@ -38,11 +38,18 @@ func (r *VenueRepository) Get(_ context.Context, id domain.VenueID) (*domain.Ven
 	return domain.RehydrateVenue(state), nil
 }
 
-// Save implements application.VenueRepository.
+// Save implements application.VenueRepository. Like the Postgres adapter, it
+// accepts the save only if the stored version is the one the venue was loaded
+// at (0 for a new venue), then stores the next version (ADR-011).
 func (r *VenueRepository) Save(_ context.Context, v *domain.Venue) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.venues[v.ID()] = stateOf(v)
+	if r.venues[v.ID()].Version != v.Version() {
+		return fmt.Errorf("%w: venue %s", application.ErrConcurrentModification, v.ID())
+	}
+	state := stateOf(v)
+	state.Version++
+	r.venues[v.ID()] = state
 	return nil
 }
 

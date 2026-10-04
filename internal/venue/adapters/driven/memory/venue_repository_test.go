@@ -70,6 +70,26 @@ func TestVenueRepository_ChangesWithoutSaveAreNotVisible(t *testing.T) {
 	}
 }
 
+func TestVenueRepository_Save_StaleVersion(t *testing.T) {
+	ctx := context.Background()
+	repo := memory.NewVenueRepository()
+	venue := newDraftVenue(t)
+	if err := repo.Save(ctx, venue); err != nil {
+		t.Fatal(err)
+	}
+	first, _ := repo.Get(ctx, venue.ID())
+	second, _ := repo.Get(ctx, venue.ID())
+	if err := repo.Save(ctx, first); err != nil {
+		t.Fatalf("first Save() error = %v", err)
+	}
+
+	err := repo.Save(ctx, second)
+
+	if !errors.Is(err, application.ErrConcurrentModification) {
+		t.Errorf("second Save() error = %v, want %v", err, application.ErrConcurrentModification)
+	}
+}
+
 var (
 	fixedNow     = time.Date(2026, 11, 1, 20, 0, 0, 0, time.UTC)
 	domainValues = cmp.AllowUnexported(
