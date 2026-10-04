@@ -4,6 +4,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/williamokano/go-ddd-by-example/internal/venue/domain"
 )
 
@@ -42,4 +44,17 @@ func TestNewRow(t *testing.T) {
 			})
 		}
 	})
+}
+
+func TestRow_SeatNumbers(t *testing.T) {
+	row, err := domain.NewRow("A", 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := row.SeatNumbers()
+
+	if diff := cmp.Diff([]int{1, 2, 3, 4}, got); diff != "" {
+		t.Errorf("SeatNumbers() mismatch (-want +got):\n%s", diff)
+	}
 }

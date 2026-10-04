@@ -29,3 +29,12 @@ func (r Row) Label() string { return r.label }
 
 // Seats returns the number of seats in the row.
 func (r Row) Seats() int { return r.seats }
+
+// SeatNumbers returns the seat numbers of the row, 1..Seats().
+func (r Row) SeatNumbers() []int {
+	numbers := make([]int, r.seats)
+	for i := range numbers {
+		numbers[i] = i + 1
+	}
+	return numbers
+}
