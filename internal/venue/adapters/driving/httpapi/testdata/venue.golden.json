@@ -1,0 +1,1 @@
+{"id":"0192f5e0-7c1a-7b3e-9d2a-3f4b5c6d7e8f","name":"Coliseu dos Recreios","address":{"street":"Rua Portas de Santo Antão 96","city":"Lisboa","country":"PT"},"status":"active","capacity":520,"sections":[{"code":"ORCH","name":"Orchestra","kind":"seated","capacity":20,"rows":[{"label":"A","seats":20}]},{"code":"FLOOR","name":"Floor","kind":"ga","capacity":500}]}
