@@ -21,6 +21,9 @@ type (
 	refundOrder interface {
 		Handle(context.Context, application.RefundOrder) error
 	}
+	onInventoryClosed interface {
+		Handle(context.Context, application.OnInventoryClosed) error
+	}
 )
 
 // SagaSteps are the use cases the checkout saga's messages drive.
@@ -28,10 +31,12 @@ type SagaSteps struct {
 	Confirm confirmHold
 	Issue   issueTickets
 	Refund  refundOrder
+	Closed  onInventoryClosed
 }
 
 // SagaConsumer consumes ticketing.internal (group "ticketing-saga"):
-// choreography, each step reacting to the previous one's fact (ADR-010).
+// choreography, each step reacting to the previous one's fact (ADR-010),
+// plus the cancellation cascade (TKT-11).
 type SagaConsumer struct {
 	steps  SagaSteps
 	logger *slog.Logger
@@ -60,6 +65,11 @@ func (c *SagaConsumer) Handle(ctx context.Context, env kafka.Envelope) error {
 		var m sagamsg.HoldConfirmationFailed
 		if err = json.Unmarshal(env.Payload, &m); err == nil {
 			err = c.steps.Refund.Handle(ctx, application.RefundOrder{OrderID: m.OrderID})
+		}
+	case sagamsg.TypeInventoryClosed:
+		var m sagamsg.InventoryClosed
+		if err = json.Unmarshal(env.Payload, &m); err == nil {
+			err = c.steps.Closed.Handle(ctx, application.OnInventoryClosed{ShowID: m.ShowID})
 		}
 	default:
 		c.logger.InfoContext(ctx, "ticketing saga: skipping message", "event_type", env.EventType, "event_id", env.EventID)

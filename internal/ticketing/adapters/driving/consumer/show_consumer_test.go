@@ -16,6 +16,13 @@ import (
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/application"
 )
 
+type closeStub struct{ got *application.CloseInventory }
+
+func (c *closeStub) Handle(_ context.Context, cmd application.CloseInventory) error {
+	c.got = &cmd
+	return nil
+}
+
 type openStub struct{ got *application.OpenInventory }
 
 func (o *openStub) Handle(_ context.Context, cmd application.OpenInventory) error {
@@ -25,7 +32,7 @@ func (o *openStub) Handle(_ context.Context, cmd application.OpenInventory) erro
 
 func TestShowConsumer_PublishedOpensTheInventory(t *testing.T) {
 	open := &openStub{}
-	c := consumer.NewShowConsumer(open, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	c := consumer.NewShowConsumer(open, &closeStub{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	start := time.Date(2026, 12, 1, 20, 0, 0, 0, time.UTC)
 	payload, _ := json.Marshal(showcontracts.ShowPublishedV1{
 		ShowID: "s1", VenueID: "v1", StartsAt: start,
@@ -51,9 +58,23 @@ func TestShowConsumer_PublishedOpensTheInventory(t *testing.T) {
 
 func TestShowConsumer_SkipsUnknownEvents(t *testing.T) {
 	open := &openStub{}
-	c := consumer.NewShowConsumer(open, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	c := consumer.NewShowConsumer(open, &closeStub{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	if err := c.Handle(context.Background(), kafka.Envelope{EventType: "show.renamed.v1"}); err != nil || open.got != nil {
 		t.Errorf("err = %v, called %v", err, open.got != nil)
+	}
+}
+
+func TestShowConsumer_CancelledClosesTheInventory(t *testing.T) {
+	closer := &closeStub{}
+	c := consumer.NewShowConsumer(&openStub{}, closer, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	payload, _ := json.Marshal(showcontracts.ShowCancelledV1{ShowID: "s1", Reason: "venue_retired"})
+
+	if err := c.Handle(context.Background(), kafka.Envelope{EventType: showcontracts.TypeShowCancelledV1, Payload: payload}); err != nil {
+		t.Fatal(err)
+	}
+
+	if closer.got == nil || closer.got.ShowID != "s1" {
+		t.Errorf("command = %+v", closer.got)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,6 +32,7 @@ import (
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/driving/scheduler"
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/sagamsg"
 	ticketingapp "github.com/williamokano/go-ddd-by-example/internal/ticketing/application"
+	ticketingcontracts "github.com/williamokano/go-ddd-by-example/internal/ticketing/contracts"
 	"github.com/williamokano/go-ddd-by-example/internal/venue/adapters/driven/ids"
 	venuepg "github.com/williamokano/go-ddd-by-example/internal/venue/adapters/driven/postgres"
 	"github.com/williamokano/go-ddd-by-example/internal/venue/adapters/driving/httpapi"
@@ -96,7 +98,9 @@ func serve(ctx context.Context) error {
 		showapp.NewOnVenueRetiredHandler(layouts, shows, clk),
 		logger,
 	)
-	consume(ctx, &background, cfg, "show", []string{venuecontracts.Topic}, venueEvents.Handle, logger)
+	ticketingEvents := showconsumer.NewTicketingConsumer(showapp.NewMarkShowSoldOutHandler(shows, clk), logger)
+	consume(ctx, &background, cfg, "show", []string{venuecontracts.Topic, ticketingcontracts.Topic},
+		byEventPrefix(map[string]kafka.Handler{"venue.": venueEvents.Handle, "ticketing.": ticketingEvents.Handle}), logger)
 
 	// Ticketing: the inventory, its API, and its consumer of show.events.
 	paymentMode, err := fakegateway.ParseMode(cfg.PaymentFakeMode)
@@ -115,10 +119,12 @@ func serve(ctx context.Context) error {
 		Checkout: ticketingapp.NewCheckoutHandler(inventories, orders, gateway, ticketingIDs, clk),
 		Orders:   ticketingapp.NewOrderQueries(orders, tickets),
 	}, logger)
+	refund := ticketingapp.NewRefundOrderHandler(orders, gateway, clk)
 	saga := ticketingconsumer.NewSagaConsumer(ticketingconsumer.SagaSteps{
 		Confirm: ticketingapp.NewConfirmHoldHandler(inventories, clk),
 		Issue:   ticketingapp.NewIssueTicketsHandler(orders, tickets, ticketingIDs, clk),
-		Refund:  ticketingapp.NewRefundOrderHandler(orders, gateway, clk),
+		Refund:  refund,
+		Closed:  ticketingapp.NewOnInventoryClosedHandler(tickets, orders, refund, clk),
 	}, logger)
 	consume(ctx, &background, cfg, "ticketing-saga", []string{sagamsg.Topic}, saga.Handle, logger)
 
@@ -127,7 +133,11 @@ func serve(ctx context.Context) error {
 	sweep := time.NewTicker(cfg.HoldSweepInterval)
 	defer sweep.Stop()
 	background.Go(func() { scheduler.Run(ctx, sweep.C, expireHolds.Handle, logger) })
-	showEvents := ticketingconsumer.NewShowConsumer(ticketingapp.NewOpenInventoryHandler(inventories, clk), logger)
+	showEvents := ticketingconsumer.NewShowConsumer(
+		ticketingapp.NewOpenInventoryHandler(inventories, clk),
+		ticketingapp.NewCloseInventoryHandler(inventories, clk),
+		logger,
+	)
 	consume(ctx, &background, cfg, "ticketing", []string{showcontracts.Topic}, showEvents.Handle, logger)
 
 	mux := http.NewServeMux()
@@ -183,4 +193,17 @@ func runServer(ctx context.Context, server *http.Server, logger *slog.Logger) er
 		return fmt.Errorf("http: %w", err)
 	}
 	return nil
+}
+
+// byEventPrefix routes one consumer group's records to the consumer of the
+// topic they came from: a context has one group, whatever it listens to.
+func byEventPrefix(routes map[string]kafka.Handler) kafka.Handler {
+	return func(ctx context.Context, env kafka.Envelope) error {
+		for prefix, handle := range routes {
+			if strings.HasPrefix(env.EventType, prefix) {
+				return handle(ctx, env)
+			}
+		}
+		return nil
+	}
 }

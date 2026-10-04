@@ -13,19 +13,25 @@ import (
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/application"
 )
 
-type openInventory interface {
-	Handle(context.Context, application.OpenInventory) error
-}
+type (
+	openInventory interface {
+		Handle(context.Context, application.OpenInventory) error
+	}
+	closeInventory interface {
+		Handle(context.Context, application.CloseInventory) error
+	}
+)
 
 // ShowConsumer consumes show.events (group "ticketing").
 type ShowConsumer struct {
 	open   openInventory
+	close  closeInventory
 	logger *slog.Logger
 }
 
 // NewShowConsumer wires the consumer to Ticketing's use cases.
-func NewShowConsumer(open openInventory, logger *slog.Logger) *ShowConsumer {
-	return &ShowConsumer{open: open, logger: logger}
+func NewShowConsumer(open openInventory, closer closeInventory, logger *slog.Logger) *ShowConsumer {
+	return &ShowConsumer{open: open, close: closer, logger: logger}
 }
 
 // Handle is a kafka.Handler.
@@ -37,6 +43,15 @@ func (c *ShowConsumer) Handle(ctx context.Context, env kafka.Envelope) error {
 			return fmt.Errorf("decode %s: %w", env.EventType, err)
 		}
 		if err := c.open.Handle(ctx, toOpenInventory(e)); err != nil {
+			return fmt.Errorf("%s: %w", env.EventType, err)
+		}
+		return nil
+	case showcontracts.TypeShowCancelledV1:
+		var e showcontracts.ShowCancelledV1
+		if err := json.Unmarshal(env.Payload, &e); err != nil {
+			return fmt.Errorf("decode %s: %w", env.EventType, err)
+		}
+		if err := c.close.Handle(ctx, application.CloseInventory{ShowID: e.ShowID}); err != nil {
 			return fmt.Errorf("%s: %w", env.EventType, err)
 		}
 		return nil
