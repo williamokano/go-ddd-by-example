@@ -1,6 +1,6 @@
 DOCS_PORT ?= 8000
 
-.PHONY: docs test lint infra down reset migrate
+.PHONY: docs test lint infra down reset migrate generate
 
 docs: ## serve the course at http://localhost:$(DOCS_PORT)
 	@echo "Course: http://localhost:$(DOCS_PORT)"
@@ -26,3 +26,6 @@ export DATABASE_URL
 
 migrate: ## apply migrations against $$DATABASE_URL
 	go run ./cmd/stagehand migrate up
+
+generate: ## sqlc: SQL in db/queries → Go in each context's sqlcgen package
+	go tool sqlc generate
