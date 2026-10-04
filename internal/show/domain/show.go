@@ -22,6 +22,8 @@ type Show struct {
 	status     Status
 	version    int
 
+	cancellationReason CancellationReason
+
 	events Events
 }
 
@@ -91,6 +93,51 @@ func (s *Show) Publish(venue VenueLayout, now time.Time) error {
 	return nil
 }
 
+// Reschedule moves a draft show (SHW-5) to a new schedule in the future
+// (SHW-2). Overlaps with other shows are the SchedulingPolicy's job (SHW-3).
+func (s *Show) Reschedule(schedule Schedule, now time.Time) error {
+	if s.status != Draft {
+		return fmt.Errorf("%w: cannot reschedule a %s show", ErrShowNotDraft, s.status)
+	}
+	if err := startsInTheFuture(schedule, now); err != nil {
+		return err
+	}
+	s.schedule = schedule
+	s.events.Record(ShowRescheduled{ShowID: s.id, Schedule: schedule, At: now})
+	return nil
+}
+
+// Cancel cancels a draft, published or sold-out show; Cancelled and Completed
+// are terminal (SHW-6).
+func (s *Show) Cancel(reason CancellationReason, now time.Time) error {
+	if s.status.IsTerminal() {
+		return fmt.Errorf("%w: cannot cancel a %s show", ErrInvalidShowTransition, s.status)
+	}
+	if reason == (CancellationReason{}) {
+		return fmt.Errorf("%w: no reason", ErrInvalidCancellationReason)
+	}
+	s.status = Cancelled
+	s.cancellationReason = reason
+	s.events.Record(ShowCancelled{ShowID: s.id, VenueID: s.venueID, Reason: reason, At: now})
+	return nil
+}
+
+// MarkSoldOut records Ticketing's fact that every seat is sold (SHW-8). The
+// fact may arrive twice, or after the show was cancelled or completed: then
+// it is old news, a no-op, not an error.
+func (s *Show) MarkSoldOut(now time.Time) error {
+	switch s.status {
+	case Published:
+		s.status = SoldOut
+		s.events.Record(ShowSoldOut{ShowID: s.id, At: now})
+		return nil
+	case SoldOut, Cancelled, Completed:
+		return nil
+	default:
+		return fmt.Errorf("%w: a %s show cannot sell out", ErrInvalidShowTransition, s.status)
+	}
+}
+
 // ID returns the show's identity.
 func (s *Show) ID() ShowID { return s.id }
 
@@ -111,6 +158,9 @@ func (s *Show) Prices() PriceList { return s.prices }
 
 // Status returns where the show is in its lifecycle.
 func (s *Show) Status() Status { return s.status }
+
+// CancellationReason says why the show was cancelled (zero unless cancelled).
+func (s *Show) CancellationReason() CancellationReason { return s.cancellationReason }
 
 // Version is the version the show was loaded at (ADR-011).
 func (s *Show) Version() int { return s.version }

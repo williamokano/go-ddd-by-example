@@ -23,7 +23,8 @@ var (
 	ErrShowNotPriced = errors.New("show: show has no price list")
 
 	// SHW-6: the state machine.
-	ErrInvalidShowTransition = errors.New("show: invalid show transition")
+	ErrInvalidShowTransition     = errors.New("show: invalid show transition")
+	ErrInvalidCancellationReason = errors.New("show: invalid cancellation reason")
 
 	// SHW-4: the price list covers every section of the venue, and nothing else.
 	ErrPriceListMismatch = errors.New("show: price list does not match the venue's sections")

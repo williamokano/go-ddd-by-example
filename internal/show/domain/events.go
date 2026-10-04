@@ -67,3 +67,42 @@ func (ShowPublished) EventName() string { return "show.ShowPublished" }
 
 // OccurredAt implements DomainEvent.
 func (e ShowPublished) OccurredAt() time.Time { return e.At }
+
+// ShowRescheduled records that a draft show moved to a new schedule.
+type ShowRescheduled struct {
+	ShowID   ShowID
+	Schedule Schedule
+	At       time.Time
+}
+
+// EventName implements DomainEvent.
+func (ShowRescheduled) EventName() string { return "show.ShowRescheduled" }
+
+// OccurredAt implements DomainEvent.
+func (e ShowRescheduled) OccurredAt() time.Time { return e.At }
+
+// ShowCancelled records that the show was cancelled, and why.
+type ShowCancelled struct {
+	ShowID  ShowID
+	VenueID VenueID
+	Reason  CancellationReason
+	At      time.Time
+}
+
+// EventName implements DomainEvent.
+func (ShowCancelled) EventName() string { return "show.ShowCancelled" }
+
+// OccurredAt implements DomainEvent.
+func (e ShowCancelled) OccurredAt() time.Time { return e.At }
+
+// ShowSoldOut records that every seat of the show is sold.
+type ShowSoldOut struct {
+	ShowID ShowID
+	At     time.Time
+}
+
+// EventName implements DomainEvent.
+func (ShowSoldOut) EventName() string { return "show.ShowSoldOut" }
+
+// OccurredAt implements DomainEvent.
+func (e ShowSoldOut) OccurredAt() time.Time { return e.At }

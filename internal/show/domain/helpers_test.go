@@ -17,7 +17,7 @@ var (
 	promoterID = domain.NewPromoterID(uuid.MustParse("0192f5e0-0000-7000-8000-000000000003"))
 
 	showValues = cmp.AllowUnexported(domain.ShowID{}, domain.VenueID{}, domain.PromoterID{},
-		domain.Schedule{}, domain.PriceList{}, domain.Money{}, domain.Currency{})
+		domain.Schedule{}, domain.PriceList{}, domain.Money{}, domain.Currency{}, domain.CancellationReason{})
 )
 
 // activeLayout is Show's local view of an active venue with ORCH and FLOOR.
@@ -63,4 +63,22 @@ func draftShow(t *testing.T) *domain.Show {
 		t.Fatal(err)
 	}
 	return s
+}
+
+// showIn rehydrates a priced show in the given status.
+func showIn(t *testing.T, status domain.Status) *domain.Show {
+	t.Helper()
+	return domain.RehydrateShow(domain.ShowState{
+		ID: showID, VenueID: venueID, PromoterID: promoterID, Title: "Fado Night",
+		Schedule: inAMonth(t), Prices: fullPrices(t), Status: status, Version: 3,
+	})
+}
+
+func reason(t *testing.T, r string) domain.CancellationReason {
+	t.Helper()
+	cr, err := domain.NewCancellationReason(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cr
 }
