@@ -1,6 +1,6 @@
 DOCS_PORT ?= 8000
 
-.PHONY: docs test lint
+.PHONY: docs test lint infra down reset
 
 docs: ## serve the course at http://localhost:$(DOCS_PORT)
 	@echo "Course: http://localhost:$(DOCS_PORT)"
@@ -11,3 +11,12 @@ test: ## fast tests (domain, application, http, contract, arch)
 
 lint: ## golangci-lint (v2)
 	golangci-lint run
+
+infra: ## only the infrastructure (postgres), for running the app from your IDE
+	docker compose up -d --wait postgres
+
+down: ## stop everything (keep data)
+	docker compose down
+
+reset: ## stop everything and wipe volumes
+	docker compose down -v
