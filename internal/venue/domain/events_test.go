@@ -124,15 +124,22 @@ func TestVenue_PullEvents(t *testing.T) {
 	}
 }
 
-func TestDomainEvents_OccurredAt(t *testing.T) {
-	for _, ev := range []domain.DomainEvent{
-		domain.VenueRegistered{At: fixedNow},
-		domain.SectionAdded{At: fixedNow},
-		domain.VenueActivated{At: fixedNow},
-		domain.VenueRetired{At: fixedNow},
-	} {
-		if got := ev.OccurredAt(); !got.Equal(fixedNow) {
-			t.Errorf("%s.OccurredAt() = %v, want %v", ev.EventName(), got, fixedNow)
+func TestDomainEvents(t *testing.T) {
+	tests := []struct {
+		event    domain.DomainEvent
+		wantName string
+	}{
+		{domain.VenueRegistered{At: fixedNow}, "venue.VenueRegistered"},
+		{domain.SectionAdded{At: fixedNow}, "venue.SectionAdded"},
+		{domain.VenueActivated{At: fixedNow}, "venue.VenueActivated"},
+		{domain.VenueRetired{At: fixedNow}, "venue.VenueRetired"},
+	}
+	for _, tt := range tests {
+		if got := tt.event.EventName(); got != tt.wantName {
+			t.Errorf("EventName() = %q, want %q", got, tt.wantName)
+		}
+		if got := tt.event.OccurredAt(); !got.Equal(fixedNow) {
+			t.Errorf("%s.OccurredAt() = %v, want %v", tt.wantName, got, fixedNow)
 		}
 	}
 }

@@ -23,7 +23,7 @@ func (e *Events) PullEvents() []DomainEvent {
 	return out
 }
 
-// VenueRegistered: a venue manager registered a new venue.
+// VenueRegistered records that a venue manager registered a new venue.
 type VenueRegistered struct {
 	VenueID VenueID
 	Name    string
@@ -36,7 +36,7 @@ func (VenueRegistered) EventName() string { return "venue.VenueRegistered" }
 // OccurredAt implements DomainEvent.
 func (e VenueRegistered) OccurredAt() time.Time { return e.At }
 
-// SectionAdded: a section was added to a draft venue's layout.
+// SectionAdded records that a section was added to a draft venue's layout.
 type SectionAdded struct {
 	VenueID VenueID
 	Section Section
@@ -49,8 +49,8 @@ func (SectionAdded) EventName() string { return "venue.SectionAdded" }
 // OccurredAt implements DomainEvent.
 func (e SectionAdded) OccurredAt() time.Time { return e.At }
 
-// VenueActivated: the venue opened for shows. It carries the full layout,
-// because downstream contexts (Show, then Ticketing) need it.
+// VenueActivated records that the venue opened for shows. It carries the
+// full layout, because downstream contexts (Show, then Ticketing) need it.
 type VenueActivated struct {
 	VenueID  VenueID
 	Name     string
@@ -64,7 +64,7 @@ func (VenueActivated) EventName() string { return "venue.VenueActivated" }
 // OccurredAt implements DomainEvent.
 func (e VenueActivated) OccurredAt() time.Time { return e.At }
 
-// VenueRetired: the venue closed for good.
+// VenueRetired records that the venue closed for good.
 type VenueRetired struct {
 	VenueID VenueID
 	At      time.Time
