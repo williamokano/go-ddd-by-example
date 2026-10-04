@@ -79,6 +79,8 @@ E2 ──► E5 payments ──► E6 fraud      (fraud screens before, and lear
   <tr><td>Dispute (chargeback)</td><td>The cardholder's bank reverses a captured payment and asks us to prove it was legitimate, within a deadline.</td></tr>
   <tr><td>Screening</td><td>Asking a fraud vendor to assess a prospective transaction <em>before</em> we try to take money.</td></tr>
   <tr><td>Risk decision</td><td><em>Our</em> verdict (Allow / Review / Block), derived from vendor signals plus our own policy.</td></tr>
+  <tr><td>Issuer fraud report</td><td>The cardholder's bank reporting a transaction as fraud (Visa TC40, Mastercard SAFE). A risk signal only: no dispute, no deadline.</td></tr>
+  <tr><td>Pre-dispute alert</td><td>A warning (Ethoca, Verifi) that a transaction will become a dispute unless it's refunded within a short window.</td></tr>
   <tr><td>Outcome feedback</td><td>Telling the fraud vendor what really happened to a transaction (captured, declined, refunded, charged back) so its model improves.</td></tr>
 </table></div>
 

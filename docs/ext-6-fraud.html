@@ -25,9 +25,10 @@
   <tr><td>Inquiry <strong>after</strong> authorization (pre-capture)</td><td>Same, later</td><td>Adds issuer outcomes: AVS/CVV results, auth code</td><td>Same type with <code>Stage = BeforeCapture</code></td></tr>
   <tr><td><strong>Manual review</strong> result</td><td>Async: vendor calls us (webhook) later</td><td>A final Approve/Decline after a human looked at it</td><td><code>ReviewResolved</code></td></tr>
   <tr><td><strong>Outcome feedback</strong></td><td>Async, <em>we</em> call them, fire-and-retry</td><td>Authorized, declined (with reason), captured, voided, refunded, <strong>chargeback</strong> (with reason code)</td><td><code>TransactionOutcome</code></td></tr>
-  <tr><td><strong>Pre-dispute alerts and fraud reports</strong></td><td>Async inbound</td><td>The card network or an alert service says "this transaction was reported as fraud / is about to become a dispute"</td><td><code>PreDisputeAlert</code></td></tr>
+  <tr><td><strong>Issuer fraud reports</strong> (Visa TC40, Mastercard SAFE)</td><td>Async inbound, often days or weeks later, through the vendor or the acquirer</td><td>"The cardholder's bank reported this transaction as fraud." Not a dispute, no deadline, nothing to act on, and frequently never followed by a chargeback</td><td><code>IssuerFraudReport</code></td></tr>
+  <tr><td><strong>Pre-dispute alerts</strong> (e.g. Ethoca, Verifi)</td><td>Async inbound, before a chargeback is filed</td><td>"This will become a dispute unless you refund now." Actionable, with a short window</td><td><code>PreDisputeAlert</code></td></tr>
 </table></div>
-<div class="callout warn"><span class="label">Naming the alert feeds</span><p>Card schemes and alert networks each have their own names and codes for "this was reported as fraud" or "this is about to become a dispute": Visa's TC40 fraud reports, Mastercard's SAFE reports, and pre-dispute alert services such as Ethoca and Verifi, among others. Don't let any of those names into the model. It uses one neutral <code>PreDisputeAlert{Source, Kind, TransactionRef, ReceivedAt}</code>, and each feed you connect is one adapter translation into it.</p></div>
+<div class="callout warn"><span class="label">Two kinds of bad news, kept apart</span><p>Card schemes and alert networks have their own names and codes: Visa's <strong>TC40</strong> and Mastercard's <strong>SAFE</strong> fraud reports, and pre-dispute alert services such as Ethoca and Verifi. Don't let those names into the model, but don't merge the two kinds either. A fraud report is a <em>signal</em>: it teaches risk (ours and the vendor's) and changes nothing about the money. A pre-dispute alert is a <em>request for action</em> with a deadline. The model has one neutral type for each, <code>IssuerFraudReport{Source, TransactionRef, ReportedAt, FraudType}</code> and <code>PreDisputeAlert{Source, TransactionRef, ReceivedAt, RespondBy}</code>. Each feed you connect is one adapter translation into one of them.</p></div>
 
 <h2>Where it sits in checkout</h2>
 <pre><code>Checkout saga (Ticketing)
@@ -100,12 +101,13 @@ type Screener interface { // sync: we wait, with a deadline
 type OutcomeReporter interface { // async: we retry; the vendor may be down
     Report(ctx context.Context, o TransactionOutcome) error // idempotent on o.ID
 }
-// Inbound, via a driving adapter: ReviewResolved, PreDisputeAlert.</code></pre>
+// Inbound, via a driving adapter: ReviewResolved, IssuerFraudReport,
+// PreDisputeAlert.</code></pre>
 <div class="callout tdd"><span class="label">TDD script (a contract suite, again)</span><ol class="tests">
   <li>Scriptable by the request itself so tests are readable: an email like <code>block@fraud.test</code> → High; <code>review@…</code> → Medium; <code>slow@…</code> → sleeps past the deadline; <code>boom@…</code> → 500; otherwise Low.</li>
   <li>The fake honours the request's <code>context</code> deadline (a fake that ignores it hides bugs).</li>
   <li>The fake <code>OutcomeReporter</code> is idempotent on the outcome id and can be told to fail N times, then succeed; it records order of arrival so tests can assert ordering.</li>
-  <li>The fake can later post a <code>ReviewResolved</code> or <code>PreDisputeAlert</code> into the webhook adapter.</li>
+  <li>The fake can later post a <code>ReviewResolved</code>, an <code>IssuerFraudReport</code> or a <code>PreDisputeAlert</code> into the webhook adapter.</li>
 </ol></div>
 </section>
 
@@ -168,7 +170,7 @@ type OutcomeReporter interface { // async: we retry; the vendor may be down
 </dl>
 <div class="callout why"><span class="label">Same pattern, other direction (ADR-E15)</span><p>The transactional outbox solves "reliably tell <em>our own</em> Kafka". Calling a third party's API has the same failure modes (down, slow, duplicate) but a different sink, so we use a <strong>durable outbound work queue</strong>: a table written in the same transaction as the consumer's inbox row, and a worker that delivers with retry, backoff and a dead-letter state. Notice it is the outbox idea reused, not a new mechanism.</p></div>
 <div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
-  <li>Translator (pure function, table-driven): <code>payment_authorized</code> → <code>Authorized</code>; <code>payment_declined{InsufficientFunds}</code> → <code>Declined{...}</code>; <code>payment_captured</code> → <code>Captured</code>; <code>payment_voided</code> → <code>Voided</code>; <code>refund_succeeded</code> → <code>Refunded</code> (with the amount, since refunds can be partial); <code>dispute_opened</code> → <code>Chargeback</code>; a <code>PreDisputeAlert</code> → <code>FraudReport</code>. Unknown events are ignored explicitly.</li>
+  <li>Translator (pure function, table-driven): <code>payment_authorized</code> → <code>Authorized</code>; <code>payment_declined{InsufficientFunds}</code> → <code>Declined{...}</code>; <code>payment_captured</code> → <code>Captured</code>; <code>payment_voided</code> → <code>Voided</code>; <code>refund_succeeded</code> → <code>Refunded</code> (with the amount, since refunds can be partial); <code>dispute_opened</code> → <code>Chargeback</code>; an <code>IssuerFraudReport</code> → <code>FraudReported</code> (vendors want these even when no chargeback follows). Unknown events are ignored explicitly.</li>
   <li>Consuming an event enqueues exactly one outcome (inbox de-duplication, 8.4).</li>
   <li>Worker with the fake reporter failing three times then succeeding: delivered once, attempts recorded, backoff grows (fake clock). After N attempts → <code>DeadLettered</code>, a metric increments, and an operator can requeue.</li>
   <li><strong>Ordering:</strong> outcomes for one transaction are delivered in the order they happened (<code>Authorized</code> before <code>Captured</code> before <code>Refunded</code>). Use a per-transaction sequence number and have the worker deliver only the next one, or send the sequence so the vendor can order it. Test with a scrambled queue.</li>
@@ -179,17 +181,18 @@ type OutcomeReporter interface { // async: we retry; the vendor may be down
 </section>
 
 <section class="lesson" id="le6-8">
-<h3><span class="lesson-id">E6.8</span> Chargebacks and pre-dispute alerts close the loop</h3>
+<h3><span class="lesson-id">E6.8</span> Chargebacks, fraud reports and pre-dispute alerts close the loop</h3>
 <dl class="meta">
   <dt>Goal</dt><dd>Handle bad news that arrives from the outside, and teach the vendor from it.</dd>
   <dt>Rules</dt><dd>FRD-5, plus PAY-8 and TKT-17 from E5</dd>
 </dl>
 <div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>An <code>IssuerFraudReport</code> (a TC40-style feed, translated by the adapter) → <code>fraud.fraud_reported.v1</code>. Nothing happens to the money: Payments ignores it. It feeds the vendor (E6.7) and the <code>PriorFraud</code> signal below.</li>
   <li>A <code>PreDisputeAlert</code> webhook (translated by the adapter) → <code>fraud.pre_dispute_alert.v1</code>.</li>
   <li>A policy decision <em>in Payments</em> (not Fraud): on an alert for a Captured payment, <strong>proactively refund</strong> when the alert says it will otherwise become a dispute and the amount is under a threshold. This is cheaper than a chargeback fee. Fraud only <em>tells</em>; Payments <em>decides</em> what to do with its money. Test both sides separately.</li>
   <li>Ticketing must cope with a refund it didn't ask for: its <code>refund_succeeded</code> consumer (E5.9) moves a Paid or Fulfilled order to Refunded and voids its tickets even when the order wasn't <code>RefundPending</code>.</li>
-  <li>The matching outcome (<code>FraudReport</code> / <code>Chargeback</code>) is queued for the vendor via E6.7, so it learns the transaction was bad. Check that the feed contains a fraud-coded chargeback <em>and</em> keeps the earlier <code>Captured</code> first.</li>
-  <li>A customer who was charged back is now a risk signal: add a <code>PriorChargeback</code> flag to the screening request, fed by a small local projection built from <code>dispute_opened</code> events (a read model, as in 6.5).</li>
+  <li>The matching outcome (<code>FraudReported</code> / <code>Chargeback</code>) is queued for the vendor via E6.7, so it learns the transaction was bad. Check that the feed contains a fraud-coded chargeback <em>and</em> keeps the earlier <code>Captured</code> first.</li>
+  <li>A customer who was charged back is now a risk signal: add <code>PriorChargeback</code> and <code>PriorFraudReport</code> flags to the screening request, fed by a small local projection built from <code>dispute_opened</code> and <code>fraud_reported</code> events (a read model, as in 6.5).</li>
 </ol></div>
 <div class="callout discuss"><span class="label">Discuss</span><p>The same customer-level fact ("this person charged back before") is useful to three contexts. Which context owns it, and how do the others learn it without a shared table?</p></div>
 </section>
