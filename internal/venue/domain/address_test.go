@@ -1,6 +1,8 @@
 package domain_test
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/williamokano/go-ddd-by-example/internal/venue/domain"
@@ -21,6 +23,32 @@ func TestNewAddress(t *testing.T) {
 		}
 		if got, want := addr.Country(), "PT"; got != want {
 			t.Errorf("Country() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("rejects invalid parts and names the field (VEN-1)", func(t *testing.T) {
+		tests := []struct {
+			name                  string
+			street, city, country string
+			wantField             string
+		}{
+			{"blank street", "  ", "Lisboa", "PT", "street"},
+			{"blank city", "Rua da Alegria 12", "", "PT", "city"},
+			{"country too short", "Rua da Alegria 12", "Lisboa", "P", "country"},
+			{"country too long", "Rua da Alegria 12", "Lisboa", "PRT", "country"},
+			{"country not letters", "Rua da Alegria 12", "Lisboa", "P1", "country"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				_, err := domain.NewAddress(tt.street, tt.city, tt.country)
+
+				if !errors.Is(err, domain.ErrInvalidAddress) {
+					t.Fatalf("NewAddress() error = %v, want %v", err, domain.ErrInvalidAddress)
+				}
+				if !strings.Contains(err.Error(), tt.wantField) {
+					t.Errorf("error %q does not name the field %q", err, tt.wantField)
+				}
+			})
 		}
 	})
 }

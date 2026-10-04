@@ -1,14 +1,10 @@
 package domain
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
 )
-
-// ErrInvalidVenueID is returned when a string is not a usable VenueID.
-var ErrInvalidVenueID = errors.New("venue: invalid venue id")
 
 // VenueID identifies a venue. The field is unexported, so outside this package
 // a VenueID can only come from NewVenueID or ParseVenueID (or be the zero value).
