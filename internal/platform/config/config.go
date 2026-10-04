@@ -23,7 +23,15 @@ type Config struct {
 	HoldSweepInterval  time.Duration // HOLD_SWEEP_INTERVAL, default 5s: how often holds are expired
 	SagaStyle          string        // SAGA_STYLE: orchestration (default, 9.4) | choreography (ADR-010)
 	ShowSweepInterval  time.Duration // SHOW_SWEEP_INTERVAL, default 1m: how often ended shows complete (SHW-9)
+
+	// ContextDatabaseURLs is each context's connection, as its own role
+	// (9.6): <CONTEXT>_DATABASE_URL, defaulting to DATABASE_URL. Migrations
+	// always use DATABASE_URL, which owns the schemas.
+	ContextDatabaseURLs map[string]string
 }
+
+// Contexts are the bounded contexts that own a schema.
+var Contexts = []string{"venue", "show", "ticketing", "notifications"}
 
 // Load builds the Config from getenv (os.Getenv in main, a map in tests).
 func Load(getenv func(string) string) (Config, error) {
@@ -32,6 +40,10 @@ func Load(getenv func(string) string) (Config, error) {
 		DatabaseURL:     getenv("DATABASE_URL"),
 		PaymentFakeMode: or(getenv("PAYMENT_FAKE_MODE"), "approve"),
 		SagaStyle:       or(getenv("SAGA_STYLE"), "orchestration"),
+	}
+	cfg.ContextDatabaseURLs = make(map[string]string, len(Contexts))
+	for _, ctx := range Contexts {
+		cfg.ContextDatabaseURLs[ctx] = or(getenv(strings.ToUpper(ctx)+"_DATABASE_URL"), cfg.DatabaseURL)
 	}
 	if cfg.SagaStyle != "orchestration" && cfg.SagaStyle != "choreography" {
 		return Config{}, fmt.Errorf("config: SAGA_STYLE %q: want orchestration or choreography", cfg.SagaStyle)

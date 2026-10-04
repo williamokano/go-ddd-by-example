@@ -24,6 +24,9 @@ func TestLoad(t *testing.T) {
 			KafkaBrokers: []string{"localhost:9092"}, OutboxPollInterval: 200 * time.Millisecond,
 			HoldTTL: 10 * time.Minute, PaymentFakeMode: "approve", HoldSweepInterval: 5 * time.Second,
 			SagaStyle: "orchestration", ShowSweepInterval: time.Minute,
+			ContextDatabaseURLs: map[string]string{
+				"venue": "postgres://x", "show": "postgres://x", "ticketing": "postgres://x", "notifications": "postgres://x",
+			},
 		}
 		if diff := cmp.Diff(want, got); diff != "" {
 			t.Errorf("config mismatch (-want +got):\n%s", diff)
@@ -46,6 +49,19 @@ func TestLoad(t *testing.T) {
 		}
 		if diff := cmp.Diff([]string{"k1:9092", "k2:9092"}, got.KafkaBrokers); diff != "" {
 			t.Errorf("KafkaBrokers mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("each context may connect as its own role (9.6)", func(t *testing.T) {
+		got, err := config.Load(env(map[string]string{
+			"DATABASE_URL": "postgres://admin", "TICKETING_DATABASE_URL": "postgres://ticketing",
+		}))
+
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.ContextDatabaseURLs["ticketing"] != "postgres://ticketing" || got.ContextDatabaseURLs["venue"] != "postgres://admin" {
+			t.Errorf("ContextDatabaseURLs = %v", got.ContextDatabaseURLs)
 		}
 	})
 

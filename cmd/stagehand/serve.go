@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/williamokano/go-ddd-by-example/internal/notifications/adapters/driven/logsender"
 	notificationsconsumer "github.com/williamokano/go-ddd-by-example/internal/notifications/adapters/driving/consumer"
 	notificationsapp "github.com/williamokano/go-ddd-by-example/internal/notifications/application"
@@ -53,11 +55,18 @@ func serve(ctx context.Context) error {
 	}
 	logger := slog.New(trace.NewHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel})))
 
-	pool, err := postgres.NewPool(ctx, cfg.DatabaseURL)
-	if err != nil {
-		return fmt.Errorf("database: %w", err)
+	// One pool per context, each connected as its context's role (9.6):
+	// Postgres refuses any query outside the context's own schema.
+	pools := map[string]*pgxpool.Pool{}
+	for _, name := range config.Contexts {
+		pool, err := postgres.NewPool(ctx, cfg.ContextDatabaseURLs[name])
+		if err != nil {
+			return fmt.Errorf("database for %s: %w", name, err)
+		}
+		defer pool.Close()
+		pools[name] = pool
 	}
-	defer pool.Close()
+	venuePool, showPool, ticketingPool := pools["venue"], pools["show"], pools["ticketing"]
 
 	producer, err := kafka.NewProducer(cfg.KafkaBrokers)
 	if err != nil {
@@ -69,12 +78,12 @@ func serve(ctx context.Context) error {
 	var background sync.WaitGroup
 	defer background.Wait()
 	for _, schema := range []string{"venue", "show", "ticketing"} {
-		background.Go(func() { outbox.NewRelay(pool, schema, producer, logger).Run(ctx, cfg.OutboxPollInterval) })
+		background.Go(func() { outbox.NewRelay(pools[schema], schema, producer, logger).Run(ctx, cfg.OutboxPollInterval) })
 	}
 
 	// Driven adapters.
 	clk := clock.System{}
-	venues := venuepg.NewVenueRepository(pool)
+	venues := venuepg.NewVenueRepository(venuePool)
 	venueIDs := ids.NewVenueIDs(idgen.UUIDv7{})
 
 	// Use cases, then the driving adapter.
@@ -83,19 +92,19 @@ func serve(ctx context.Context) error {
 		AddSection: application.NewAddSectionHandler(venues, clk),
 		Activate:   application.NewActivateVenueHandler(venues, clk),
 		Retire:     application.NewRetireVenueHandler(venues, clk),
-		Queries:    venuepg.NewVenueQueries(pool),
+		Queries:    venuepg.NewVenueQueries(venuePool),
 	}, logger)
 
 	// Show: its own repositories, its projection of Venue, its API and its
 	// consumer of venue.events (group "show").
-	shows := showpg.NewShowRepository(pool)
-	layouts := showpg.NewVenueLayouts(pool)
+	shows := showpg.NewShowRepository(showPool)
+	layouts := showpg.NewVenueLayouts(showPool)
 	showAPI := showhttp.Routes(showhttp.UseCases{
 		Draft:   showapp.NewDraftShowHandler(shows, layouts, showids.NewShowIDs(idgen.UUIDv7{}), clk),
 		Price:   showapp.NewPriceShowHandler(shows, layouts, clk),
 		Publish: showapp.NewPublishShowHandler(shows, layouts, clk),
 		Cancel:  showapp.NewCancelShowHandler(shows, clk),
-		Queries: showpg.NewShowQueries(pool),
+		Queries: showpg.NewShowQueries(showPool),
 	}, logger)
 	// A scheduler completes the shows that have ended (SHW-9).
 	completeShows := showapp.NewCompleteEndedShowsHandler(shows, clk)
@@ -118,39 +127,39 @@ func serve(ctx context.Context) error {
 		return fmt.Errorf("config: %w", err)
 	}
 	gateway := fakegateway.New(paymentMode)
-	inventories := ticketingpg.NewInventoryRepository(pool)
-	orders := ticketingpg.NewOrderRepository(pool)
-	tickets := ticketingpg.NewTicketRepository(pool)
+	inventories := ticketingpg.NewInventoryRepository(ticketingPool)
+	orders := ticketingpg.NewOrderRepository(ticketingPool)
+	tickets := ticketingpg.NewTicketRepository(ticketingPool)
 	ticketingIDs := ticketingids.New(idgen.UUIDv7{})
 	refund := ticketingapp.NewRefundOrderHandler(orders, gateway, clk)
 	ticketingAPI := ticketinghttp.Routes(ticketinghttp.UseCases{
 		Hold:     ticketingapp.NewHoldSeatsHandler(inventories, ticketingIDs, clk, cfg.HoldTTL),
 		Release:  ticketingapp.NewReleaseHoldHandler(inventories, clk),
-		Seats:    ticketingpg.NewSeatQueries(pool),
+		Seats:    ticketingpg.NewSeatQueries(ticketingPool),
 		Checkout: ticketingapp.NewCheckoutHandler(inventories, orders, gateway, ticketingIDs, clk),
 		Orders:   ticketingapp.NewOrderQueries(orders, tickets),
-		CheckIn:  ticketingapp.NewCheckInHandler(tickets, ticketingpg.NewShowSchedule(pool), clk),
-		Return:   ticketingapp.NewReturnOrderHandler(orders, ticketingpg.NewShowSchedule(pool), refund, clk),
+		CheckIn:  ticketingapp.NewCheckInHandler(tickets, ticketingpg.NewShowSchedule(ticketingPool), clk),
+		Return:   ticketingapp.NewReturnOrderHandler(orders, ticketingpg.NewShowSchedule(ticketingPool), refund, clk),
 	}, logger)
 	steps := ticketingconsumer.SagaSteps{
 		Confirm:  ticketingapp.NewConfirmHoldHandler(inventories, clk),
 		Issue:    ticketingapp.NewIssueTicketsHandler(orders, tickets, ticketingIDs, clk),
 		Refund:   refund,
 		Closed:   ticketingapp.NewOnInventoryClosedHandler(tickets, orders, refund, clk),
-		SoldOut:  ticketingapp.NewOnSectionSoldOutHandler(inventories, ticketingpg.NewEventPublisher(pool), clk),
+		SoldOut:  ticketingapp.NewOnSectionSoldOutHandler(inventories, ticketingpg.NewEventPublisher(ticketingPool), clk),
 		Returned: ticketingapp.NewOnOrderRefundedHandler(inventories, tickets, clk),
 	}
 	if cfg.SagaStyle == "orchestration" {
 		// The same steps, driven by the CheckoutProcess (9.4) instead of
 		// each one knowing what follows it (ADR-010).
-		o := ticketingapp.NewCheckoutOrchestrator(ticketingpg.NewCheckoutProcessRepository(pool), steps.Confirm, steps.Issue, refund, clk)
+		o := ticketingapp.NewCheckoutOrchestrator(ticketingpg.NewCheckoutProcessRepository(ticketingPool), steps.Confirm, steps.Issue, refund, clk)
 		steps.Confirm, steps.Issue, steps.Refund = o.Confirm(), o.Issue(), o.Refund()
 	}
 	saga := ticketingconsumer.NewSagaConsumer(steps, logger)
 	consume(ctx, &background, cfg, "ticketing-saga", []string{sagamsg.Topic}, saga.Handle, logger)
 
 	// A scheduler drives the application too: expire lapsed holds (TKT-4).
-	expireHolds := ticketingapp.NewExpireHoldsHandler(inventories, ticketingpg.NewExpiredHolds(pool), clk)
+	expireHolds := ticketingapp.NewExpireHoldsHandler(inventories, ticketingpg.NewExpiredHolds(ticketingPool), clk)
 	sweep := time.NewTicker(cfg.HoldSweepInterval)
 	defer sweep.Stop()
 	background.Go(func() { scheduler.Run(ctx, sweep.C, expireHolds.Handle, logger) })
@@ -164,7 +173,7 @@ func serve(ctx context.Context) error {
 	// Notifications: a transaction script per event, emails logged.
 	// The inbox makes each email go out effectively once (8.4).
 	sender := logsender.New(logger)
-	txm := postgres.NewTxManager(pool)
+	txm := postgres.NewTxManager(pools["notifications"])
 	inbox := postgres.NewInbox("notifications", "notifications")
 	notify := notificationsconsumer.NewTicketingConsumer(
 		notificationsapp.NewSendTicketsHandler(txm, inbox, sender),

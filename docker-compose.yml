@@ -71,6 +71,11 @@ services:
     environment:
       DATABASE_URL: postgres://stagehand:stagehand@postgres:5432/stagehand?sslmode=disable
       KAFKA_BROKERS: kafka:19092
+      # 9.6: each context connects as its own role (created by migration 14).
+      VENUE_DATABASE_URL: postgres://stagehand_venue:stagehand_venue@postgres:5432/stagehand?sslmode=disable
+      SHOW_DATABASE_URL: postgres://stagehand_show:stagehand_show@postgres:5432/stagehand?sslmode=disable
+      TICKETING_DATABASE_URL: postgres://stagehand_ticketing:stagehand_ticketing@postgres:5432/stagehand?sslmode=disable
+      NOTIFICATIONS_DATABASE_URL: postgres://stagehand_notifications:stagehand_notifications@postgres:5432/stagehand?sslmode=disable
       HOLD_TTL: ${HOLD_TTL:-10m}
       HOLD_SWEEP_INTERVAL: ${HOLD_SWEEP_INTERVAL:-5s}
       SAGA_STYLE: ${SAGA_STYLE:-orchestration}
