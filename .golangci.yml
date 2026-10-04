@@ -21,6 +21,9 @@ linters:
       # The domain returns its own sentinel errors; there is nothing foreign to wrap.
       - path: internal/.*/domain/
         linters: [wrapcheck]
+      # Test doubles pass errors through on purpose; tests are no error boundary.
+      - path: _test\.go
+        linters: [wrapcheck]
       # domain.DomainEvent is the ubiquitous language (it becomes
       # sharedkernel.DomainEvent in Part 7), not an accidental stutter.
       - path: internal/.*/domain/

@@ -26,7 +26,10 @@ func run(ctx context.Context, args []string) error {
 		if err != nil {
 			return fmt.Errorf("migrations: %w", err)
 		}
-		return postgres.Migrate(ctx, os.Getenv("DATABASE_URL"), migrations, args[1])
+		if err := postgres.Migrate(ctx, os.Getenv("DATABASE_URL"), migrations, args[1]); err != nil {
+			return fmt.Errorf("migrate: %w", err)
+		}
+		return nil
 	}
 	return fmt.Errorf("usage: stagehand migrate up|down|reset|status")
 }
