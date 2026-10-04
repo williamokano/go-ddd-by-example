@@ -52,3 +52,36 @@ Real Postgres (testcontainers), one inventory, retries = 3:
   594 conflicts retried, p50 ≈ 0.8 s, p99 ≈ 0.83 s. Every hold races for the
   same inventory version, whatever seat it wants: the price of ADR-005. Part 9.1
   (an inventory per section) is the answer when this matters.
+
+## Re-cut per section (lesson 9.1, ADR-013)
+
+`SectionInventory` per (show, section) replaced the one-per-show inventory.
+Same machine, same test (`TestHoldContention_Measured`), 200 concurrent holds
+on 200 different seats, 1,000 places in total:
+
+| Layout | Holds that succeeded | Conflicts retried | p50 | p99 |
+|---|---|---|---|---|
+| 1 section of 1,000 (ADR-005's shape) | 3/200 | 594 | 792 ms | 805 ms |
+| 10 sections of 100 | 30/200 | 540 | 307 ms | 322 ms |
+
+Ten aggregates, ten times the throughput, but still only 3 winners per
+section within 3 retries. A smaller aggregate spreads the contention; it
+doesn't remove it. The next lever is the retry policy (jitter, more
+attempts), or seat-level locking if the business ever needs it.
+
+What it cost:
+
+- **TKT-3** ("one active hold per customer") became per section. Enforcing it
+  per show would need a cross-aggregate check, which is exactly what we
+  split to avoid. A business decision, recorded in ADR-013.
+- **TKT-10** ("sold out") spans sections, so it became a domain service
+  (`domain.ShowSoldOut`) run by a policy on every `SectionSoldOut`. Two last
+  sections selling out at once can announce twice, but never zero times;
+  Show treats the duplicate as a no-op.
+- `OrderPaid` carries the section, so `ConfirmHold` finds the right
+  inventory even after the hold is gone.
+
+Which tests changed: the domain tests (helpers, mixed-section holds, sold
+out), the repository contract suite, the application tests that confirm a
+hold (now naming the section), and one e2e scenario (S4 bought both sections
+in one hold). HTTP tests: none.

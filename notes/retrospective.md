@@ -50,7 +50,9 @@ in Part 9).
 
 ## Stretch goals (Part 9)
 
-I'll take them in order of what each one teaches per line of code:
+In order of what each one teaches per line of code (the reference solution
+builds them in numeric order, one tag each, so every lesson resumes from the
+previous tag):
 
 1. **9.2 Ticket check-in.** A new behaviour on an aggregate that already
    exists, and a new invariant (a ticket enters once).

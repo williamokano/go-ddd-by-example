@@ -109,7 +109,8 @@ Tick a lesson when its "Done when" checks pass; add a one-line note (date, anyth
   - `README.md` (concept → file map) and `notes/retrospective.md`.
 
 ## Part 9 — Stretch goals (`docs/part-9-stretch.html`)
-- [ ] 9.1 Re-cut the inventory aggregate per section
+- [x] 9.1 Re-cut the inventory aggregate per section
+  - ADR-013: TKT-3 per section; TKT-10 is a domain service. 10 sections: 30/200 holds vs 3/200 (`notes/aggregate-design.md`).
 - [ ] 9.2 Ticket check-in at the gate
 - [ ] 9.3 Contract evolution: show.published.v2
 - [ ] 9.4 Orchestration instead of choreography
