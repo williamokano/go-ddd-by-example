@@ -19,6 +19,7 @@ type Venue struct {
 	address  Address
 	status   Status
 	sections []Section
+	version  int
 
 	// events is a named field, not embedded: embedding would promote Record
 	// onto *Venue and let any caller fake the venue's history.
@@ -53,6 +54,10 @@ func (v *Venue) Address() Address { return v.address }
 
 // Status returns where the venue is in its lifecycle.
 func (v *Venue) Status() Status { return v.status }
+
+// Version is the version the venue was loaded at, for optimistic concurrency
+// (ADR-011). The repository increments it in storage; the domain only carries it.
+func (v *Venue) Version() int { return v.version }
 
 // AddSection adds a section to the venue's layout. Section codes are unique
 // within the venue (VEN-2): only the root sees all the sections, so only the
