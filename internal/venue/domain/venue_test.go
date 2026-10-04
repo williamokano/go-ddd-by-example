@@ -16,7 +16,7 @@ func TestRegisterVenue(t *testing.T) {
 		id := domain.NewVenueID(uuid.MustParse("0192f5e0-7c1a-7b3e-9d2a-3f4b5c6d7e8f"))
 		addr := mustAddress(t)
 
-		venue, err := domain.RegisterVenue(id, "  Coliseu dos Recreios ", addr)
+		venue, err := domain.RegisterVenue(id, "  Coliseu dos Recreios ", addr, fixedNow)
 
 		if err != nil {
 			t.Fatalf("RegisterVenue() error = %v", err)
@@ -42,7 +42,7 @@ func TestRegisterVenue(t *testing.T) {
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				_, err := domain.RegisterVenue(aVenueID(), tt.venueName, mustAddress(t))
+				_, err := domain.RegisterVenue(aVenueID(), tt.venueName, mustAddress(t), fixedNow)
 
 				if !errors.Is(err, domain.ErrInvalidVenueName) {
 					t.Errorf("RegisterVenue() error = %v, want %v", err, domain.ErrInvalidVenueName)
@@ -52,7 +52,7 @@ func TestRegisterVenue(t *testing.T) {
 	})
 
 	t.Run("accepts a name of exactly 120 characters, counted in runes (VEN-1)", func(t *testing.T) {
-		_, err := domain.RegisterVenue(aVenueID(), strings.Repeat("é", 120), mustAddress(t))
+		_, err := domain.RegisterVenue(aVenueID(), strings.Repeat("é", 120), mustAddress(t), fixedNow)
 
 		if err != nil {
 			t.Errorf("RegisterVenue() error = %v", err)
@@ -60,7 +60,7 @@ func TestRegisterVenue(t *testing.T) {
 	})
 
 	t.Run("rejects a zero id", func(t *testing.T) {
-		_, err := domain.RegisterVenue(domain.VenueID{}, "Coliseu", mustAddress(t))
+		_, err := domain.RegisterVenue(domain.VenueID{}, "Coliseu", mustAddress(t), fixedNow)
 
 		if !errors.Is(err, domain.ErrInvalidVenueID) {
 			t.Errorf("RegisterVenue() error = %v, want %v", err, domain.ErrInvalidVenueID)
@@ -68,7 +68,7 @@ func TestRegisterVenue(t *testing.T) {
 	})
 
 	t.Run("rejects a zero address (VEN-1)", func(t *testing.T) {
-		_, err := domain.RegisterVenue(aVenueID(), "Coliseu", domain.Address{})
+		_, err := domain.RegisterVenue(aVenueID(), "Coliseu", domain.Address{}, fixedNow)
 
 		if !errors.Is(err, domain.ErrInvalidAddress) {
 			t.Errorf("RegisterVenue() error = %v, want %v", err, domain.ErrInvalidAddress)

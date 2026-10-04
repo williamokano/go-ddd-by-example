@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -18,10 +19,14 @@ type Venue struct {
 	address  Address
 	status   Status
 	sections []Section
+
+	// events is a named field, not embedded: embedding would promote Record
+	// onto *Venue and let any caller fake the venue's history.
+	events Events
 }
 
 // RegisterVenue registers a new venue. It starts as a Draft.
-func RegisterVenue(id VenueID, name string, addr Address) (*Venue, error) {
+func RegisterVenue(id VenueID, name string, addr Address, now time.Time) (*Venue, error) {
 	if id.IsZero() {
 		return nil, fmt.Errorf("%w: zero id", ErrInvalidVenueID)
 	}
@@ -32,7 +37,9 @@ func RegisterVenue(id VenueID, name string, addr Address) (*Venue, error) {
 	if name == "" || utf8.RuneCountInString(name) > maxVenueNameLength {
 		return nil, fmt.Errorf("%w: %q must be 1 to %d characters", ErrInvalidVenueName, name, maxVenueNameLength)
 	}
-	return &Venue{id: id, name: name, address: addr, status: Draft}, nil
+	v := &Venue{id: id, name: name, address: addr, status: Draft}
+	v.events.Record(VenueRegistered{VenueID: id, Name: name, At: now})
+	return v, nil
 }
 
 // ID returns the venue's identity.
@@ -103,3 +110,7 @@ func (v *Venue) Retire() error {
 	v.status = Retired
 	return nil
 }
+
+// PullEvents returns the events recorded since the last pull, in order, and
+// forgets them. The repository calls it after saving, to fill the outbox.
+func (v *Venue) PullEvents() []DomainEvent { return v.events.PullEvents() }

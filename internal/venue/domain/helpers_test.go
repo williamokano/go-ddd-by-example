@@ -2,10 +2,20 @@ package domain_test
 
 import (
 	"testing"
+	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 
 	"github.com/williamokano/go-ddd-by-example/internal/venue/domain"
+)
+
+// fixedNow is "now" in every test: time is an input, never time.Now() (ADR-008).
+var fixedNow = time.Date(2026, 11, 1, 20, 0, 0, 0, time.UTC)
+
+// domainValues lets cmp compare domain value objects, whose fields are unexported.
+var domainValues = cmp.AllowUnexported(
+	domain.VenueID{}, domain.Address{}, domain.SectionCode{}, domain.Section{}, domain.Row{},
 )
 
 func mustCode(t *testing.T, raw string) domain.SectionCode {
@@ -60,7 +70,7 @@ func newDraftVenue(t *testing.T, opts ...venueOption) *domain.Venue {
 	for _, opt := range opts {
 		opt(&spec)
 	}
-	venue, err := domain.RegisterVenue(spec.id, spec.name, mustAddress(t))
+	venue, err := domain.RegisterVenue(spec.id, spec.name, mustAddress(t), fixedNow)
 	if err != nil {
 		t.Fatalf("RegisterVenue() error = %v", err)
 	}
