@@ -9,5 +9,6 @@ var (
 	ErrInvalidAddress     = errors.New("venue: invalid address")      // VEN-1
 	ErrInvalidSectionCode = errors.New("venue: invalid section code") // VEN-2
 	ErrInvalidSection     = errors.New("venue: invalid section")      // VEN-3
+	ErrDuplicateRowLabel  = errors.New("venue: duplicate row label")  // VEN-3
 	ErrInvalidRow         = errors.New("venue: invalid row")          // VEN-3
 )

@@ -12,9 +12,10 @@ type Row struct {
 	seats int
 }
 
-// NewRow builds a row with seats numbered 1..seats (VEN-3).
+// NewRow builds a row with seats numbered 1..seats (VEN-3). The label is
+// trimmed and upper-cased: row "a" and row "A" are the same row.
 func NewRow(label string, seats int) (Row, error) {
-	label = strings.TrimSpace(label)
+	label = strings.ToUpper(strings.TrimSpace(label))
 	if label == "" {
 		return Row{}, fmt.Errorf("%w: label is blank", ErrInvalidRow)
 	}

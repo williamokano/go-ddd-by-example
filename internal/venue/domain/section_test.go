@@ -31,4 +31,14 @@ func TestNewSeatedSection(t *testing.T) {
 			t.Errorf("NewSeatedSection() error = %v, want %v", err, domain.ErrInvalidSection)
 		}
 	})
+
+	t.Run("row labels are unique within the section, ignoring case (VEN-3)", func(t *testing.T) {
+		rows := []domain.Row{mustRow(t, "A", 10), mustRow(t, "a", 12)}
+
+		_, err := domain.NewSeatedSection(mustCode(t, "ORCH"), "Orchestra", rows)
+
+		if !errors.Is(err, domain.ErrDuplicateRowLabel) {
+			t.Errorf("NewSeatedSection() error = %v, want %v", err, domain.ErrDuplicateRowLabel)
+		}
+	})
 }

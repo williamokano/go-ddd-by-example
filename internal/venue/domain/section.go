@@ -28,6 +28,13 @@ func NewSeatedSection(code SectionCode, name string, rows []Row) (Section, error
 	if len(rows) == 0 {
 		return Section{}, fmt.Errorf("%w: seated section %s has no rows", ErrInvalidSection, code)
 	}
+	seen := make(map[string]bool, len(rows))
+	for _, r := range rows {
+		if seen[r.Label()] {
+			return Section{}, fmt.Errorf("%w: row %s in section %s", ErrDuplicateRowLabel, r.Label(), code)
+		}
+		seen[r.Label()] = true
+	}
 	return Section{code: code, name: strings.TrimSpace(name), kind: Seated, rows: rows}, nil
 }
 
