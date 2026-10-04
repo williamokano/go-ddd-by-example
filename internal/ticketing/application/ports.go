@@ -37,6 +37,11 @@ type PaymentGateway interface {
 	Refund(ctx context.Context, ref domain.PaymentRef, amount sharedkernel.Money) error
 }
 
+// ExpiredHolds finds the shows that have holds lapsed at now (TKT-4).
+type ExpiredHolds interface {
+	ShowsWithExpiredHolds(ctx context.Context, now time.Time) ([]domain.ShowID, error)
+}
+
 // Clock tells the time (ADR-008).
 type Clock interface {
 	Now() time.Time
