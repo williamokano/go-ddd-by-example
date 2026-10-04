@@ -11,6 +11,12 @@ var (
 	// ErrHoldNotFound means no active hold has that ID.
 	ErrHoldNotFound = errors.New("ticketing: hold not found")
 
+	// ErrPaymentDeclined means the provider refused the charge.
+	ErrPaymentDeclined = errors.New("ticketing: payment declined")
+
+	// ErrOrderNotFound means no order has that ID.
+	ErrOrderNotFound = errors.New("ticketing: order not found")
+
 	// ErrConcurrentModification means the aggregate changed since it was
 	// loaded (ADR-011); use cases retry a few times, then give up.
 	ErrConcurrentModification = errors.New("ticketing: concurrent modification")
