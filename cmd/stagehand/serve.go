@@ -145,10 +145,13 @@ func serve(ctx context.Context) error {
 	consume(ctx, &background, cfg, "ticketing", []string{showcontracts.Topic}, showEvents.Handle, logger)
 
 	// Notifications: a transaction script per event, emails logged.
+	// The inbox makes each email go out effectively once (8.4).
 	sender := logsender.New(logger)
+	txm := postgres.NewTxManager(pool)
+	inbox := postgres.NewInbox("notifications", "notifications")
 	notify := notificationsconsumer.NewTicketingConsumer(
-		notificationsapp.NewSendTicketsHandler(sender),
-		notificationsapp.NewSendRefundHandler(sender),
+		notificationsapp.NewSendTicketsHandler(txm, inbox, sender),
+		notificationsapp.NewSendRefundHandler(txm, inbox, sender),
 	)
 	consume(ctx, &background, cfg, "notifications", []string{ticketingcontracts.Topic}, notify.Handle, logger)
 

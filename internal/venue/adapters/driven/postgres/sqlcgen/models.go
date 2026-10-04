@@ -11,6 +11,12 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type NotificationsInbox struct {
+	Consumer    string
+	EventID     string
+	ProcessedAt time.Time
+}
+
 type ShowOutbox struct {
 	ID            int64
 	EventID       uuid.UUID

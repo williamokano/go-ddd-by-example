@@ -60,10 +60,10 @@ func TestTicketingConsumer_TranslatesTheTwoEventsNotificationsCaresAbout(t *test
 	}
 
 	wantTickets := []application.SendTickets{{
-		OrderID: "o1", ShowID: "s1", ContactEmail: "ana@example.com",
+		EventID: "e1", OrderID: "o1", ShowID: "s1", ContactEmail: "ana@example.com",
 		Tickets: []application.Ticket{{Seat: "ORCH/A/1", Code: "C1"}},
 	}}
-	wantRefunds := []application.SendRefund{{OrderID: "o1", ContactEmail: "ana@example.com", Amount: 9000, Currency: "EUR"}}
+	wantRefunds := []application.SendRefund{{EventID: "e1", OrderID: "o1", ContactEmail: "ana@example.com", Amount: 9000, Currency: "EUR"}}
 	if diff := cmp.Diff(wantTickets, s.tickets); diff != "" {
 		t.Errorf("tickets (-want +got):\n%s", diff)
 	}

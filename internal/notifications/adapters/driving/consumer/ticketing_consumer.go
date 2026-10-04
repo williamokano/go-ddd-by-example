@@ -42,7 +42,7 @@ func (c *TicketingConsumer) Handle(ctx context.Context, env kafka.Envelope) erro
 		if err := decode(env, &e); err != nil {
 			return err
 		}
-		cmd := application.SendTickets{OrderID: e.OrderID, ShowID: e.ShowID, ContactEmail: e.ContactEmail}
+		cmd := application.SendTickets{EventID: env.EventID, OrderID: e.OrderID, ShowID: e.ShowID, ContactEmail: e.ContactEmail}
 		for _, t := range e.Tickets {
 			cmd.Tickets = append(cmd.Tickets, application.Ticket{Seat: t.Seat, Code: t.Code})
 		}
@@ -53,7 +53,7 @@ func (c *TicketingConsumer) Handle(ctx context.Context, env kafka.Envelope) erro
 			return err
 		}
 		return wrap(env, c.refund.Handle(ctx, application.SendRefund{
-			OrderID: e.OrderID, ContactEmail: e.ContactEmail, Amount: e.Amount, Currency: e.Currency,
+			EventID: env.EventID, OrderID: e.OrderID, ContactEmail: e.ContactEmail, Amount: e.Amount, Currency: e.Currency,
 		}))
 	default:
 		return nil
