@@ -39,6 +39,9 @@ func (a Address) City() string { return a.city }
 // Country returns the ISO-3166 alpha-2 country code, upper case.
 func (a Address) Country() string { return a.country }
 
+// IsZero reports whether the address is the zero value, which no constructor returns.
+func (a Address) IsZero() bool { return a == Address{} }
+
 // isTwoLetters reports whether s is exactly two upper-case ASCII letters.
 func isTwoLetters(s string) bool {
 	if len(s) != 2 {

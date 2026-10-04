@@ -20,6 +20,12 @@ type Venue struct {
 
 // RegisterVenue registers a new venue. It starts as a Draft.
 func RegisterVenue(id VenueID, name string, addr Address) (*Venue, error) {
+	if id.IsZero() {
+		return nil, fmt.Errorf("%w: zero id", ErrInvalidVenueID)
+	}
+	if addr.IsZero() {
+		return nil, fmt.Errorf("%w: zero address", ErrInvalidAddress)
+	}
 	name = strings.TrimSpace(name)
 	if name == "" || utf8.RuneCountInString(name) > maxVenueNameLength {
 		return nil, fmt.Errorf("%w: %q must be 1 to %d characters", ErrInvalidVenueName, name, maxVenueNameLength)

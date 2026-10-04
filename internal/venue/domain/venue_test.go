@@ -57,4 +57,20 @@ func TestRegisterVenue(t *testing.T) {
 			t.Errorf("RegisterVenue() error = %v", err)
 		}
 	})
+
+	t.Run("rejects a zero id", func(t *testing.T) {
+		_, err := domain.RegisterVenue(domain.VenueID{}, "Coliseu", mustAddress(t))
+
+		if !errors.Is(err, domain.ErrInvalidVenueID) {
+			t.Errorf("RegisterVenue() error = %v, want %v", err, domain.ErrInvalidVenueID)
+		}
+	})
+
+	t.Run("rejects a zero address (VEN-1)", func(t *testing.T) {
+		_, err := domain.RegisterVenue(aVenueID(), "Coliseu", domain.Address{})
+
+		if !errors.Is(err, domain.ErrInvalidAddress) {
+			t.Errorf("RegisterVenue() error = %v, want %v", err, domain.ErrInvalidAddress)
+		}
+	})
 }
