@@ -184,6 +184,8 @@ func (e OrderFulfilled) OccurredAt() time.Time { return e.At }
 type OrderRefunded struct {
 	OrderID      OrderID
 	ShowID       ShowID
+	Section      string    // where its seats are (ADR-013)
+	Seats        []SeatRef // go back on sale if they were sold (9.5)
 	CustomerID   CustomerID
 	ContactEmail ContactEmail
 	Total        sharedkernel.Money
@@ -253,3 +255,43 @@ func (TicketCheckedIn) EventName() string { return "ticketing.TicketCheckedIn" }
 
 // OccurredAt implements DomainEvent.
 func (e TicketCheckedIn) OccurredAt() time.Time { return e.At }
+
+// SeatsReturned records seats of a returned order back on sale (9.5).
+type SeatsReturned struct {
+	ShowID  ShowID
+	OrderID OrderID
+	Seats   []SeatRef
+	At      time.Time
+}
+
+// EventName implements DomainEvent.
+func (SeatsReturned) EventName() string { return "ticketing.SeatsReturned" }
+
+// OccurredAt implements DomainEvent.
+func (e SeatsReturned) OccurredAt() time.Time { return e.At }
+
+// SectionBackOnSale records a sold-out section with seats again (9.5).
+type SectionBackOnSale struct {
+	ShowID  ShowID
+	Section string
+	At      time.Time
+}
+
+// EventName implements DomainEvent.
+func (SectionBackOnSale) EventName() string { return "ticketing.SectionBackOnSale" }
+
+// OccurredAt implements DomainEvent.
+func (e SectionBackOnSale) OccurredAt() time.Time { return e.At }
+
+// InventoryAvailableAgain records a sold-out show with seats again (9.5).
+// ShowBackOnSale decides it, across the show's sections.
+type InventoryAvailableAgain struct {
+	ShowID ShowID
+	At     time.Time
+}
+
+// EventName implements DomainEvent.
+func (InventoryAvailableAgain) EventName() string { return "ticketing.InventoryAvailableAgain" }
+
+// OccurredAt implements DomainEvent.
+func (e InventoryAvailableAgain) OccurredAt() time.Time { return e.At }

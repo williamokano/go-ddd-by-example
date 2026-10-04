@@ -159,13 +159,34 @@ func (o *Order) MarkRefunded(now time.Time) error {
 		return nil
 	case Paid, Fulfilled:
 		o.status = Refunded
+		seats := make([]SeatRef, len(o.lines))
+		for i, l := range o.lines {
+			seats[i] = l.Seat
+		}
 		o.events.Record(OrderRefunded{
-			OrderID: o.id, ShowID: o.showID, CustomerID: o.customer, ContactEmail: o.email, Total: o.total, At: now,
+			OrderID: o.id, ShowID: o.showID, Section: o.lines[0].Seat.Section(), Seats: seats,
+			CustomerID: o.customer, ContactEmail: o.email, Total: o.total, At: now,
 		})
 		return nil
 	default:
 		return o.illegal("refund")
 	}
+}
+
+// CheckReturn says whether customer may return the order (TKT-14): only the
+// buyer, only a fulfilled order, only before the show starts at startsAt.
+// The refund itself is the saga's RefundOrder step.
+func (o *Order) CheckReturn(customer CustomerID, startsAt, now time.Time) error {
+	if customer != o.customer {
+		return fmt.Errorf("%w: order %s", ErrNotOrderOwner, o.id)
+	}
+	if o.status != Fulfilled {
+		return o.illegal("return")
+	}
+	if !now.Before(startsAt) {
+		return fmt.Errorf("%w: the show started at %s", ErrSalesClosed, startsAt.Format(time.RFC3339))
+	}
+	return nil
 }
 
 func (o *Order) illegal(what string) error {

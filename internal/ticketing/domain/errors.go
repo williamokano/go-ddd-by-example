@@ -20,7 +20,10 @@ var (
 	// TKT-4, TKT-8: only a live hold, by its owner, can be released or confirmed.
 	ErrHoldNotFound = errors.New("ticketing: hold not found")
 	ErrNotHoldOwner = errors.New("ticketing: the hold belongs to another customer")
-	ErrHoldExpired  = errors.New("ticketing: hold expired")
+
+	// TKT-14: only the buyer returns an order.
+	ErrNotOrderOwner = errors.New("ticketing: the order belongs to another customer")
+	ErrHoldExpired   = errors.New("ticketing: hold expired")
 
 	// TKT-6: an order needs a valid contact email (and a live, owned hold).
 	ErrInvalidContactEmail = errors.New("ticketing: invalid contact email")

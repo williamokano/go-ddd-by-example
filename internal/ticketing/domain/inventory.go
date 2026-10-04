@@ -237,6 +237,31 @@ func (inv *SectionInventory) Close(now time.Time) {
 	inv.events.Record(InventoryClosed{ShowID: inv.showID, Section: inv.section, ReleasedSeats: released, At: now})
 }
 
+// ReturnSeats puts the seats sold to a returned order back on sale (9.5). A
+// sold-out section is not sold out any more: it records SectionBackOnSale.
+// Seats not sold to the order (a refund after a failed confirmation), a
+// redelivery, or a closed inventory (a cancelled show): nothing happens.
+func (inv *SectionInventory) ReturnSeats(order OrderID, now time.Time) {
+	if inv.closed {
+		return
+	}
+	var returned []SeatRef
+	for _, ref := range inv.order {
+		if s := inv.seats[ref]; s.state == Sold && s.orderID == order {
+			s.state, s.orderID = Available, OrderID{}
+			returned = append(returned, ref)
+		}
+	}
+	if len(returned) == 0 {
+		return
+	}
+	inv.events.Record(SeatsReturned{ShowID: inv.showID, OrderID: order, Seats: returned, At: now})
+	if inv.soldOut {
+		inv.soldOut = false
+		inv.events.Record(SectionBackOnSale{ShowID: inv.showID, Section: inv.section, At: now})
+	}
+}
+
 func (inv *SectionInventory) isSoldTo(order OrderID) bool {
 	for _, s := range inv.seats {
 		if s.state == Sold && s.orderID == order {
