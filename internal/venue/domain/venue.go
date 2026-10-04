@@ -91,7 +91,7 @@ func (v *Venue) Capacity() int {
 
 // Activate opens the venue for shows. Only a draft venue with at least one
 // section can be activated (VEN-5).
-func (v *Venue) Activate() error {
+func (v *Venue) Activate(now time.Time) error {
 	if v.status != Draft {
 		return fmt.Errorf("%w: cannot activate a %s venue", ErrInvalidVenueTransition, v.status)
 	}
@@ -99,12 +99,13 @@ func (v *Venue) Activate() error {
 		return ErrVenueHasNoSections
 	}
 	v.status = Active
+	v.events.Record(VenueActivated{VenueID: v.id, Name: v.name, Sections: v.Sections(), At: now})
 	return nil
 }
 
 // Retire closes the venue for good. Only an active venue can be retired, and
 // Retired is terminal (VEN-6).
-func (v *Venue) Retire() error {
+func (v *Venue) Retire(now time.Time) error {
 	if v.status != Active {
 		return fmt.Errorf("%w: cannot retire a %s venue", ErrInvalidVenueTransition, v.status)
 	}

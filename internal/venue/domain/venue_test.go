@@ -161,7 +161,7 @@ func TestVenue_Activate(t *testing.T) {
 	t.Run("a draft venue with a section becomes active (VEN-5)", func(t *testing.T) {
 		venue := newDraftVenue(t, withSection(gaSection(t, "FLOOR", 500)))
 
-		err := venue.Activate()
+		err := venue.Activate(fixedNow)
 
 		if err != nil {
 			t.Fatalf("Activate() error = %v", err)
@@ -174,7 +174,7 @@ func TestVenue_Activate(t *testing.T) {
 	t.Run("fails without sections and stays draft (VEN-5)", func(t *testing.T) {
 		venue := newDraftVenue(t)
 
-		err := venue.Activate()
+		err := venue.Activate(fixedNow)
 
 		if !errors.Is(err, domain.ErrVenueHasNoSections) {
 			t.Errorf("Activate() error = %v, want %v", err, domain.ErrVenueHasNoSections)
@@ -189,7 +189,7 @@ func TestVenue_Retire(t *testing.T) {
 	t.Run("an active venue becomes retired (VEN-6)", func(t *testing.T) {
 		venue := newActiveVenue(t)
 
-		err := venue.Retire()
+		err := venue.Retire(fixedNow)
 
 		if err != nil {
 			t.Fatalf("Retire() error = %v", err)
@@ -207,10 +207,10 @@ func TestVenue_IllegalTransitions(t *testing.T) {
 		transition func(v *domain.Venue) error
 		wantStatus domain.Status
 	}{
-		{"activate when active (VEN-5)", newActiveVenue, (*domain.Venue).Activate, domain.Active},
-		{"activate when retired (VEN-6)", newRetiredVenue, (*domain.Venue).Activate, domain.Retired},
-		{"retire when draft (VEN-6)", newDraftVenueWithSection, (*domain.Venue).Retire, domain.Draft},
-		{"retire when retired (VEN-6)", newRetiredVenue, (*domain.Venue).Retire, domain.Retired},
+		{"activate when active (VEN-5)", newActiveVenue, activate, domain.Active},
+		{"activate when retired (VEN-6)", newRetiredVenue, activate, domain.Retired},
+		{"retire when draft (VEN-6)", newDraftVenueWithSection, retire, domain.Draft},
+		{"retire when retired (VEN-6)", newRetiredVenue, retire, domain.Retired},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

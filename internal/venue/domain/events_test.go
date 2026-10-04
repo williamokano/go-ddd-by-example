@@ -40,3 +40,24 @@ func TestVenue_AddSection_RecordsSectionAdded(t *testing.T) {
 		t.Errorf("events mismatch (-want +got):\n%s", diff)
 	}
 }
+
+func TestVenue_Activate_RecordsVenueActivatedWithTheLayout(t *testing.T) {
+	orch := seatedSection(t, "ORCH", mustRow(t, "A", 10), mustRow(t, "B", 12))
+	floor := gaSection(t, "FLOOR", 500)
+	venue := newDraftVenue(t, withSection(orch), withSection(floor))
+	venue.PullEvents()
+
+	if err := venue.Activate(fixedNow); err != nil {
+		t.Fatal(err)
+	}
+
+	want := []domain.DomainEvent{domain.VenueActivated{
+		VenueID:  venue.ID(),
+		Name:     venue.Name(),
+		Sections: []domain.Section{orch, floor},
+		At:       fixedNow,
+	}}
+	if diff := cmp.Diff(want, venue.PullEvents(), domainValues); diff != "" {
+		t.Errorf("events mismatch (-want +got):\n%s", diff)
+	}
+}

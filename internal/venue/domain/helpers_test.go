@@ -113,7 +113,7 @@ func sectionCodes(sections []domain.Section) []string {
 func newActiveVenue(t *testing.T) *domain.Venue {
 	t.Helper()
 	venue := newDraftVenueWithSection(t)
-	if err := venue.Activate(); err != nil {
+	if err := venue.Activate(fixedNow); err != nil {
 		t.Fatalf("Activate() error = %v", err)
 	}
 	return venue
@@ -127,8 +127,12 @@ func newDraftVenueWithSection(t *testing.T) *domain.Venue {
 func newRetiredVenue(t *testing.T) *domain.Venue {
 	t.Helper()
 	venue := newActiveVenue(t)
-	if err := venue.Retire(); err != nil {
+	if err := venue.Retire(fixedNow); err != nil {
 		t.Fatalf("Retire() error = %v", err)
 	}
 	return venue
 }
+
+// activate and retire adapt the lifecycle methods for table-driven tests.
+func activate(v *domain.Venue) error { return v.Activate(fixedNow) }
+func retire(v *domain.Venue) error   { return v.Retire(fixedNow) }

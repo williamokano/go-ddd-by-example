@@ -48,3 +48,18 @@ func (SectionAdded) EventName() string { return "venue.SectionAdded" }
 
 // OccurredAt implements DomainEvent.
 func (e SectionAdded) OccurredAt() time.Time { return e.At }
+
+// VenueActivated: the venue opened for shows. It carries the full layout,
+// because downstream contexts (Show, then Ticketing) need it.
+type VenueActivated struct {
+	VenueID  VenueID
+	Name     string
+	Sections []Section
+	At       time.Time
+}
+
+// EventName implements DomainEvent.
+func (VenueActivated) EventName() string { return "venue.VenueActivated" }
+
+// OccurredAt implements DomainEvent.
+func (e VenueActivated) OccurredAt() time.Time { return e.At }
