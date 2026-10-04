@@ -29,8 +29,16 @@ func NewRegisterVenueHandler(venues VenueRepository, ids IDGenerator, clock Cloc
 
 // Handle registers the venue and returns its new ID.
 func (h *RegisterVenueHandler) Handle(ctx context.Context, cmd RegisterVenue) (domain.VenueID, error) {
-	addr, _ := domain.NewAddress(cmd.Street, cmd.City, cmd.Country)
-	venue, _ := domain.RegisterVenue(h.ids.NewVenueID(), cmd.Name, addr, h.clock.Now())
-	_ = h.venues.Save(ctx, venue)
+	addr, err := domain.NewAddress(cmd.Street, cmd.City, cmd.Country)
+	if err != nil {
+		return domain.VenueID{}, err
+	}
+	venue, err := domain.RegisterVenue(h.ids.NewVenueID(), cmd.Name, addr, h.clock.Now())
+	if err != nil {
+		return domain.VenueID{}, err
+	}
+	if err := h.venues.Save(ctx, venue); err != nil {
+		return domain.VenueID{}, err
+	}
 	return venue.ID(), nil
 }

@@ -2,9 +2,11 @@ package application_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 
 	"github.com/williamokano/go-ddd-by-example/internal/platform/clock"
@@ -41,4 +43,41 @@ func TestRegisterVenue(t *testing.T) {
 			t.Errorf("Status() = %v, want draft", venue.Status())
 		}
 	})
+
+	t.Run("records VenueRegistered at the clock's time", func(t *testing.T) {
+		repo := memory.NewVenueRepository()
+		handler := application.NewRegisterVenueHandler(repo, ids.NewVenueIDs(idgen.NewSequence()), clock.NewFixed(fixedNow))
+
+		id, err := handler.Handle(context.Background(), validRegisterVenue())
+
+		if err != nil {
+			t.Fatalf("Handle() error = %v", err)
+		}
+		want := []domain.DomainEvent{domain.VenueRegistered{VenueID: id, Name: "Coliseu dos Recreios", At: fixedNow}}
+		if diff := cmp.Diff(want, repo.Published(), cmp.AllowUnexported(domain.VenueID{})); diff != "" {
+			t.Errorf("events mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("returns the domain error unchanged and saves nothing (VEN-1)", func(t *testing.T) {
+		repo := memory.NewVenueRepository()
+		handler := application.NewRegisterVenueHandler(repo, ids.NewVenueIDs(idgen.NewSequence()), clock.NewFixed(fixedNow))
+		cmd := validRegisterVenue()
+		cmd.Country = "Portugal"
+
+		_, err := handler.Handle(context.Background(), cmd)
+
+		if !errors.Is(err, domain.ErrInvalidAddress) {
+			t.Errorf("Handle() error = %v, want %v", err, domain.ErrInvalidAddress)
+		}
+		if got := repo.Published(); len(got) != 0 {
+			t.Errorf("saved %v, want nothing", got)
+		}
+	})
+}
+
+func validRegisterVenue() application.RegisterVenue {
+	return application.RegisterVenue{
+		Name: "Coliseu dos Recreios", Street: "Rua Portas de Santo Antão 96", City: "Lisboa", Country: "PT",
+	}
 }
