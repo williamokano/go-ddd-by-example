@@ -3,7 +3,7 @@
 Source of truth for *where we are* in the course. Lessons live in `docs/part-*.html`.
 Tick a lesson when its "Done when" checks pass; add a one-line note (date, anything notable).
 
-**Current lesson:** 5.1 — Kafka in Compose
+**Current lesson:** 6.1 — The outer loop: the acceptance test first
 
 ## Part 0 — Orientation & setup (`docs/part-0-orientation.html`)
 - [x] 0.1 Event storming on paper
@@ -58,12 +58,14 @@ Tick a lesson when its "Done when" checks pass; add a one-line note (date, anyth
   - Also enforces 1.9: only adapters/driven may call domain.Rehydrate*.
 
 ## Part 5 — Integration events: outbox, relay, Kafka (`docs/part-5-messaging.html`)
-- [ ] 5.1 Kafka in Compose
-- [ ] 5.2 The Published Language: venue/contracts
-- [ ] 5.3 Writing the outbox atomically
-- [ ] 5.4 The relay
-- [ ] 5.5 The consumer runner
-- [ ] 5.6 Wire it and watch it
+- [x] 5.1 Kafka in Compose
+- [x] 5.2 The Published Language: venue/contracts
+- [x] 5.3 Writing the outbox atomically
+- [x] 5.4 The relay
+  - Kafka tests use confluentinc/confluent-local (the testcontainers module drives that image); Compose runs apache/kafka.
+- [x] 5.5 The consumer runner
+- [x] 5.6 Wire it and watch it
+  - Kafka stopped: activation still 204, backlog 1 in venue.outbox; Kafka back: drained in ~6s.
 
 ## Part 6 — The Show context (`docs/part-6-show-context.html`)
 - [ ] 6.1 The outer loop: the acceptance test first

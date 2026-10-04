@@ -7,12 +7,15 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/williamokano/go-ddd-by-example/internal/platform/clock"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/config"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/httpx"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/idgen"
+	"github.com/williamokano/go-ddd-by-example/internal/platform/kafka"
+	"github.com/williamokano/go-ddd-by-example/internal/platform/outbox"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/postgres"
 	"github.com/williamokano/go-ddd-by-example/internal/venue/adapters/driven/ids"
 	venuepg "github.com/williamokano/go-ddd-by-example/internal/venue/adapters/driven/postgres"
@@ -34,6 +37,17 @@ func serve(ctx context.Context) error {
 		return fmt.Errorf("database: %w", err)
 	}
 	defer pool.Close()
+
+	producer, err := kafka.NewProducer(cfg.KafkaBrokers)
+	if err != nil {
+		return fmt.Errorf("kafka: %w", err)
+	}
+	defer producer.Close()
+
+	// Background work, tied to the root context: stops on SIGINT/SIGTERM.
+	var background sync.WaitGroup
+	defer background.Wait()
+	background.Go(func() { outbox.NewRelay(pool, "venue", producer, logger).Run(ctx, cfg.OutboxPollInterval) })
 
 	// Driven adapters.
 	clk := clock.System{}

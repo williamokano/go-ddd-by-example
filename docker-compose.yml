@@ -70,8 +70,10 @@ services:
     ports: ["8080:8080"]
     environment:
       DATABASE_URL: postgres://stagehand:stagehand@postgres:5432/stagehand?sslmode=disable
+      KAFKA_BROKERS: kafka:19092
     depends_on:
       migrate: { condition: service_completed_successfully }
+      kafka-init: { condition: service_completed_successfully }
     healthcheck:
       test: ["CMD", "/stagehand", "healthcheck"]
       interval: 2s
