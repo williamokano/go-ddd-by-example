@@ -60,16 +60,7 @@ type TicketingHold struct {
 	CustomerID uuid.UUID
 	Seats      []string
 	ExpiresAt  time.Time
-}
-
-type TicketingInventory struct {
-	ShowID    uuid.UUID
-	StartsAt  time.Time
-	Closed    bool
-	SoldOut   bool
-	Version   int32
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	Section    string
 }
 
 type TicketingOrder struct {
@@ -110,6 +101,19 @@ type TicketingSeat struct {
 	State       string
 	HoldID      pgtype.UUID
 	OrderID     pgtype.UUID
+	Section     string
+}
+
+type TicketingSectionInventory struct {
+	ShowID    uuid.UUID
+	Section   string
+	Position  int32
+	StartsAt  time.Time
+	Closed    bool
+	SoldOut   bool
+	Version   int32
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type TicketingTicket struct {

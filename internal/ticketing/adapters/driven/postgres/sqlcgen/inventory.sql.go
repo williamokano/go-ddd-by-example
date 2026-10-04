@@ -13,31 +13,62 @@ import (
 )
 
 const deleteHolds = `-- name: DeleteHolds :exec
-DELETE FROM ticketing.holds WHERE show_id = $1
+DELETE FROM ticketing.holds WHERE show_id = $1 AND section = $2
 `
 
-func (q *Queries) DeleteHolds(ctx context.Context, showID uuid.UUID) error {
-	_, err := q.db.Exec(ctx, deleteHolds, showID)
+type DeleteHoldsParams struct {
+	ShowID  uuid.UUID
+	Section string
+}
+
+func (q *Queries) DeleteHolds(ctx context.Context, arg DeleteHoldsParams) error {
+	_, err := q.db.Exec(ctx, deleteHolds, arg.ShowID, arg.Section)
 	return err
 }
 
-const getInventory = `-- name: GetInventory :one
-SELECT show_id, starts_at, closed, sold_out, version FROM ticketing.inventories WHERE show_id = $1
+const getSectionByHold = `-- name: GetSectionByHold :one
+SELECT show_id, section FROM ticketing.holds WHERE hold_id = $1
 `
 
-type GetInventoryRow struct {
+type GetSectionByHoldRow struct {
+	ShowID  uuid.UUID
+	Section string
+}
+
+func (q *Queries) GetSectionByHold(ctx context.Context, holdID uuid.UUID) (GetSectionByHoldRow, error) {
+	row := q.db.QueryRow(ctx, getSectionByHold, holdID)
+	var i GetSectionByHoldRow
+	err := row.Scan(&i.ShowID, &i.Section)
+	return i, err
+}
+
+const getSectionInventory = `-- name: GetSectionInventory :one
+SELECT show_id, section, position, starts_at, closed, sold_out, version
+FROM ticketing.section_inventories WHERE show_id = $1 AND section = $2
+`
+
+type GetSectionInventoryParams struct {
+	ShowID  uuid.UUID
+	Section string
+}
+
+type GetSectionInventoryRow struct {
 	ShowID   uuid.UUID
+	Section  string
+	Position int32
 	StartsAt time.Time
 	Closed   bool
 	SoldOut  bool
 	Version  int32
 }
 
-func (q *Queries) GetInventory(ctx context.Context, showID uuid.UUID) (GetInventoryRow, error) {
-	row := q.db.QueryRow(ctx, getInventory, showID)
-	var i GetInventoryRow
+func (q *Queries) GetSectionInventory(ctx context.Context, arg GetSectionInventoryParams) (GetSectionInventoryRow, error) {
+	row := q.db.QueryRow(ctx, getSectionInventory, arg.ShowID, arg.Section)
+	var i GetSectionInventoryRow
 	err := row.Scan(
 		&i.ShowID,
+		&i.Section,
+		&i.Position,
 		&i.StartsAt,
 		&i.Closed,
 		&i.SoldOut,
@@ -46,24 +77,14 @@ func (q *Queries) GetInventory(ctx context.Context, showID uuid.UUID) (GetInvent
 	return i, err
 }
 
-const getShowIDByHold = `-- name: GetShowIDByHold :one
-SELECT show_id FROM ticketing.holds WHERE hold_id = $1
-`
-
-func (q *Queries) GetShowIDByHold(ctx context.Context, holdID uuid.UUID) (uuid.UUID, error) {
-	row := q.db.QueryRow(ctx, getShowIDByHold, holdID)
-	var show_id uuid.UUID
-	err := row.Scan(&show_id)
-	return show_id, err
-}
-
 const insertHold = `-- name: InsertHold :exec
-INSERT INTO ticketing.holds (hold_id, show_id, customer_id, seats, expires_at) VALUES ($1, $2, $3, $4, $5)
+INSERT INTO ticketing.holds (hold_id, show_id, section, customer_id, seats, expires_at) VALUES ($1, $2, $3, $4, $5, $6)
 `
 
 type InsertHoldParams struct {
 	HoldID     uuid.UUID
 	ShowID     uuid.UUID
+	Section    string
 	CustomerID uuid.UUID
 	Seats      []string
 	ExpiresAt  time.Time
@@ -73,6 +94,7 @@ func (q *Queries) InsertHold(ctx context.Context, arg InsertHoldParams) error {
 	_, err := q.db.Exec(ctx, insertHold,
 		arg.HoldID,
 		arg.ShowID,
+		arg.Section,
 		arg.CustomerID,
 		arg.Seats,
 		arg.ExpiresAt,
@@ -80,22 +102,38 @@ func (q *Queries) InsertHold(ctx context.Context, arg InsertHoldParams) error {
 	return err
 }
 
-const insertInventory = `-- name: InsertInventory :execrows
-INSERT INTO ticketing.inventories (show_id, starts_at, closed, sold_out, version)
-VALUES ($1, $2, $3, $4, 1)
-ON CONFLICT (show_id) DO NOTHING
+type InsertSeatsParams struct {
+	ShowID      uuid.UUID
+	Section     string
+	SeatRef     string
+	Position    int32
+	PriceAmount int64
+	Currency    string
+	State       string
+	HoldID      uuid.NullUUID
+	OrderID     uuid.NullUUID
+}
+
+const insertSectionInventory = `-- name: InsertSectionInventory :execrows
+INSERT INTO ticketing.section_inventories (show_id, section, position, starts_at, closed, sold_out, version)
+VALUES ($1, $2, $3, $4, $5, $6, 1)
+ON CONFLICT (show_id, section) DO NOTHING
 `
 
-type InsertInventoryParams struct {
+type InsertSectionInventoryParams struct {
 	ShowID   uuid.UUID
+	Section  string
+	Position int32
 	StartsAt time.Time
 	Closed   bool
 	SoldOut  bool
 }
 
-func (q *Queries) InsertInventory(ctx context.Context, arg InsertInventoryParams) (int64, error) {
-	result, err := q.db.Exec(ctx, insertInventory,
+func (q *Queries) InsertSectionInventory(ctx context.Context, arg InsertSectionInventoryParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertSectionInventory,
 		arg.ShowID,
+		arg.Section,
+		arg.Position,
 		arg.StartsAt,
 		arg.Closed,
 		arg.SoldOut,
@@ -106,22 +144,11 @@ func (q *Queries) InsertInventory(ctx context.Context, arg InsertInventoryParams
 	return result.RowsAffected(), nil
 }
 
-type InsertSeatsParams struct {
-	ShowID      uuid.UUID
-	SeatRef     string
-	Position    int32
-	PriceAmount int64
-	Currency    string
-	State       string
-	HoldID      uuid.NullUUID
-	OrderID     uuid.NullUUID
-}
-
 const inventoryExists = `-- name: InventoryExists :one
-SELECT EXISTS (SELECT 1 FROM ticketing.inventories WHERE show_id = $1)
+SELECT EXISTS (SELECT 1 FROM ticketing.section_inventories WHERE show_id = $1)
 `
 
-// The read side: seats straight from the table.
+// The read side: seats straight from the tables, in layout order.
 func (q *Queries) InventoryExists(ctx context.Context, showID uuid.UUID) (bool, error) {
 	row := q.db.QueryRow(ctx, inventoryExists, showID)
 	var exists bool
@@ -130,8 +157,13 @@ func (q *Queries) InventoryExists(ctx context.Context, showID uuid.UUID) (bool, 
 }
 
 const listHolds = `-- name: ListHolds :many
-SELECT hold_id, customer_id, seats, expires_at FROM ticketing.holds WHERE show_id = $1
+SELECT hold_id, customer_id, seats, expires_at FROM ticketing.holds WHERE show_id = $1 AND section = $2
 `
+
+type ListHoldsParams struct {
+	ShowID  uuid.UUID
+	Section string
+}
 
 type ListHoldsRow struct {
 	HoldID     uuid.UUID
@@ -140,8 +172,8 @@ type ListHoldsRow struct {
 	ExpiresAt  time.Time
 }
 
-func (q *Queries) ListHolds(ctx context.Context, showID uuid.UUID) ([]ListHoldsRow, error) {
-	rows, err := q.db.Query(ctx, listHolds, showID)
+func (q *Queries) ListHolds(ctx context.Context, arg ListHoldsParams) ([]ListHoldsRow, error) {
+	rows, err := q.db.Query(ctx, listHolds, arg.ShowID, arg.Section)
 	if err != nil {
 		return nil, err
 	}
@@ -167,8 +199,13 @@ func (q *Queries) ListHolds(ctx context.Context, showID uuid.UUID) ([]ListHoldsR
 
 const listSeats = `-- name: ListSeats :many
 SELECT seat_ref, price_amount, currency, state, hold_id, order_id
-FROM ticketing.seats WHERE show_id = $1 ORDER BY position
+FROM ticketing.seats WHERE show_id = $1 AND section = $2 ORDER BY position
 `
+
+type ListSeatsParams struct {
+	ShowID  uuid.UUID
+	Section string
+}
 
 type ListSeatsRow struct {
 	SeatRef     string
@@ -179,8 +216,8 @@ type ListSeatsRow struct {
 	OrderID     uuid.NullUUID
 }
 
-func (q *Queries) ListSeats(ctx context.Context, showID uuid.UUID) ([]ListSeatsRow, error) {
-	rows, err := q.db.Query(ctx, listSeats, showID)
+func (q *Queries) ListSeats(ctx context.Context, arg ListSeatsParams) ([]ListSeatsRow, error) {
+	rows, err := q.db.Query(ctx, listSeats, arg.ShowID, arg.Section)
 	if err != nil {
 		return nil, err
 	}
@@ -206,23 +243,42 @@ func (q *Queries) ListSeats(ctx context.Context, showID uuid.UUID) ([]ListSeatsR
 	return items, nil
 }
 
-const showsWithExpiredHolds = `-- name: ShowsWithExpiredHolds :many
-SELECT DISTINCT show_id FROM ticketing.holds WHERE expires_at <= $1
+const listSectionInventories = `-- name: ListSectionInventories :many
+SELECT show_id, section, position, starts_at, closed, sold_out, version
+FROM ticketing.section_inventories WHERE show_id = $1 ORDER BY position
 `
 
-func (q *Queries) ShowsWithExpiredHolds(ctx context.Context, expiresAt time.Time) ([]uuid.UUID, error) {
-	rows, err := q.db.Query(ctx, showsWithExpiredHolds, expiresAt)
+type ListSectionInventoriesRow struct {
+	ShowID   uuid.UUID
+	Section  string
+	Position int32
+	StartsAt time.Time
+	Closed   bool
+	SoldOut  bool
+	Version  int32
+}
+
+func (q *Queries) ListSectionInventories(ctx context.Context, showID uuid.UUID) ([]ListSectionInventoriesRow, error) {
+	rows, err := q.db.Query(ctx, listSectionInventories, showID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []uuid.UUID
+	var items []ListSectionInventoriesRow
 	for rows.Next() {
-		var show_id uuid.UUID
-		if err := rows.Scan(&show_id); err != nil {
+		var i ListSectionInventoriesRow
+		if err := rows.Scan(
+			&i.ShowID,
+			&i.Section,
+			&i.Position,
+			&i.StartsAt,
+			&i.Closed,
+			&i.SoldOut,
+			&i.Version,
+		); err != nil {
 			return nil, err
 		}
-		items = append(items, show_id)
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -230,30 +286,73 @@ func (q *Queries) ShowsWithExpiredHolds(ctx context.Context, expiresAt time.Time
 	return items, nil
 }
 
-const updateInventory = `-- name: UpdateInventory :execrows
-UPDATE ticketing.inventories
-SET closed = $2, sold_out = $3, version = version + 1, updated_at = now()
-WHERE show_id = $1 AND version = $4
+const listShowSeats = `-- name: ListShowSeats :many
+SELECT s.seat_ref, s.price_amount, s.currency, s.state
+FROM ticketing.seats s
+JOIN ticketing.section_inventories i ON i.show_id = s.show_id AND i.section = s.section
+WHERE s.show_id = $1
+ORDER BY i.position, s.position
 `
 
-type UpdateInventoryParams struct {
-	ShowID          uuid.UUID
-	Closed          bool
-	SoldOut         bool
-	ExpectedVersion int32
+type ListShowSeatsRow struct {
+	SeatRef     string
+	PriceAmount int64
+	Currency    string
+	State       string
 }
 
-func (q *Queries) UpdateInventory(ctx context.Context, arg UpdateInventoryParams) (int64, error) {
-	result, err := q.db.Exec(ctx, updateInventory,
-		arg.ShowID,
-		arg.Closed,
-		arg.SoldOut,
-		arg.ExpectedVersion,
-	)
+func (q *Queries) ListShowSeats(ctx context.Context, showID uuid.UUID) ([]ListShowSeatsRow, error) {
+	rows, err := q.db.Query(ctx, listShowSeats, showID)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return result.RowsAffected(), nil
+	defer rows.Close()
+	var items []ListShowSeatsRow
+	for rows.Next() {
+		var i ListShowSeatsRow
+		if err := rows.Scan(
+			&i.SeatRef,
+			&i.PriceAmount,
+			&i.Currency,
+			&i.State,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const sectionsWithExpiredHolds = `-- name: SectionsWithExpiredHolds :many
+SELECT DISTINCT show_id, section FROM ticketing.holds WHERE expires_at <= $1
+`
+
+type SectionsWithExpiredHoldsRow struct {
+	ShowID  uuid.UUID
+	Section string
+}
+
+func (q *Queries) SectionsWithExpiredHolds(ctx context.Context, expiresAt time.Time) ([]SectionsWithExpiredHoldsRow, error) {
+	rows, err := q.db.Query(ctx, sectionsWithExpiredHolds, expiresAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SectionsWithExpiredHoldsRow
+	for rows.Next() {
+		var i SectionsWithExpiredHoldsRow
+		if err := rows.Scan(&i.ShowID, &i.Section); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const updateSeat = `-- name: UpdateSeat :exec
@@ -278,4 +377,32 @@ func (q *Queries) UpdateSeat(ctx context.Context, arg UpdateSeatParams) error {
 		arg.OrderID,
 	)
 	return err
+}
+
+const updateSectionInventory = `-- name: UpdateSectionInventory :execrows
+UPDATE ticketing.section_inventories
+SET closed = $3, sold_out = $4, version = version + 1, updated_at = now()
+WHERE show_id = $1 AND section = $2 AND version = $5
+`
+
+type UpdateSectionInventoryParams struct {
+	ShowID          uuid.UUID
+	Section         string
+	Closed          bool
+	SoldOut         bool
+	ExpectedVersion int32
+}
+
+func (q *Queries) UpdateSectionInventory(ctx context.Context, arg UpdateSectionInventoryParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateSectionInventory,
+		arg.ShowID,
+		arg.Section,
+		arg.Closed,
+		arg.SoldOut,
+		arg.ExpectedVersion,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

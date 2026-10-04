@@ -129,6 +129,7 @@ func serve(ctx context.Context) error {
 		Issue:   ticketingapp.NewIssueTicketsHandler(orders, tickets, ticketingIDs, clk),
 		Refund:  refund,
 		Closed:  ticketingapp.NewOnInventoryClosedHandler(tickets, orders, refund, clk),
+		SoldOut: ticketingapp.NewOnSectionSoldOutHandler(inventories, ticketingpg.NewEventPublisher(pool), clk),
 	}, logger)
 	consume(ctx, &background, cfg, "ticketing-saga", []string{sagamsg.Topic}, saga.Handle, logger)
 

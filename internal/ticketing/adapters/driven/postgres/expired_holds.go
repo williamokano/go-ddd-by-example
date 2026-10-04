@@ -9,6 +9,7 @@ import (
 
 	pgplatform "github.com/williamokano/go-ddd-by-example/internal/platform/postgres"
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/driven/postgres/sqlcgen"
+	"github.com/williamokano/go-ddd-by-example/internal/ticketing/application"
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/domain"
 )
 
@@ -18,15 +19,15 @@ type ExpiredHolds struct{ pool *pgxpool.Pool }
 // NewExpiredHolds returns the query using pool.
 func NewExpiredHolds(pool *pgxpool.Pool) *ExpiredHolds { return &ExpiredHolds{pool: pool} }
 
-// ShowsWithExpiredHolds implements application.ExpiredHolds.
-func (e *ExpiredHolds) ShowsWithExpiredHolds(ctx context.Context, now time.Time) ([]domain.ShowID, error) {
-	ids, err := sqlcgen.New(pgplatform.Conn(ctx, e.pool)).ShowsWithExpiredHolds(ctx, now)
+// SectionsWithExpiredHolds implements application.ExpiredHolds.
+func (e *ExpiredHolds) SectionsWithExpiredHolds(ctx context.Context, now time.Time) ([]application.SectionKey, error) {
+	rows, err := sqlcgen.New(pgplatform.Conn(ctx, e.pool)).SectionsWithExpiredHolds(ctx, now)
 	if err != nil {
-		return nil, fmt.Errorf("shows with expired holds: %w", err)
+		return nil, fmt.Errorf("sections with expired holds: %w", err)
 	}
-	out := make([]domain.ShowID, len(ids))
-	for i, id := range ids {
-		out[i] = domain.NewShowID(id)
+	out := make([]application.SectionKey, len(rows))
+	for i, r := range rows {
+		out[i] = application.SectionKey{ShowID: domain.NewShowID(r.ShowID), Section: r.Section}
 	}
 	return out, nil
 }

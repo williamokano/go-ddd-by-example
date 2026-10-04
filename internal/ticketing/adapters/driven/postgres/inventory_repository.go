@@ -21,7 +21,7 @@ import (
 )
 
 // InventoryRepository implements application.InventoryRepository on
-// ticketing.inventories, .seats and .holds, with the outbox (ADR-004).
+// ticketing.section_inventories, .seats and .holds, with the outbox (ADR-004).
 type InventoryRepository struct {
 	pool       *pgxpool.Pool
 	newEventID func() uuid.UUID
@@ -33,47 +33,66 @@ func NewInventoryRepository(pool *pgxpool.Pool) *InventoryRepository {
 }
 
 // Get implements application.InventoryRepository.
-func (r *InventoryRepository) Get(ctx context.Context, id domain.ShowID) (*domain.ShowInventory, error) {
-	return load(ctx, sqlcgen.New(pgplatform.Conn(ctx, r.pool)), id.UUID())
+func (r *InventoryRepository) Get(ctx context.Context, id domain.ShowID, section string) (*domain.SectionInventory, error) {
+	q := sqlcgen.New(pgplatform.Conn(ctx, r.pool))
+	row, err := q.GetSectionInventory(ctx, sqlcgen.GetSectionInventoryParams{ShowID: id.UUID(), Section: section})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("%w: show %s section %s", application.ErrInventoryNotFound, id, section)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get inventory %s/%s: %w", id, section, err)
+	}
+	return load(ctx, q, sqlcgen.ListSectionInventoriesRow(row))
+}
+
+// ListByShow implements application.InventoryRepository.
+func (r *InventoryRepository) ListByShow(ctx context.Context, id domain.ShowID) ([]*domain.SectionInventory, error) {
+	q := sqlcgen.New(pgplatform.Conn(ctx, r.pool))
+	rows, err := q.ListSectionInventories(ctx, id.UUID())
+	if err != nil {
+		return nil, fmt.Errorf("list inventories of %s: %w", id, err)
+	}
+	out := make([]*domain.SectionInventory, 0, len(rows))
+	for _, row := range rows {
+		inv, err := load(ctx, q, row)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, inv)
+	}
+	return out, nil
 }
 
 // GetByHold implements application.InventoryRepository.
-func (r *InventoryRepository) GetByHold(ctx context.Context, id domain.HoldID) (*domain.ShowInventory, error) {
-	q := sqlcgen.New(pgplatform.Conn(ctx, r.pool))
-	showID, err := q.GetShowIDByHold(ctx, id.UUID())
+func (r *InventoryRepository) GetByHold(ctx context.Context, id domain.HoldID) (*domain.SectionInventory, error) {
+	key, err := sqlcgen.New(pgplatform.Conn(ctx, r.pool)).GetSectionByHold(ctx, id.UUID())
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("%w: %s", application.ErrHoldNotFound, id)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("find hold %s: %w", id, err)
 	}
-	return load(ctx, q, showID)
+	return r.Get(ctx, domain.NewShowID(key.ShowID), key.Section)
 }
 
-func load(ctx context.Context, q *sqlcgen.Queries, showID uuid.UUID) (*domain.ShowInventory, error) {
-	row, err := q.GetInventory(ctx, showID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, fmt.Errorf("%w: show %s", application.ErrInventoryNotFound, showID)
-	}
+func load(ctx context.Context, q *sqlcgen.Queries, row sqlcgen.ListSectionInventoriesRow) (*domain.SectionInventory, error) {
+	key := sqlcgen.ListSeatsParams{ShowID: row.ShowID, Section: row.Section}
+	seats, err := q.ListSeats(ctx, key)
 	if err != nil {
-		return nil, fmt.Errorf("get inventory %s: %w", showID, err)
+		return nil, fmt.Errorf("get inventory %s/%s seats: %w", row.ShowID, row.Section, err)
 	}
-	seats, err := q.ListSeats(ctx, showID)
+	holds, err := q.ListHolds(ctx, sqlcgen.ListHoldsParams(key))
 	if err != nil {
-		return nil, fmt.Errorf("get inventory %s seats: %w", showID, err)
-	}
-	holds, err := q.ListHolds(ctx, showID)
-	if err != nil {
-		return nil, fmt.Errorf("get inventory %s holds: %w", showID, err)
+		return nil, fmt.Errorf("get inventory %s/%s holds: %w", row.ShowID, row.Section, err)
 	}
 	state := domain.InventoryState{
-		ShowID: domain.NewShowID(row.ShowID), StartsAt: row.StartsAt,
+		ShowID: domain.NewShowID(row.ShowID), Section: row.Section, Position: int(row.Position), StartsAt: row.StartsAt,
 		Closed: row.Closed, SoldOut: row.SoldOut, Version: int(row.Version),
 	}
 	for _, s := range seats {
 		view, err := toSeatView(s)
 		if err != nil {
-			return nil, fmt.Errorf("inventory %s: %w", showID, err)
+			return nil, fmt.Errorf("inventory %s/%s: %w", row.ShowID, row.Section, err)
 		}
 		state.Seats = append(state.Seats, view)
 	}
@@ -124,11 +143,11 @@ func toSeatView(s sqlcgen.ListSeatsRow) (domain.SeatView, error) {
 // every seat (COPY); afterwards only the seats its pending events mention are
 // written: the events are the change log, so 50k seats aren't rewritten for a
 // 2-seat hold.
-func (r *InventoryRepository) Save(ctx context.Context, inv *domain.ShowInventory) (err error) {
+func (r *InventoryRepository) Save(ctx context.Context, inv *domain.SectionInventory) (err error) {
 	events := inv.PullEvents()
 	tx, err := pgplatform.Begin(ctx, r.pool)
 	if err != nil {
-		return fmt.Errorf("save inventory %s: begin: %w", inv.ShowID(), err)
+		return fmt.Errorf("save inventory %s/%s: begin: %w", inv.ShowID(), inv.Section(), err)
 	}
 	defer func() {
 		if err != nil {
@@ -146,7 +165,7 @@ func (r *InventoryRepository) Save(ctx context.Context, inv *domain.ShowInventor
 	if err != nil {
 		return err
 	}
-	if err := q.DeleteHolds(ctx, showID); err != nil {
+	if err := q.DeleteHolds(ctx, sqlcgen.DeleteHoldsParams{ShowID: showID, Section: inv.Section()}); err != nil {
 		return fmt.Errorf("save inventory %s: holds: %w", inv.ShowID(), err)
 	}
 	for _, h := range inv.Holds() {
@@ -155,7 +174,7 @@ func (r *InventoryRepository) Save(ctx context.Context, inv *domain.ShowInventor
 			seats = append(seats, ref.String())
 		}
 		if err := q.InsertHold(ctx, sqlcgen.InsertHoldParams{
-			HoldID: h.ID().UUID(), ShowID: showID, CustomerID: h.Customer().UUID(), Seats: seats, ExpiresAt: h.ExpiresAt(),
+			HoldID: h.ID().UUID(), ShowID: showID, Section: inv.Section(), CustomerID: h.Customer().UUID(), Seats: seats, ExpiresAt: h.ExpiresAt(),
 		}); err != nil {
 			return fmt.Errorf("save inventory %s: hold: %w", inv.ShowID(), err)
 		}
@@ -173,20 +192,21 @@ func (r *InventoryRepository) Save(ctx context.Context, inv *domain.ShowInventor
 	return nil
 }
 
-func insertInventory(ctx context.Context, q *sqlcgen.Queries, inv *domain.ShowInventory) error {
-	n, err := q.InsertInventory(ctx, sqlcgen.InsertInventoryParams{
-		ShowID: inv.ShowID().UUID(), StartsAt: inv.StartsAt(), Closed: inv.IsClosed(), SoldOut: inv.IsSoldOut(),
+func insertInventory(ctx context.Context, q *sqlcgen.Queries, inv *domain.SectionInventory) error {
+	n, err := q.InsertSectionInventory(ctx, sqlcgen.InsertSectionInventoryParams{
+		ShowID: inv.ShowID().UUID(), Section: inv.Section(), Position: int32(inv.Position()),
+		StartsAt: inv.StartsAt(), Closed: inv.IsClosed(), SoldOut: inv.IsSoldOut(),
 	})
 	if err != nil {
-		return fmt.Errorf("save inventory %s: %w", inv.ShowID(), err)
+		return fmt.Errorf("save inventory %s/%s: %w", inv.ShowID(), inv.Section(), err)
 	}
 	if n == 0 {
-		return fmt.Errorf("%w: inventory %s already open", application.ErrConcurrentModification, inv.ShowID())
+		return fmt.Errorf("%w: inventory %s/%s already open", application.ErrConcurrentModification, inv.ShowID(), inv.Section())
 	}
 	seats := inv.Seats()
 	rows := make([]sqlcgen.InsertSeatsParams, len(seats))
 	for i, s := range seats {
-		rows[i] = seatRow(inv.ShowID(), s)
+		rows[i] = seatRow(inv, s)
 		rows[i].Position = int32(i)
 	}
 	if _, err := q.InsertSeats(ctx, rows); err != nil {
@@ -195,21 +215,22 @@ func insertInventory(ctx context.Context, q *sqlcgen.Queries, inv *domain.ShowIn
 	return nil
 }
 
-func updateInventory(ctx context.Context, q *sqlcgen.Queries, inv *domain.ShowInventory, changed map[domain.SeatRef]bool) error {
-	n, err := q.UpdateInventory(ctx, sqlcgen.UpdateInventoryParams{
-		ShowID: inv.ShowID().UUID(), Closed: inv.IsClosed(), SoldOut: inv.IsSoldOut(), ExpectedVersion: int32(inv.Version()),
+func updateInventory(ctx context.Context, q *sqlcgen.Queries, inv *domain.SectionInventory, changed map[domain.SeatRef]bool) error {
+	n, err := q.UpdateSectionInventory(ctx, sqlcgen.UpdateSectionInventoryParams{
+		ShowID: inv.ShowID().UUID(), Section: inv.Section(), Closed: inv.IsClosed(), SoldOut: inv.IsSoldOut(),
+		ExpectedVersion: int32(inv.Version()),
 	})
 	if err != nil {
 		return fmt.Errorf("save inventory %s: %w", inv.ShowID(), err)
 	}
 	if n == 0 {
-		return fmt.Errorf("%w: inventory %s", application.ErrConcurrentModification, inv.ShowID())
+		return fmt.Errorf("%w: inventory %s/%s", application.ErrConcurrentModification, inv.ShowID(), inv.Section())
 	}
 	for _, s := range inv.Seats() {
 		if !changed[s.Ref] {
 			continue
 		}
-		row := seatRow(inv.ShowID(), s)
+		row := seatRow(inv, s)
 		if err := q.UpdateSeat(ctx, sqlcgen.UpdateSeatParams{
 			ShowID: row.ShowID, SeatRef: row.SeatRef, State: row.State, HoldID: row.HoldID, OrderID: row.OrderID,
 		}); err != nil {
@@ -219,9 +240,9 @@ func updateInventory(ctx context.Context, q *sqlcgen.Queries, inv *domain.ShowIn
 	return nil
 }
 
-func seatRow(showID domain.ShowID, s domain.SeatView) sqlcgen.InsertSeatsParams {
+func seatRow(inv *domain.SectionInventory, s domain.SeatView) sqlcgen.InsertSeatsParams {
 	row := sqlcgen.InsertSeatsParams{
-		ShowID: showID.UUID(), SeatRef: s.Ref.String(), PriceAmount: s.Price.Amount(),
+		ShowID: inv.ShowID().UUID(), Section: inv.Section(), SeatRef: s.Ref.String(), PriceAmount: s.Price.Amount(),
 		Currency: s.Price.Currency().String(), State: s.State.String(),
 	}
 	if !s.HoldID.IsZero() {

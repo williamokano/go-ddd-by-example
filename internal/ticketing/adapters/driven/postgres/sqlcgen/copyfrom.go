@@ -30,6 +30,7 @@ func (r *iteratorForInsertSeats) Next() bool {
 func (r iteratorForInsertSeats) Values() ([]interface{}, error) {
 	return []interface{}{
 		r.rows[0].ShowID,
+		r.rows[0].Section,
 		r.rows[0].SeatRef,
 		r.rows[0].Position,
 		r.rows[0].PriceAmount,
@@ -45,5 +46,5 @@ func (r iteratorForInsertSeats) Err() error {
 }
 
 func (q *Queries) InsertSeats(ctx context.Context, arg []InsertSeatsParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"ticketing", "seats"}, []string{"show_id", "seat_ref", "position", "price_amount", "currency", "state", "hold_id", "order_id"}, &iteratorForInsertSeats{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"ticketing", "seats"}, []string{"show_id", "section", "seat_ref", "position", "price_amount", "currency", "state", "hold_id", "order_id"}, &iteratorForInsertSeats{rows: arg})
 }

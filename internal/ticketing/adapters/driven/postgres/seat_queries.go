@@ -28,7 +28,7 @@ func (q *SeatQueries) ListSeats(ctx context.Context, showID domain.ShowID) ([]ap
 	if !exists {
 		return nil, fmt.Errorf("%w: show %s", application.ErrInventoryNotFound, showID)
 	}
-	seats, err := db.ListSeats(ctx, showID.UUID())
+	seats, err := db.ListShowSeats(ctx, showID.UUID())
 	if err != nil {
 		return nil, fmt.Errorf("list seats %s: %w", showID, err)
 	}
