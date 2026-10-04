@@ -21,10 +21,14 @@ VALUES ($1, $2, $3, $4, $5, $6, 1)
 ON CONFLICT (id) DO NOTHING;
 
 -- name: UpdateTicket :execrows
-UPDATE ticketing.tickets SET status = $2, version = version + 1 WHERE id = $1 AND version = sqlc.arg(expected_version);
+UPDATE ticketing.tickets SET status = $2, checked_in_at = $3, gate = $4, version = version + 1
+WHERE id = $1 AND version = sqlc.arg(expected_version);
 
 -- name: ListTicketsByOrder :many
-SELECT id, code, show_id, order_id, seat_ref, status, version FROM ticketing.tickets WHERE order_id = $1 ORDER BY seat_ref;
+SELECT id, code, show_id, order_id, seat_ref, status, version, checked_in_at, gate FROM ticketing.tickets WHERE order_id = $1 ORDER BY seat_ref;
 
 -- name: ListTicketsByShow :many
-SELECT id, code, show_id, order_id, seat_ref, status, version FROM ticketing.tickets WHERE show_id = $1 ORDER BY seat_ref;
+SELECT id, code, show_id, order_id, seat_ref, status, version, checked_in_at, gate FROM ticketing.tickets WHERE show_id = $1 ORDER BY seat_ref;
+
+-- name: GetTicketByCode :one
+SELECT id, code, show_id, order_id, seat_ref, status, version, checked_in_at, gate FROM ticketing.tickets WHERE code = $1;

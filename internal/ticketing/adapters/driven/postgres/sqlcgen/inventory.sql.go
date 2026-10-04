@@ -355,6 +355,17 @@ func (q *Queries) SectionsWithExpiredHolds(ctx context.Context, expiresAt time.T
 	return items, nil
 }
 
+const showStartsAt = `-- name: ShowStartsAt :one
+SELECT starts_at FROM ticketing.section_inventories WHERE show_id = $1 LIMIT 1
+`
+
+func (q *Queries) ShowStartsAt(ctx context.Context, showID uuid.UUID) (time.Time, error) {
+	row := q.db.QueryRow(ctx, showStartsAt, showID)
+	var starts_at time.Time
+	err := row.Scan(&starts_at)
+	return starts_at, err
+}
+
 const updateSeat = `-- name: UpdateSeat :exec
 UPDATE ticketing.seats SET state = $3, hold_id = $4, order_id = $5
 WHERE show_id = $1 AND seat_ref = $2

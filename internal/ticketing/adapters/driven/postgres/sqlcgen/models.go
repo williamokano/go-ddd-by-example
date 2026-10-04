@@ -117,13 +117,15 @@ type TicketingSectionInventory struct {
 }
 
 type TicketingTicket struct {
-	ID      uuid.UUID
-	Code    string
-	ShowID  uuid.UUID
-	OrderID uuid.UUID
-	SeatRef string
-	Status  string
-	Version int32
+	ID          uuid.UUID
+	Code        string
+	ShowID      uuid.UUID
+	OrderID     uuid.UUID
+	SeatRef     string
+	Status      string
+	Version     int32
+	CheckedInAt pgtype.Timestamptz
+	Gate        string
 }
 
 type VenueOutbox struct {

@@ -17,6 +17,9 @@ var (
 	// ErrOrderNotFound means no order has that ID.
 	ErrOrderNotFound = errors.New("ticketing: order not found")
 
+	// ErrTicketNotFound means no ticket has that code.
+	ErrTicketNotFound = errors.New("ticketing: ticket not found")
+
 	// ErrConcurrentModification means the aggregate changed since it was
 	// loaded (ADR-011); use cases retry a few times, then give up.
 	ErrConcurrentModification = errors.New("ticketing: concurrent modification")

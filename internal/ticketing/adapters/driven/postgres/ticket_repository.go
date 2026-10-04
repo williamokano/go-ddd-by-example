@@ -2,9 +2,12 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	pgplatform "github.com/williamokano/go-ddd-by-example/internal/platform/postgres"
@@ -34,7 +37,11 @@ func (r *TicketRepository) Save(ctx context.Context, t *domain.Ticket) error {
 		}
 		return nil
 	}
-	n, err := q.UpdateTicket(ctx, sqlcgen.UpdateTicketParams{ID: t.ID().UUID(), Status: t.Status().String(), ExpectedVersion: int32(t.Version())})
+	n, err := q.UpdateTicket(ctx, sqlcgen.UpdateTicketParams{
+		ID: t.ID().UUID(), Status: t.Status().String(),
+		CheckedInAt: pgtype.Timestamptz{Time: t.CheckedInAt(), Valid: !t.CheckedInAt().IsZero()},
+		Gate:        t.Gate().String(), ExpectedVersion: int32(t.Version()),
+	})
 	if err != nil {
 		return fmt.Errorf("save ticket %s: %w", t.ID(), err)
 	}
@@ -42,6 +49,18 @@ func (r *TicketRepository) Save(ctx context.Context, t *domain.Ticket) error {
 		return fmt.Errorf("%w: ticket %s", application.ErrConcurrentModification, t.ID())
 	}
 	return nil
+}
+
+// GetByCode implements application.TicketRepository.
+func (r *TicketRepository) GetByCode(ctx context.Context, code domain.TicketCode) (*domain.Ticket, error) {
+	row, err := sqlcgen.New(pgplatform.Conn(ctx, r.pool)).GetTicketByCode(ctx, code.String())
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("%w: %s", application.ErrTicketNotFound, code)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("ticket %s: %w", code, err)
+	}
+	return toTicket(ticketRow(row))
 }
 
 // ListByOrder implements application.TicketRepository.
@@ -84,6 +103,16 @@ type ticketRow struct {
 	ShowID, OrderID uuid.UUID
 	SeatRef, Status string
 	Version         int32
+	CheckedInAt     pgtype.Timestamptz
+	Gate            string
+}
+
+var ticketStatuses = map[string]domain.TicketStatus{}
+
+func init() {
+	for _, s := range []domain.TicketStatus{domain.ValidTicket, domain.CheckedInTicket, domain.VoidedTicket} {
+		ticketStatuses[s.String()] = s
+	}
 }
 
 func toTicket(r ticketRow) (*domain.Ticket, error) {
@@ -95,12 +124,21 @@ func toTicket(r ticketRow) (*domain.Ticket, error) {
 	if err != nil {
 		return nil, err
 	}
-	status := domain.ValidTicket
-	if r.Status == domain.VoidedTicket.String() {
-		status = domain.VoidedTicket
+	status, ok := ticketStatuses[r.Status]
+	if !ok {
+		return nil, fmt.Errorf("ticket %s: unknown stored status %q", r.ID, r.Status)
 	}
-	return domain.RehydrateTicket(domain.TicketState{
+	state := domain.TicketState{
 		ID: domain.NewTicketID(r.ID), Code: code, ShowID: domain.NewShowID(r.ShowID), OrderID: domain.NewOrderID(r.OrderID),
 		Seat: seat, Status: status, Version: int(r.Version),
-	}), nil
+	}
+	if r.CheckedInAt.Valid {
+		state.CheckedInAt = r.CheckedInAt.Time
+	}
+	if r.Gate != "" {
+		if state.Gate, err = domain.NewGateID(r.Gate); err != nil {
+			return nil, err
+		}
+	}
+	return domain.RehydrateTicket(state), nil
 }

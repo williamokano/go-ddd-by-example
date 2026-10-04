@@ -83,6 +83,9 @@ type TicketRepository interface {
 	// tickets" message can't create duplicates (TKT-9).
 	Save(ctx context.Context, t *domain.Ticket) error
 
+	// GetByCode loads the ticket with that code, or returns ErrTicketNotFound.
+	GetByCode(ctx context.Context, code domain.TicketCode) (*domain.Ticket, error)
+
 	// ListByOrder returns an order's tickets.
 	ListByOrder(ctx context.Context, orderID domain.OrderID) ([]*domain.Ticket, error)
 
@@ -98,4 +101,11 @@ type IDGenerator interface {
 	// TicketIDFor derives the ticket ID of an order's seat: the same inputs
 	// always give the same ID.
 	TicketIDFor(order domain.OrderID, seat domain.SeatRef) domain.TicketID
+}
+
+// ShowSchedule tells when a show starts, without loading its inventory: the
+// gate needs one timestamp, not 50k seats.
+type ShowSchedule interface {
+	// StartsAt returns the show's start, or ErrInventoryNotFound.
+	StartsAt(ctx context.Context, showID domain.ShowID) (time.Time, error)
 }

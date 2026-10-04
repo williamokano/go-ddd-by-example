@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const getOrder = `-- name: GetOrder :one
@@ -45,6 +46,27 @@ func (q *Queries) GetOrder(ctx context.Context, id uuid.UUID) (GetOrderRow, erro
 		&i.Status,
 		&i.PaymentRef,
 		&i.Version,
+	)
+	return i, err
+}
+
+const getTicketByCode = `-- name: GetTicketByCode :one
+SELECT id, code, show_id, order_id, seat_ref, status, version, checked_in_at, gate FROM ticketing.tickets WHERE code = $1
+`
+
+func (q *Queries) GetTicketByCode(ctx context.Context, code string) (TicketingTicket, error) {
+	row := q.db.QueryRow(ctx, getTicketByCode, code)
+	var i TicketingTicket
+	err := row.Scan(
+		&i.ID,
+		&i.Code,
+		&i.ShowID,
+		&i.OrderID,
+		&i.SeatRef,
+		&i.Status,
+		&i.Version,
+		&i.CheckedInAt,
+		&i.Gate,
 	)
 	return i, err
 }
@@ -166,7 +188,7 @@ func (q *Queries) ListPaidOrdersForShow(ctx context.Context, showID uuid.UUID) (
 }
 
 const listTicketsByOrder = `-- name: ListTicketsByOrder :many
-SELECT id, code, show_id, order_id, seat_ref, status, version FROM ticketing.tickets WHERE order_id = $1 ORDER BY seat_ref
+SELECT id, code, show_id, order_id, seat_ref, status, version, checked_in_at, gate FROM ticketing.tickets WHERE order_id = $1 ORDER BY seat_ref
 `
 
 func (q *Queries) ListTicketsByOrder(ctx context.Context, orderID uuid.UUID) ([]TicketingTicket, error) {
@@ -186,6 +208,8 @@ func (q *Queries) ListTicketsByOrder(ctx context.Context, orderID uuid.UUID) ([]
 			&i.SeatRef,
 			&i.Status,
 			&i.Version,
+			&i.CheckedInAt,
+			&i.Gate,
 		); err != nil {
 			return nil, err
 		}
@@ -198,7 +222,7 @@ func (q *Queries) ListTicketsByOrder(ctx context.Context, orderID uuid.UUID) ([]
 }
 
 const listTicketsByShow = `-- name: ListTicketsByShow :many
-SELECT id, code, show_id, order_id, seat_ref, status, version FROM ticketing.tickets WHERE show_id = $1 ORDER BY seat_ref
+SELECT id, code, show_id, order_id, seat_ref, status, version, checked_in_at, gate FROM ticketing.tickets WHERE show_id = $1 ORDER BY seat_ref
 `
 
 func (q *Queries) ListTicketsByShow(ctx context.Context, showID uuid.UUID) ([]TicketingTicket, error) {
@@ -218,6 +242,8 @@ func (q *Queries) ListTicketsByShow(ctx context.Context, showID uuid.UUID) ([]Ti
 			&i.SeatRef,
 			&i.Status,
 			&i.Version,
+			&i.CheckedInAt,
+			&i.Gate,
 		); err != nil {
 			return nil, err
 		}
@@ -255,17 +281,26 @@ func (q *Queries) UpdateOrder(ctx context.Context, arg UpdateOrderParams) (int64
 }
 
 const updateTicket = `-- name: UpdateTicket :execrows
-UPDATE ticketing.tickets SET status = $2, version = version + 1 WHERE id = $1 AND version = $3
+UPDATE ticketing.tickets SET status = $2, checked_in_at = $3, gate = $4, version = version + 1
+WHERE id = $1 AND version = $5
 `
 
 type UpdateTicketParams struct {
 	ID              uuid.UUID
 	Status          string
+	CheckedInAt     pgtype.Timestamptz
+	Gate            string
 	ExpectedVersion int32
 }
 
 func (q *Queries) UpdateTicket(ctx context.Context, arg UpdateTicketParams) (int64, error) {
-	result, err := q.db.Exec(ctx, updateTicket, arg.ID, arg.Status, arg.ExpectedVersion)
+	result, err := q.db.Exec(ctx, updateTicket,
+		arg.ID,
+		arg.Status,
+		arg.CheckedInAt,
+		arg.Gate,
+		arg.ExpectedVersion,
+	)
 	if err != nil {
 		return 0, err
 	}

@@ -53,3 +53,6 @@ ORDER BY i.position, s.position;
 
 -- name: SectionsWithExpiredHolds :many
 SELECT DISTINCT show_id, section FROM ticketing.holds WHERE expires_at <= $1;
+
+-- name: ShowStartsAt :one
+SELECT starts_at FROM ticketing.section_inventories WHERE show_id = $1 LIMIT 1;

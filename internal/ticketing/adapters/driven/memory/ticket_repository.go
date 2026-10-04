@@ -40,6 +40,15 @@ func (r *TicketRepository) Save(_ context.Context, t *domain.Ticket) error {
 	return nil
 }
 
+// GetByCode implements application.TicketRepository.
+func (r *TicketRepository) GetByCode(_ context.Context, code domain.TicketCode) (*domain.Ticket, error) {
+	found := r.list(func(s domain.TicketState) bool { return s.Code == code })
+	if len(found) == 0 {
+		return nil, fmt.Errorf("%w: %s", application.ErrTicketNotFound, code)
+	}
+	return found[0], nil
+}
+
 // ListByOrder implements application.TicketRepository.
 func (r *TicketRepository) ListByOrder(_ context.Context, order domain.OrderID) ([]*domain.Ticket, error) {
 	return r.list(func(s domain.TicketState) bool { return s.OrderID == order }), nil

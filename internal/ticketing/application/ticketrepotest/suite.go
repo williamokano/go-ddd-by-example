@@ -59,6 +59,69 @@ func Run(t *testing.T, newRepo func(t *testing.T) application.TicketRepository) 
 		}
 	})
 
+	t.Run("get by code finds the ticket; an unknown code is ErrTicketNotFound", func(t *testing.T) {
+		repo := newRepo(t)
+		ticket := issue(t, domain.NewTicketID(uuid.New()), domain.NewShowID(uuid.New()), domain.NewOrderID(uuid.New()), "ORCH/A/1")
+		if err := repo.Save(ctx, ticket); err != nil {
+			t.Fatal(err)
+		}
+
+		got, err := repo.GetByCode(ctx, ticket.Code())
+		if err != nil || got.ID() != ticket.ID() {
+			t.Errorf("GetByCode() = %v, %v", got, err)
+		}
+		unknown := domain.TicketCodeFor(domain.NewTicketID(uuid.New()))
+		if _, err := repo.GetByCode(ctx, unknown); !errors.Is(err, application.ErrTicketNotFound) {
+			t.Errorf("error = %v, want %v", err, application.ErrTicketNotFound)
+		}
+	})
+
+	t.Run("a checked-in ticket round-trips, gate and time included", func(t *testing.T) {
+		repo := newRepo(t)
+		ticket := issue(t, domain.NewTicketID(uuid.New()), domain.NewShowID(uuid.New()), domain.NewOrderID(uuid.New()), "ORCH/A/1")
+		if err := repo.Save(ctx, ticket); err != nil {
+			t.Fatal(err)
+		}
+		loaded, err := repo.GetByCode(ctx, ticket.Code())
+		if err != nil {
+			t.Fatal(err)
+		}
+		gate, _ := domain.NewGateID("north-1")
+		if err := loaded.CheckIn(gate, now, now); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := repo.Save(ctx, loaded); err != nil {
+			t.Fatal(err)
+		}
+
+		again, _ := repo.GetByCode(ctx, ticket.Code())
+		if again.Status() != domain.CheckedInTicket || !again.CheckedInAt().Equal(now) || again.Gate() != gate {
+			t.Errorf("ticket = %v at %v through %v", again.Status(), again.CheckedInAt(), again.Gate())
+		}
+	})
+
+	t.Run("two gates scanning one ticket at once: one save loses", func(t *testing.T) {
+		repo := newRepo(t)
+		ticket := issue(t, domain.NewTicketID(uuid.New()), domain.NewShowID(uuid.New()), domain.NewOrderID(uuid.New()), "ORCH/A/1")
+		if err := repo.Save(ctx, ticket); err != nil {
+			t.Fatal(err)
+		}
+		north, _ := repo.GetByCode(ctx, ticket.Code())
+		south, _ := repo.GetByCode(ctx, ticket.Code())
+		g1, _ := domain.NewGateID("north-1")
+		g2, _ := domain.NewGateID("south-2")
+		_ = north.CheckIn(g1, now, now)
+		_ = south.CheckIn(g2, now, now)
+
+		if err := repo.Save(ctx, north); err != nil {
+			t.Fatal(err)
+		}
+		if err := repo.Save(ctx, south); !errors.Is(err, application.ErrConcurrentModification) {
+			t.Errorf("error = %v, want %v: one ticket, one entry (TKT-13)", err, application.ErrConcurrentModification)
+		}
+	})
+
 	t.Run("a voided ticket round-trips", func(t *testing.T) {
 		repo := newRepo(t)
 		show, order := domain.NewShowID(uuid.New()), domain.NewOrderID(uuid.New())
