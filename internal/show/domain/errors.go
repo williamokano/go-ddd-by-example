@@ -12,4 +12,8 @@ var (
 	// SHW-4: prices are positive amounts of one currency.
 	ErrInvalidMoney     = errors.New("show: invalid money")
 	ErrCurrencyMismatch = errors.New("show: currency mismatch")
+	ErrInvalidPriceList = errors.New("show: invalid price list")
+
+	// SHW-4: the price list covers every section of the venue, and nothing else.
+	ErrPriceListMismatch = errors.New("show: price list does not match the venue's sections")
 )
