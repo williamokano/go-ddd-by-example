@@ -15,9 +15,8 @@ import (
 )
 
 // ToOutboxMessages translates Show's domain events into its Published
-// Language. Only ShowPublished and ShowCancelled leave the context; while
-// consumers migrate, ShowPublished goes out as v1 and v2, in that order,
-// on the same key (9.3).
+// Language. Only ShowPublished (v2; v1 is retired, 9.3) and ShowCancelled
+// leave the context.
 func ToOutboxMessages(events []sharedkernel.DomainEvent, newID func() uuid.UUID) ([]outbox.Message, error) {
 	var msgs []outbox.Message
 	add := func(showID domain.ShowID, eventType string, payload any, ev sharedkernel.DomainEvent) error {
@@ -35,18 +34,11 @@ func ToOutboxMessages(events []sharedkernel.DomainEvent, newID func() uuid.UUID)
 		var err error
 		switch e := ev.(type) {
 		case domain.ShowPublished:
-			err = add(e.ShowID, contracts.TypeShowPublishedV1, contracts.ShowPublishedV1{
+			err = add(e.ShowID, contracts.TypeShowPublishedV2, contracts.ShowPublishedV2{
 				ShowID: e.ShowID.String(), VenueID: e.VenueID.String(), Title: e.Title,
 				DoorsOpen: e.Schedule.DoorsOpen(), StartsAt: e.Schedule.StartsAt(), EndsAt: e.Schedule.EndsAt(),
-				Sections: pricedSections(e.Layout, e.Prices), PublishedAt: e.At,
+				Sections: pricedSectionsV2(e.Layout, e.Prices), PublishedAt: e.At,
 			}, ev)
-			if err == nil {
-				err = add(e.ShowID, contracts.TypeShowPublishedV2, contracts.ShowPublishedV2{
-					ShowID: e.ShowID.String(), VenueID: e.VenueID.String(), Title: e.Title,
-					DoorsOpen: e.Schedule.DoorsOpen(), StartsAt: e.Schedule.StartsAt(), EndsAt: e.Schedule.EndsAt(),
-					Sections: pricedSectionsV2(e.Layout, e.Prices), PublishedAt: e.At,
-				}, ev)
-			}
 		case domain.ShowCancelled:
 			err = add(e.ShowID, contracts.TypeShowCancelledV1, contracts.ShowCancelledV1{
 				ShowID: e.ShowID.String(), VenueID: e.VenueID.String(), Reason: e.Reason.String(), CancelledAt: e.At,
@@ -71,22 +63,6 @@ func pricedSectionsV2(layout domain.VenueLayout, prices domain.PriceList) []cont
 			for n := 1; n <= r.Seats; n++ {
 				sv.Seats = append(sv.Seats, contracts.SeatV2{Row: r.Label, Number: n, Accessible: slices.Contains(r.Accessible, n)})
 			}
-		}
-		out = append(out, sv)
-	}
-	return out
-}
-
-func pricedSections(layout domain.VenueLayout, prices domain.PriceList) []contracts.SectionV1 {
-	out := make([]contracts.SectionV1, 0, len(layout.Sections))
-	for _, s := range layout.Sections {
-		price, _ := prices.Price(s.Code)
-		sv := contracts.SectionV1{
-			Code: s.Code, Kind: s.Kind, Capacity: s.Capacity,
-			Price: contracts.PriceV1{Amount: price.Amount(), Currency: price.Currency().String()},
-		}
-		for _, r := range s.Rows {
-			sv.Rows = append(sv.Rows, contracts.RowV1{Label: r.Label, Seats: r.Seats})
 		}
 		out = append(out, sv)
 	}

@@ -99,7 +99,7 @@ func TestShowConsumer_AMalformedPayloadIsPermanent(t *testing.T) {
 func TestShowConsumer_SkipsPublishedV1(t *testing.T) {
 	open := &openStub{}
 	c := consumer.NewShowConsumer(open, &closeStub{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	payload, _ := json.Marshal(showcontracts.ShowPublishedV1{ShowID: "s1"})
+	payload := []byte(`{"show_id":"s1","sections":[]}`) // a v1 record still in the topic
 
 	if err := c.Handle(context.Background(), kafka.Envelope{EventType: showcontracts.TypeShowPublishedV1, Payload: payload}); err != nil || open.got != nil {
 		t.Errorf("err = %v, opened = %v; want v1 skipped", err, open.got != nil)

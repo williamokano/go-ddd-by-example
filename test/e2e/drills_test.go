@@ -170,17 +170,17 @@ func TestDrill_PostgresDown(t *testing.T) {
 	c.hold(show, uuid.NewString(), "ORCH/A/1") // the inventory opened: nothing was lost
 }
 
-// publishByHand puts a show.published.v1 straight on show.events, as Show's
+// publishByHand puts a show.published.v2 straight on show.events, as Show's
 // relay would, and returns the show's id.
 func publishByHand(t *testing.T) string {
 	t.Helper()
 	show := uuid.NewString()
 	start := time.Now().UTC().Add(30 * 24 * time.Hour).Truncate(time.Minute)
-	payload, err := json.Marshal(showcontracts.ShowPublishedV1{
+	payload, err := json.Marshal(showcontracts.ShowPublishedV2{
 		ShowID: show, VenueID: uuid.NewString(), Title: "Drill Night",
 		DoorsOpen: start.Add(-time.Hour), StartsAt: start, EndsAt: start.Add(2 * time.Hour),
-		Sections: []showcontracts.SectionV1{{
-			Code: "ORCH", Kind: showcontracts.KindSeated, Rows: []showcontracts.RowV1{{Label: "A", Seats: 2}},
+		Sections: []showcontracts.SectionV2{{
+			Code: "ORCH", Kind: showcontracts.KindSeated, Seats: []showcontracts.SeatV2{{Row: "A", Number: 1}, {Row: "A", Number: 2}},
 			Price: showcontracts.PriceV1{Amount: 4500, Currency: "EUR"},
 		}},
 		PublishedAt: time.Now().UTC(),
@@ -189,7 +189,7 @@ func publishByHand(t *testing.T) string {
 		t.Fatal(err)
 	}
 	value, err := json.Marshal(kafka.Envelope{
-		EventID: uuid.NewString(), EventType: showcontracts.TypeShowPublishedV1, OccurredAt: time.Now().UTC(),
+		EventID: uuid.NewString(), EventType: showcontracts.TypeShowPublishedV2, OccurredAt: time.Now().UTC(),
 		AggregateID: show, Payload: payload,
 	})
 	if err != nil {
