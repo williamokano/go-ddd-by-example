@@ -22,11 +22,7 @@ type outboxRow struct {
 // are an operational concern with no API of their own.
 func ticketingOutbox(t *testing.T, correlation string) []outboxRow {
 	t.Helper()
-	url := os.Getenv("STAGEHAND_DATABASE_URL")
-	if url == "" {
-		url = "postgres://stagehand:stagehand@localhost:5432/stagehand?sslmode=disable"
-	}
-	conn, err := pgx.Connect(t.Context(), url)
+	conn, err := pgx.Connect(t.Context(), databaseURL())
 	if err != nil {
 		t.Fatalf("connect to Postgres: %v", err)
 	}
@@ -77,4 +73,11 @@ func TestS1_OnePurchaseIsOneFlow(t *testing.T) {
 	if got := c.order(order).Status; got != "fulfilled" {
 		t.Errorf("order is %s, want fulfilled", got)
 	}
+}
+
+func databaseURL() string {
+	if url := os.Getenv("STAGEHAND_DATABASE_URL"); url != "" {
+		return url
+	}
+	return "postgres://stagehand:stagehand@localhost:5432/stagehand?sslmode=disable"
 }
