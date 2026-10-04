@@ -47,3 +47,10 @@ generate: ## sqlc: SQL in db/queries → Go in each context's sqlcgen package
 
 run: ## the app on the host against `make infra`
 	go run ./cmd/stagehand serve
+
+.PHONY: docs-snippets docs-check
+docs-snippets: ## regenerate the reference-solution snippets in docs/ from the solution tags
+	python3 scripts/docsnippets.py
+
+docs-check: ## fail if a snippet in docs/ no longer matches the solution tags
+	python3 scripts/docsnippets.py --check

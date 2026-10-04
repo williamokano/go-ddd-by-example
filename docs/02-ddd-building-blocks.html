@@ -101,10 +101,11 @@ type DomainEvent interface {
 	OccurredAt() time.Time
 }
 
-type Events struct{ pending []DomainEvent }   // embedded in aggregate roots
+type Events struct{ pending []DomainEvent }   // a named field in aggregate roots: v.events.Record(…)
 
 func (e *Events) Record(ev DomainEvent)      { e.pending = append(e.pending, ev) }
 func (e *Events) PullEvents() []DomainEvent  { out := e.pending; e.pending = nil; return out }</code></pre>
+<div class="callout warn"><span class="label">Go pitfall: don't embed the recorder</span><p>Embedding <code>Events</code> in <code>Venue</code> would promote its exported <code>Record</code> method onto <code>*Venue</code>, so any caller could do <code>venue.Record(VenueRetired{…})</code> and fake the aggregate's history. Keep it as an unexported field and expose only <code>PullEvents()</code> on the root.</p></div>
 <p>Domain events vs <strong>integration events</strong>: a domain event is internal to a context and may change freely. An integration event is a <em>public contract</em> (Published Language), versioned, and translated from domain events at the boundary. See <a href="04-events-and-messaging.html">Chapter 4</a>.</p>
 
 <h2 id="domain-service">Domain service</h2>

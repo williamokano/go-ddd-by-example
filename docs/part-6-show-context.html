@@ -28,6 +28,31 @@
   <li>Drafting a second show overlapping the first → 409.</li>
 </ol></div>
 <p>It will stay red until 6.6. Run it at the end of each lesson anyway, to see how far along you are.</p>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: part-5 lesson-6.1 -->
+<p class="resume">Start this lesson from <code>git checkout part-5</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/caebcb2278fe"><code>lesson-6.1</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/de04f266d486...caebcb2278fe">this lesson's 1 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>The acceptance test is written first and stays red until 6.6 (the outer loop of double-loop TDD). CI's e2e job is red in between, as expected.</li>
+</ul>
+<!-- snippet: lesson-6.1 test/e2e/show_test.go#TestShow_DraftPriceAndPublish -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/caebcb2278fe/test/e2e/show_test.go"><code>test/e2e/show_test.go</code></a> at <code>lesson-6.1</code></div>
+<pre><code>func TestShow_DraftPriceAndPublish(t *testing.T) {
+	c := newClient(t)
+	promoter := uuid.NewString()
+	venue := c.activeVenue()
+
+	show := c.draftShow(venue, promoter, schedule(30*24*time.Hour))
+	c.priceAndPublish(show, promoter)
+
+	var got showJSON
+	mustStatus(t, c.do(http.MethodGet, "/shows/"+show, nil), http.StatusOK).decode(t, &amp;got)
+	if got.Status != "published" {
+		t.Errorf("status = %q, want published", got.Status)
+	}
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l6-2">
@@ -44,6 +69,58 @@
 </ol></div>
 <div class="callout warn"><span class="label">Pitfall</span><p>Never <code>float64</code> for money: <code>0.1 + 0.2 != 0.3</code>. Use integer minor units.</p></div>
 <div class="callout discuss"><span class="label">Discuss</span><p>We just wrote <code>Money</code> inside <code>show/domain</code>. Ticketing will need it too. Why not put it in a shared package right away? (ADR-009, the rule of three, and the cost of a premature shared kernel.)</p></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-6.1 lesson-6.2 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-6.1</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/09fb7c0490e4"><code>lesson-6.2</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/caebcb2278fe...09fb7c0490e4">this lesson's 4 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>Show starts with its own <code>Money</code>; 7.1 promotes it to the shared kernel once Ticketing needs the same one (ADR-009).</li>
+</ul>
+<!-- snippet: lesson-6.2 internal/show/domain/schedule.go#NewSchedule,Schedule.Overlaps -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/09fb7c0490e4/internal/show/domain/schedule.go"><code>internal/show/domain/schedule.go</code></a> at <code>lesson-6.2</code></div>
+<pre><code>// NewSchedule builds a schedule with doorsOpen ≤ startsAt &lt; endsAt, running
+// at most 12 hours (SHW-2). Times are stored in UTC.
+func NewSchedule(doorsOpen, startsAt, endsAt time.Time) (Schedule, error) {
+	switch {
+	case doorsOpen.IsZero() || startsAt.IsZero() || endsAt.IsZero():
+		return Schedule{}, fmt.Errorf("%w: missing time", ErrInvalidSchedule)
+	case doorsOpen.After(startsAt):
+		return Schedule{}, fmt.Errorf("%w: doors open after the start", ErrInvalidSchedule)
+	case !endsAt.After(startsAt):
+		return Schedule{}, fmt.Errorf("%w: ends before it starts", ErrInvalidSchedule)
+	case endsAt.Sub(startsAt) &gt; maxShowLength:
+		return Schedule{}, fmt.Errorf("%w: longer than %s", ErrInvalidSchedule, maxShowLength)
+	}
+	return Schedule{doorsOpen: doorsOpen.UTC(), startsAt: startsAt.UTC(), endsAt: endsAt.UTC()}, nil
+}
+
+// Overlaps reports whether the two schedules occupy the venue at the same
+// time, from doors open to end. Touching edges don't overlap (SHW-3).
+func (s Schedule) Overlaps(other Schedule) bool {
+	return s.doorsOpen.Before(other.endsAt) &amp;&amp; other.doorsOpen.Before(s.endsAt)
+}</code></pre>
+<!-- /snippet -->
+<!-- snippet: lesson-6.2 internal/show/domain/price_list.go#PriceList.CoversExactly -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/09fb7c0490e4/internal/show/domain/price_list.go"><code>internal/show/domain/price_list.go</code></a> at <code>lesson-6.2</code></div>
+<pre><code>// CoversExactly checks the list prices every given section and nothing else
+// (SHW-4).
+func (p PriceList) CoversExactly(sectionCodes []string) error {
+	want := make(map[string]bool, len(sectionCodes))
+	for _, c := range sectionCodes {
+		want[strings.ToUpper(c)] = true
+		if _, ok := p.prices[strings.ToUpper(c)]; !ok {
+			return fmt.Errorf("%w: section %s has no price", ErrPriceListMismatch, c)
+		}
+	}
+	for code := range p.prices {
+		if !want[code] {
+			return fmt.Errorf("%w: %s is not a section of the venue", ErrPriceListMismatch, code)
+		}
+	}
+	return nil
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l6-3">
@@ -60,6 +137,53 @@
   <li><strong>Transition table</strong>: for every (state × command) pair, the expected result is "ok → new state" or a specific error. One table-driven test covers the whole state diagram from Chapter 1.</li>
   <li><code>MarkSoldOut</code> on a SoldOut show is a no-op and records no event (SHW-8, idempotency in the domain).</li>
 </ol></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-6.2 lesson-6.3 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-6.2</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/e5831c37ff3c"><code>lesson-6.3</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/09fb7c0490e4...e5831c37ff3c">this lesson's 3 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>The whole state machine is one table-driven test (every state × every command), which is the clearest specification the lesson produces.</li>
+</ul>
+<!-- snippet: lesson-6.3 internal/show/domain/show.go#Show.Publish,Show.MarkSoldOut -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/e5831c37ff3c/internal/show/domain/show.go"><code>internal/show/domain/show.go</code></a> at <code>lesson-6.3</code></div>
+<pre><code>// Publish puts the show on sale. It needs a complete price list (SHW-5) and a
+// start in the future (SHW-2). The recorded ShowPublished carries a snapshot
+// of the layout and prices, so Ticketing never has to ask anyone.
+func (s *Show) Publish(venue VenueLayout, now time.Time) error {
+	if s.status != Draft {
+		return fmt.Errorf("%w: cannot publish a %s show", ErrInvalidShowTransition, s.status)
+	}
+	if s.prices.IsZero() {
+		return ErrShowNotPriced
+	}
+	if err := s.prices.CoversExactly(venue.SectionCodes()); err != nil {
+		return err
+	}
+	if err := startsInTheFuture(s.schedule, now); err != nil {
+		return err
+	}
+	s.status = Published
+	s.events.Record(ShowPublished{ShowID: s.id, VenueID: s.venueID, Schedule: s.schedule, Layout: venue, Prices: s.prices, At: now})
+	return nil
+}
+
+// MarkSoldOut records Ticketing's fact that every seat is sold (SHW-8). The
+// fact may arrive twice, or after the show was cancelled or completed: then
+// it is old news, a no-op, not an error.
+func (s *Show) MarkSoldOut(now time.Time) error {
+	switch s.status {
+	case Published:
+		s.status = SoldOut
+		s.events.Record(ShowSoldOut{ShowID: s.id, At: now})
+		return nil
+	case SoldOut, Cancelled, Completed:
+		return nil
+	default:
+		return fmt.Errorf("%w: a %s show cannot sell out", ErrInvalidShowTransition, s.status)
+	}
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l6-4">
@@ -79,6 +203,39 @@
   <li>The policy takes <code>[]Show</code> (or <code>[]Schedule</code>). Who loads them, and with what query? (The application layer, through a repository finder <code>FindActiveAt(venueID, window)</code>.)</li>
   <li>Two promoters draft overlapping shows at the same instant, and both checks pass. Is that a real risk? How would you close it? (A unique/exclusion constraint in Postgres as a backstop: <code>EXCLUDE USING gist</code>. The domain rule stays the primary statement of the rule.)</li>
 </ul></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-6.3 lesson-6.4 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-6.3</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/6c8f1ecb0568"><code>lesson-6.4</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/e5831c37ff3c...6c8f1ecb0568">this lesson's 1 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>SHW-3 spans several Show aggregates, so it is a domain service. The application loads the venue's open shows and passes them in; the policy itself does no I/O.</li>
+</ul>
+<!-- snippet: lesson-6.4 internal/show/domain/scheduling_policy.go -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/6c8f1ecb0568/internal/show/domain/scheduling_policy.go"><code>internal/show/domain/scheduling_policy.go</code></a> at <code>lesson-6.4</code></div>
+<pre><code>package domain
+
+import "fmt"
+
+// SchedulingPolicy is a domain service: a rule no single Show can enforce,
+// because no show knows the others at its venue (SHW-3). It is pure: the
+// application layer loads the venue's shows and passes them in.
+type SchedulingPolicy struct{}
+
+// EnsureNoOverlap checks that candidate, the schedule wanted for show id,
+// doesn't overlap any other non-cancelled show in existing.
+func (SchedulingPolicy) EnsureNoOverlap(id ShowID, candidate Schedule, existing []*Show) error {
+	for _, other := range existing {
+		if other.ID() == id || other.Status() == Cancelled {
+			continue
+		}
+		if candidate.Overlaps(other.Schedule()) {
+			return fmt.Errorf("%w: overlaps show %s (%q)", ErrScheduleConflict, other.ID(), other.Title())
+		}
+	}
+	return nil
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l6-5">
@@ -99,6 +256,99 @@
   <li>Consumer: a <code>venue.activated.v1</code> envelope is translated into the right command, and an unknown event type is ignored and logged (not an error).</li>
 </ol></div>
 <div class="callout why"><span class="label">Why a local copy instead of asking Venue?</span><p>Show can now draft shows while Venue is down, and Venue's model can change without breaking Show, because only the contract matters. The cost is that the data is eventually consistent, which is why the e2e test uses <code>eventually</code>.</p></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-6.4 lesson-6.5 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-6.4</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/0d53e3892fc7"><code>lesson-6.5</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/6c8f1ecb0568...0d53e3892fc7">this lesson's 5 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>The consumer is the anti-corruption layer: it turns <code>venue.activated.v1</code> into Show's own <code>OnVenueActivated</code> command, and Show never imports Venue's domain.</li>
+</ul>
+<!-- snippet: lesson-6.5 internal/show/adapters/driving/consumer/venue_consumer.go#VenueConsumer.Handle -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/0d53e3892fc7/internal/show/adapters/driving/consumer/venue_consumer.go"><code>internal/show/adapters/driving/consumer/venue_consumer.go</code></a> at <code>lesson-6.5</code></div>
+<pre><code>// Handle is a kafka.Handler.
+func (c *VenueConsumer) Handle(ctx context.Context, env kafka.Envelope) error {
+	switch env.EventType {
+	case contracts.TypeVenueActivatedV1:
+		var e contracts.VenueActivatedV1
+		if err := json.Unmarshal(env.Payload, &amp;e); err != nil {
+			return fmt.Errorf("decode %s: %w", env.EventType, err)
+		}
+		if err := c.activated.Handle(ctx, toOnVenueActivated(e)); err != nil {
+			return fmt.Errorf("%s: %w", env.EventType, err)
+		}
+		return nil
+	case contracts.TypeVenueRetiredV1:
+		var e contracts.VenueRetiredV1
+		if err := json.Unmarshal(env.Payload, &amp;e); err != nil {
+			return fmt.Errorf("decode %s: %w", env.EventType, err)
+		}
+		if err := c.retired.Handle(ctx, application.OnVenueRetired{VenueID: e.VenueID}); err != nil {
+			return fmt.Errorf("%s: %w", env.EventType, err)
+		}
+		return nil
+	default:
+		c.logger.InfoContext(ctx, "show: skipping unknown venue event", "event_type", env.EventType, "event_id", env.EventID)
+		return nil
+	}
+}</code></pre>
+<!-- /snippet -->
+<!-- snippet: lesson-6.5 internal/show/application/venue_events.go#OnVenueRetiredHandler.Handle -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/0d53e3892fc7/internal/show/application/venue_events.go"><code>internal/show/application/venue_events.go</code></a> at <code>lesson-6.5</code></div>
+<pre><code>// Handle marks the venue inactive in the projection, then cancels every open
+// show there that hasn't started yet, one aggregate (one transaction) per
+// show. Re-running it is harmless: cancelled shows are no longer open.
+func (h *OnVenueRetiredHandler) Handle(ctx context.Context, cmd OnVenueRetired) error {
+	id, err := domain.ParseVenueID(cmd.VenueID)
+	if err != nil {
+		return fmt.Errorf("on venue retired: %w", err)
+	}
+	layout, err := h.layouts.Get(ctx, id)
+	if errors.Is(err, ErrVenueUnknown) {
+		layout = domain.VenueLayout{VenueID: id}
+	} else if err != nil {
+		return fmt.Errorf("on venue retired: %w", err)
+	}
+	layout.Active = false
+	if err := h.layouts.Upsert(ctx, layout); err != nil {
+		return fmt.Errorf("on venue retired: %w", err)
+	}
+
+	shows, err := h.shows.ListOpenAtVenue(ctx, id)
+	if err != nil {
+		return fmt.Errorf("on venue retired: %w", err)
+	}
+	reason, err := domain.NewCancellationReason(domain.ReasonVenueRetired)
+	if err != nil {
+		return err
+	}
+	for _, s := range shows {
+		if !s.Schedule().StartsAt().After(h.clock.Now()) {
+			continue
+		}
+		err := RetryOnConflict(ctx, conflictAttempts, func(ctx context.Context) error {
+			show, err := h.shows.Get(ctx, s.ID())
+			if err != nil {
+				return fmt.Errorf("load: %w", err)
+			}
+			if show.Status().IsTerminal() {
+				return nil
+			}
+			if err := show.Cancel(reason, h.clock.Now()); err != nil {
+				return err
+			}
+			if err := h.shows.Save(ctx, show); err != nil {
+				return fmt.Errorf("save: %w", err)
+			}
+			return nil
+		})
+		if err != nil {
+			return fmt.Errorf("on venue retired: cancel show %s: %w", s.ID(), err)
+		}
+	}
+	return nil
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l6-6">
@@ -117,6 +367,65 @@
   <li>Which parts of Venue did you copy almost verbatim? Which of them are worth extracting into <code>platform</code>, and which are domain code that only <em>looks</em> similar?</li>
   <li>Is the authorisation rule "only the promoter may cancel" a domain rule or an application rule? Argue both sides.</li>
 </ul></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-6.5 lesson-6.6 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-6.5</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/5ce61829f424"><code>lesson-6.6</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/0d53e3892fc7...5ce61829f424">this lesson's 7 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li><code>show.published.v1</code> carries a snapshot of the priced layout, so Ticketing never has to ask Show or Venue anything.</li>
+</ul>
+<!-- snippet: lesson-6.6 internal/show/adapters/driven/postgres/events.go#pricedSections -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/5ce61829f424/internal/show/adapters/driven/postgres/events.go"><code>internal/show/adapters/driven/postgres/events.go</code></a> at <code>lesson-6.6</code></div>
+<pre><code>func pricedSections(layout domain.VenueLayout, prices domain.PriceList) []contracts.SectionV1 {
+	out := make([]contracts.SectionV1, 0, len(layout.Sections))
+	for _, s := range layout.Sections {
+		price, _ := prices.Price(s.Code)
+		sv := contracts.SectionV1{
+			Code: s.Code, Kind: s.Kind, Capacity: s.Capacity,
+			Price: contracts.PriceV1{Amount: price.Amount(), Currency: price.Currency().String()},
+		}
+		for _, r := range s.Rows {
+			sv.Rows = append(sv.Rows, contracts.RowV1{Label: r.Label, Seats: r.Seats})
+		}
+		out = append(out, sv)
+	}
+	return out
+}</code></pre>
+<!-- /snippet -->
+<!-- snippet: lesson-6.6 internal/show/application/show_commands.go#withShow -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/5ce61829f424/internal/show/application/show_commands.go"><code>internal/show/application/show_commands.go</code></a> at <code>lesson-6.6</code></div>
+<pre><code>// withShow runs the load → authorise → decide → save recipe, retried on a
+// conflict. promoterID "" skips the promoter check (system-driven commands).
+func withShow(ctx context.Context, shows ShowRepository, useCase, showID, promoterID string, decide func(*domain.Show) error) error {
+	id, err := domain.ParseShowID(showID)
+	if err != nil {
+		return fmt.Errorf("%s: %w", useCase, err)
+	}
+	err = RetryOnConflict(ctx, conflictAttempts, func(ctx context.Context) error {
+		show, err := shows.Get(ctx, id)
+		if err != nil {
+			return fmt.Errorf("load: %w", err)
+		}
+		if promoterID != "" {
+			if err := authorise(show, promoterID); err != nil {
+				return err
+			}
+		}
+		if err := decide(show); err != nil {
+			return err
+		}
+		if err := shows.Save(ctx, show); err != nil {
+			return fmt.Errorf("save: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("%s: %w", useCase, err)
+	}
+	return nil
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 </main>
 <script src="assets/course.js"></script>

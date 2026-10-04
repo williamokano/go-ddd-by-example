@@ -27,6 +27,20 @@ The course lives in `docs/` (static HTML). Serve it with `make docs` → http://
 - If the user disagrees with a design decision, discuss it seriously; if a decision
   changes, record it as a new ADR in `docs/07-decisions.html` and update affected pages.
 
+## Reference solution (`solution` branch + tags)
+
+- A full implementation lives on the `solution` branch; `main` stays code-free (docs, tasks, tooling only)
+  so a fresh clone is a blank slate. Tags: `lesson-X.Y` at the end of each lesson, `part-N` at the end of each Part.
+- **Tutoring:** don't show or quote the solution unless the learner asks or is stuck. Prefer pointing at the
+  lesson's collapsed "Reference solution" block or `git diff lesson-X.Y -- internal/` over pasting code.
+- **Extending the solution** (only when the user asks): build it like a developer following the course, never
+  in one shot. Check out the latest tag, follow the lesson's TDD script one test at a time (watch it fail for the
+  right reason, then green), commit at every green, tag the lesson, tag the Part at its end, keep `go test`, `go vet`
+  and CI lint green. Then update the docs from the real code: add `<!-- snippet: TAG PATH#Decl -->` /
+  `<!-- resume: FROM TO -->` markers, run `make docs-snippets`, and fix any lesson text the implementation
+  proved wrong. Append the new tags to `scripts/solution-tags.sh` (the session's git proxy can't push tags).
+- Doc changes go to `main` via a docs branch; never merge `solution` into `main`.
+
 ## Fixed technical choices
 
 Go 1.27 (via mise), PostgreSQL 18, pgx/v5 + sqlc, goose migrations (embedded),

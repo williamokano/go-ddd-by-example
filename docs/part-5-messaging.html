@@ -23,6 +23,14 @@
 </dl>
 <div class="callout do"><span class="label">Your turn</span><p><code>make infra</code>, open <code>http://localhost:8081</code>, check that the four topics exist, produce a message by hand from the UI, and consume it.</p></div>
 <div class="callout discuss"><span class="label">Discuss</span><p>Why are auto-created topics disabled? (Topics are part of the architecture: their partition count decides parallelism and ordering, and a typo shouldn't silently create a new topic.)</p></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: part-4 lesson-5.1 -->
+<p class="resume">Start this lesson from <code>git checkout part-4</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/00248dc3a256"><code>lesson-5.1</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/86d1dcc58524...00248dc3a256">this lesson's 1 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>Topics and their <code>.dlq</code> twins are declared by a one-shot <code>kafka-init</code> service, and auto-creation is off: topics are architecture.</li>
+</ul>
+</details>
 </section>
 
 <section class="lesson" id="l5-2">
@@ -38,6 +46,70 @@
   <li>Unmarshalling a payload that has an extra unknown field still works (forward compatibility).</li>
 </ol></div>
 <div class="callout warn"><span class="label">Rule</span><p><code>contracts</code> imports <strong>only stdlib</strong>. It uses no domain types, because consumers must be able to depend on it without depending on your model.</p></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-5.1 lesson-5.2 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-5.1</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/2dff9e5b5b1f"><code>lesson-5.2</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/00248dc3a256...2dff9e5b5b1f">this lesson's 2 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>The golden files under <code>contracts/testdata</code> are the Published Language: any change shows as a diff, and <code>-update</code> must be deliberate.</li>
+</ul>
+<!-- snippet: lesson-5.2 internal/venue/contracts/events.go -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/2dff9e5b5b1f/internal/venue/contracts/events.go"><code>internal/venue/contracts/events.go</code></a> at <code>lesson-5.2</code></div>
+<pre><code>// Package contracts is the Venue context's Published Language: the public,
+// versioned integration events other contexts may decode. It imports only the
+// standard library and never the domain, so consumers can depend on it without
+// depending on Venue's model. Changes are additive within a version; a
+// breaking change is a new version (v2), published side by side.
+package contracts
+
+import "time"
+
+// Topic is where Venue publishes, keyed by venue ID (per-venue ordering).
+const Topic = "venue.events"
+
+// Event types.
+const (
+	TypeVenueActivatedV1 = "venue.activated.v1"
+	TypeVenueRetiredV1   = "venue.retired.v1"
+)
+
+// Section kinds.
+const (
+	KindSeated = "seated"
+	KindGA     = "ga"
+)
+
+// VenueActivatedV1 announces that a venue opened for shows. It carries the whole layout, so
+// consumers never have to ask Venue anything.
+type VenueActivatedV1 struct {
+	VenueID     string      `json:"venue_id"`
+	Name        string      `json:"name"`
+	Sections    []SectionV1 `json:"sections"`
+	ActivatedAt time.Time   `json:"activated_at"`
+}
+
+// SectionV1 is one section of the layout: rows for a seated section, a
+// capacity for a general admission one.
+type SectionV1 struct {
+	Code     string  `json:"code"`
+	Kind     string  `json:"kind"`
+	Rows     []RowV1 `json:"rows,omitempty"`
+	Capacity int     `json:"capacity,omitempty"`
+}
+
+// RowV1 is one row of a seated section; its seats are numbered 1..Seats.
+type RowV1 struct {
+	Label string `json:"label"`
+	Seats int    `json:"seats"`
+}
+
+// VenueRetiredV1 announces that a venue closed for good; its shows get cancelled (SHW-7).
+type VenueRetiredV1 struct {
+	VenueID   string    `json:"venue_id"`
+	RetiredAt time.Time `json:"retired_at"`
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l5-3">
@@ -52,6 +124,69 @@
   <li>Integration: activating and saving a venue leaves exactly one unpublished outbox row with the expected type and key.</li>
   <li>Integration: a save that fails with <code>ErrConcurrentModification</code> leaves <strong>no</strong> outbox row. This is the whole point of atomicity.</li>
 </ol></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-5.2 lesson-5.3 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-5.2</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/c3e60f282872"><code>lesson-5.3</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/2dff9e5b5b1f...c3e60f282872">this lesson's 2 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>The translation from domain events to contracts lives in the Postgres adapter (<code>ToOutboxMessages</code>), so neither the domain nor the contracts know about each other.</li>
+</ul>
+<!-- snippet: lesson-5.3 internal/platform/outbox/writer.go#Write -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/c3e60f282872/internal/platform/outbox/writer.go"><code>internal/platform/outbox/writer.go</code></a> at <code>lesson-5.3</code></div>
+<pre><code>// Write inserts msgs into &lt;schema&gt;.outbox inside tx, the transaction that also
+// saves the aggregate: both commit, or neither does.
+func Write(ctx context.Context, tx pgx.Tx, schema string, msgs []Message) error {
+	table := pgx.Identifier{schema, "outbox"}.Sanitize()
+	for _, m := range msgs {
+		_, err := tx.Exec(ctx,
+			`INSERT INTO `+table+` (event_id, topic, msg_key, event_type, payload, occurred_at)
+			 VALUES ($1, $2, $3, $4, $5, $6)`,
+			m.EventID, m.Topic, m.Key, m.Type, []byte(m.Payload), m.OccurredAt)
+		if err != nil {
+			return fmt.Errorf("outbox %s: insert %s: %w", schema, m.Type, err)
+		}
+	}
+	return nil
+}</code></pre>
+<!-- /snippet -->
+<!-- snippet: lesson-5.3 internal/venue/adapters/driven/postgres/events.go#ToOutboxMessages -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/c3e60f282872/internal/venue/adapters/driven/postgres/events.go"><code>internal/venue/adapters/driven/postgres/events.go</code></a> at <code>lesson-5.3</code></div>
+<pre><code>// ToOutboxMessages translates domain events into integration events: a small
+// anti-corruption layer pointing outward. It decides what leaves the context:
+// VenueRegistered and SectionAdded are internal facts and are not published.
+func ToOutboxMessages(events []domain.DomainEvent, newID func() uuid.UUID) ([]outbox.Message, error) {
+	var msgs []outbox.Message
+	for _, ev := range events {
+		var (
+			eventType string
+			payload   any
+			venueID   domain.VenueID
+		)
+		switch e := ev.(type) {
+		case domain.VenueActivated:
+			eventType, venueID = contracts.TypeVenueActivatedV1, e.VenueID
+			payload = contracts.VenueActivatedV1{
+				VenueID: e.VenueID.String(), Name: e.Name, Sections: sectionsV1(e.Sections), ActivatedAt: e.At,
+			}
+		case domain.VenueRetired:
+			eventType, venueID = contracts.TypeVenueRetiredV1, e.VenueID
+			payload = contracts.VenueRetiredV1{VenueID: e.VenueID.String(), RetiredAt: e.At}
+		default:
+			continue
+		}
+		b, err := json.Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", eventType, err)
+		}
+		msgs = append(msgs, outbox.Message{
+			EventID: newID(), Topic: contracts.Topic, Key: venueID.String(),
+			Type: eventType, Payload: b, OccurredAt: ev.OccurredAt(),
+		})
+	}
+	return msgs, nil
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l5-4">
@@ -68,6 +203,81 @@
   <li>Integration (Postgres + Kafka containers): an outbox row ends up on the topic with the envelope headers and the aggregate ID as key.</li>
 </ol></div>
 <div class="callout discuss"><span class="label">Discuss</span><p>The relay crashes after Kafka acknowledged the message but before the <code>UPDATE … published_at</code>. What happens on restart? Who has to cope with that?</p></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-5.3 lesson-5.4 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-5.3</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/781f029ce167"><code>lesson-5.4</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/c3e60f282872...781f029ce167">this lesson's 2 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>The relay locks a batch with <code>FOR UPDATE SKIP LOCKED</code>, publishes, then marks it. A crash in between publishes again: at least once, by design.</li>
+  <li>Kafka's testcontainers module needs the <code>confluentinc/confluent-local</code> image; Compose runs <code>apache/kafka</code>.</li>
+</ul>
+<!-- snippet: lesson-5.4 internal/platform/outbox/relay.go#Relay.Tick -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/781f029ce167/internal/platform/outbox/relay.go"><code>internal/platform/outbox/relay.go</code></a> at <code>lesson-5.4</code></div>
+<pre><code>// Tick publishes one batch of unpublished rows, in id order, and marks them.
+// The rows stay locked (FOR UPDATE SKIP LOCKED) until the transaction ends, so
+// two relays never publish the same row in the same tick. It returns how many
+// rows it published.
+func (r *Relay) Tick(ctx context.Context) (n int, err error) {
+	table := pgx.Identifier{r.schema, "outbox"}.Sanitize()
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("relay %s: begin: %w", r.schema, err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+
+	rows, err := tx.Query(ctx, `
+		SELECT id, event_id, topic, msg_key, event_type, payload, occurred_at
+		FROM `+table+`
+		WHERE published_at IS NULL
+		ORDER BY id
+		LIMIT $1
+		FOR UPDATE SKIP LOCKED`, batchSize)
+	if err != nil {
+		return 0, fmt.Errorf("relay %s: select: %w", r.schema, err)
+	}
+	var (
+		ids  []int64
+		msgs []Message
+	)
+	for rows.Next() {
+		var (
+			id int64
+			m  Message
+		)
+		if err := rows.Scan(&amp;id, &amp;m.EventID, &amp;m.Topic, &amp;m.Key, &amp;m.Type, &amp;m.Payload, &amp;m.OccurredAt); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("relay %s: scan: %w", r.schema, err)
+		}
+		ids = append(ids, id)
+		msgs = append(msgs, m)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("relay %s: rows: %w", r.schema, err)
+	}
+	if len(msgs) == 0 {
+		if err := tx.Commit(ctx); err != nil {
+			return 0, fmt.Errorf("relay %s: commit: %w", r.schema, err)
+		}
+		return 0, nil
+	}
+
+	if err := r.pub.Publish(ctx, msgs); err != nil {
+		return 0, fmt.Errorf("relay %s: publish: %w", r.schema, err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE `+table+` SET published_at = now() WHERE id = ANY($1)`, ids); err != nil {
+		return 0, fmt.Errorf("relay %s: mark published: %w", r.schema, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("relay %s: commit: %w", r.schema, err)
+	}
+	return len(msgs), nil
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l5-5">
@@ -82,6 +292,43 @@
   <li>After N failures the message goes to <code>&lt;topic&gt;.dlq</code> with an <code>error</code> header, and consumption continues.</li>
   <li>Context cancellation stops the runner cleanly.</li>
 </ol></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-5.4 lesson-5.5 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-5.4</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/72f9890a609b"><code>lesson-5.5</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/781f029ce167...72f9890a609b">this lesson's 1 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>Offsets are committed only after the handler succeeds. This version dead-letters after N attempts; drill 4 in 8.5 shows why that loses events during an outage, and 8.5 changes it.</li>
+</ul>
+<!-- snippet: lesson-5.5 internal/platform/kafka/consumer.go#process -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/72f9890a609b/internal/platform/kafka/consumer.go"><code>internal/platform/kafka/consumer.go</code></a> at <code>lesson-5.5</code></div>
+<pre><code>// process handles rec until it succeeds or is parked in the DLQ. It returns
+// false if ctx ended first.
+func process(ctx context.Context, client *kgo.Client, cfg ConsumerConfig, handle Handler, logger *slog.Logger, rec *kgo.Record) bool {
+	var env Envelope
+	if err := json.Unmarshal(rec.Value, &amp;env); err != nil {
+		return deadLetter(ctx, client, cfg, logger, rec, fmt.Errorf("decode envelope: %w", err))
+	}
+	backoff := cfg.Backoff
+	var err error
+	for attempt := 1; attempt &lt;= cfg.MaxAttempts; attempt++ {
+		if err = handle(ctx, env); err == nil {
+			return true
+		}
+		logger.WarnContext(ctx, "kafka handler", "group", cfg.Group, "event_type", env.EventType,
+			"event_id", env.EventID, "attempt", attempt, "error", err)
+		if attempt &lt; cfg.MaxAttempts {
+			select {
+			case &lt;-ctx.Done():
+				return false
+			case &lt;-time.After(backoff):
+			}
+			backoff *= 2
+		}
+	}
+	return deadLetter(ctx, client, cfg, logger, rec, err)
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l5-6">
@@ -94,6 +341,66 @@
 <div class="callout discuss"><span class="label">Discuss</span><p>The HTTP call succeeded while Kafka was down. Is that a bug or a feature? What would the user have seen with a dual write?</p></div>
 <h4>Done when</h4>
 <ul><li>Venue publishes reliably, and the consumer runner exists and is tested, ready for Show.</li></ul>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-5.5 lesson-5.6 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-5.5</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/de04f266d486"><code>lesson-5.6</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/72f9890a609b...de04f266d486">this lesson's 2 commits</a>).</p>
+<!-- /resume -->
+<!-- snippet: lesson-5.6 cmd/stagehand/serve.go#serve -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/de04f266d486/cmd/stagehand/serve.go"><code>cmd/stagehand/serve.go</code></a> at <code>lesson-5.6</code></div>
+<pre><code>// serve is the composition root: the only place that knows every concrete
+// type. Plain constructor injection, top to bottom, no container.
+func serve(ctx context.Context) error {
+	cfg, err := config.Load(os.Getenv)
+	if err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &amp;slog.HandlerOptions{Level: cfg.LogLevel}))
+
+	pool, err := postgres.NewPool(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("database: %w", err)
+	}
+	defer pool.Close()
+
+	producer, err := kafka.NewProducer(cfg.KafkaBrokers)
+	if err != nil {
+		return fmt.Errorf("kafka: %w", err)
+	}
+	defer producer.Close()
+
+	// Background work, tied to the root context: stops on SIGINT/SIGTERM.
+	var background sync.WaitGroup
+	defer background.Wait()
+	background.Go(func() { outbox.NewRelay(pool, "venue", producer, logger).Run(ctx, cfg.OutboxPollInterval) })
+
+	// Driven adapters.
+	clk := clock.System{}
+	venues := venuepg.NewVenueRepository(pool)
+	venueIDs := ids.NewVenueIDs(idgen.UUIDv7{})
+
+	// Use cases, then the driving adapter.
+	venueAPI := httpapi.Routes(httpapi.UseCases{
+		Register:   application.NewRegisterVenueHandler(venues, venueIDs, clk),
+		AddSection: application.NewAddSectionHandler(venues, clk),
+		Activate:   application.NewActivateVenueHandler(venues, clk),
+		Retire:     application.NewRetireVenueHandler(venues, clk),
+		Queries:    venuepg.NewVenueQueries(pool),
+	}, logger)
+
+	mux := http.NewServeMux()
+	mux.Handle("/venues", venueAPI)
+	mux.Handle("/venues/", venueAPI)
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+
+	server := &amp;http.Server{
+		Addr:              cfg.HTTPAddr,
+		Handler:           httpx.Chain(mux, httpx.RequestID, httpx.Recover(logger), httpx.AccessLog(logger)),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	return runServer(ctx, server, logger)
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 </main>
 <script src="assets/course.js"></script>

@@ -27,6 +27,42 @@
   <li>Update the architecture test: <code>sharedkernel</code> imports only stdlib.</li>
 </ol></div>
 <div class="callout discuss"><span class="label">Discuss</span><p>Someone proposes adding <code>SeatRef</code> to the shared kernel "since Ticketing and Venue both have seats". What's your answer? (Chapter 1: "Seat" means three things.)</p></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: part-6 lesson-7.1 -->
+<p class="resume">Start this lesson from <code>git checkout part-6</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/441b28ac89f4"><code>lesson-7.1</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/5ce61829f424...441b28ac89f4">this lesson's 2 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>Moving <code>Money</code> and <code>DomainEvent</code> needed a goimports pass afterwards (fixed in 7.10): import groups change when a package moves.</li>
+</ul>
+<!-- snippet: lesson-7.1 internal/sharedkernel/events.go -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/441b28ac89f4/internal/sharedkernel/events.go"><code>internal/sharedkernel/events.go</code></a> at <code>lesson-7.1</code></div>
+<pre><code>package sharedkernel
+
+import "time"
+
+// DomainEvent is something that happened in a context's domain that domain
+// experts care about. Events are named in the past tense and immutable.
+type DomainEvent interface {
+	EventName() string
+	OccurredAt() time.Time
+}
+
+// Events records an aggregate's domain events until they are pulled. The
+// aggregate records; it never publishes. Keep it a named, unexported field of
+// the root: embedding would promote Record and let callers fake history.
+type Events struct{ pending []DomainEvent }
+
+// Record appends an event.
+func (e *Events) Record(ev DomainEvent) { e.pending = append(e.pending, ev) }
+
+// PullEvents returns the recorded events in order and forgets them.
+func (e *Events) PullEvents() []DomainEvent {
+	out := e.pending
+	e.pending = nil
+	return out
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l7-2">
@@ -42,6 +78,57 @@
   <li>For each option, what happens when 5,000 people try to buy in the first minute?</li>
   <li>Compare your answer with ADR-005. Where do you disagree?</li>
 </ol></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-7.1 lesson-7.2 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-7.1</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/95fc287c0f5f"><code>lesson-7.2</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/441b28ac89f4...95fc287c0f5f">this lesson's 1 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>The design notes answer the workshop questions; the S1 acceptance test goes in red, as in 6.1.</li>
+</ul>
+<!-- snippet: lesson-7.2 notes/aggregate-design.md#L1-L40 -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/95fc287c0f5f/notes/aggregate-design.md"><code>notes/aggregate-design.md</code></a> at <code>lesson-7.2</code></div>
+<pre><code># Ticketing: aggregate boundaries (lesson 7.2)
+
+## Which data must be consistent *immediately* for each rule?
+
+| Rule | Needs to see, in one transaction |
+|---|---|
+| TKT-1 open once | the show's inventory exists or not |
+| TKT-2 1–8 seats, all available, all or nothing | the state of every requested seat |
+| TKT-3 one active hold per customer per show | every active hold of the show |
+| TKT-4 expiry | a hold's expiresAt and its seats |
+| TKT-5 never sold twice, never held twice | every seat's state (the core invariant) |
+| TKT-6 order for a valid, owned hold; total; email | the hold (read), the order |
+| TKT-7 order lifecycle | the order only |
+| TKT-8 confirm a paid order's hold | the hold and its seats (+ "has this order been confirmed?") |
+| TKT-9 one ticket per sold seat, unique code | one ticket each (uniqueness by key) |
+| TKT-10 sold out exactly once | every seat's state + a "sold out recorded" flag |
+| TKT-11 close, void, refund | inventory; each ticket; each order — separately |
+| TKT-12 no holds when closed or after start | inventory's closed flag and the show's start |
+
+## Options for TKT-5
+
+| Option | Invariant | 5,000 buyers in the first minute |
+|---|---|---|
+| **One ShowInventory per show** (ADR-005) | trivially correct in memory; multi-seat holds atomic | every hold on the show serialises on one version: many ErrConcurrentModification, retried (3×), some 409s; loading 50k seats per request is heavy |
+| One inventory per section | correct within a section; a hold spans one section only | contention divided by the number of sections; "2 in ORCH + 2 in BALCONY" impossible in one hold |
+| One aggregate per seat (or a DB unique constraint) | correct per seat; multi-seat hold = several aggregates → saga or DB transaction across rows | scales best; the invariant moves into the database (row locks / unique index) |
+
+**Decision:** per show, as ADR-005 says. The course's shows are small and the
+invariants are easiest to see and test. The cost is real and measured in 7.6;
+Part 9.1 re-cuts it per section.
+
+## The other aggregates
+
+- **Order** — one checkout of one hold. Reads the hold (never modifies the
+  inventory) when placed; its lifecycle (TKT-7) is its own.
+- **Ticket** — one per sold seat. Tiny and independent, so voiding (TKT-11)
+  or check-in (9.2) locks nothing else. Its ID is derived from order + seat,
+  so redelivered "issue tickets" messages can't create duplicates (TKT-9).
+
+## Where I disagree with ADR-005</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l7-3">
@@ -59,6 +146,64 @@
   <li>A second active hold by the same customer → <code>ErrCustomerAlreadyHolding</code>.</li>
   <li>Holding after the show's start → <code>ErrSalesClosed</code>.</li>
 </ol></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-7.2 lesson-7.3 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-7.2</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/1f20326e1a4f"><code>lesson-7.3</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/95fc287c0f5f...1f20326e1a4f">this lesson's 2 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>GA places are seats too (<code>FLOOR/GA/0001</code>): one model, one rule set for holds.</li>
+</ul>
+<!-- snippet: lesson-7.3 internal/ticketing/domain/inventory.go#ShowInventory.Hold -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/1f20326e1a4f/internal/ticketing/domain/inventory.go"><code>internal/ticketing/domain/inventory.go</code></a> at <code>lesson-7.3</code></div>
+<pre><code>// Hold claims 1–8 available seats for a customer until now+ttl (TKT-2, TKT-4),
+// all or nothing. A customer has at most one active hold (TKT-3); no holds
+// once the show has started (TKT-12). Holds that lapsed but weren't swept yet
+// are expired first, so their seats are free again.
+func (inv *ShowInventory) Hold(id HoldID, customer CustomerID, seats []SeatRef, now time.Time, ttl time.Duration) error {
+	if id.IsZero() || customer.IsZero() {
+		return fmt.Errorf("%w: zero hold or customer id", ErrInvalidID)
+	}
+	if !now.Before(inv.startsAt) {
+		return fmt.Errorf("%w: the show starts at %s", ErrSalesClosed, inv.startsAt.Format(time.RFC3339))
+	}
+	if len(seats) == 0 || len(seats) &gt; maxSeatsPerHold {
+		return fmt.Errorf("%w: %d seats, want 1 to %d", ErrInvalidHoldSize, len(seats), maxSeatsPerHold)
+	}
+	seen := make(map[SeatRef]bool, len(seats))
+	for _, ref := range seats {
+		if seen[ref] {
+			return fmt.Errorf("%w: %s", ErrDuplicateSeat, ref)
+		}
+		seen[ref] = true
+		if _, ok := inv.seats[ref]; !ok {
+			return fmt.Errorf("%w: %s", ErrUnknownSeat, ref)
+		}
+	}
+
+	inv.ExpireHolds(now)
+
+	for _, h := range inv.holds {
+		if h.customer == customer {
+			return fmt.Errorf("%w: hold %s", ErrCustomerAlreadyHolding, h.id)
+		}
+	}
+	for _, ref := range seats {
+		if s := inv.seats[ref]; s.state != Available {
+			return fmt.Errorf("%w: %s is %s", ErrSeatUnavailable, ref, s.state)
+		}
+	}
+
+	for _, ref := range seats {
+		s := inv.seats[ref]
+		s.state, s.holdID = Held, id
+	}
+	h := Hold{id: id, customer: customer, seats: slices.Clone(seats), expiresAt: now.Add(ttl)}
+	inv.holds[id] = h
+	inv.events.Record(SeatsHeld{ShowID: inv.showID, HoldID: id, CustomerID: customer, Seats: h.Seats(), ExpiresAt: h.expiresAt, At: now})
+	return nil
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l7-4">
@@ -75,6 +220,45 @@
   <li>Selling the last available seat records <code>InventorySoldOut</code> exactly once.</li>
   <li><code>Close(now)</code> releases all holds and rejects any new hold.</li>
 </ol></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-7.3 lesson-7.4 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-7.3</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/d12d48222c20"><code>lesson-7.4</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/1f20326e1a4f...d12d48222c20">this lesson's 1 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>Time is always passed in (<code>now</code>); nothing in the domain sleeps or reads a clock. A lapsed but unswept hold is expired on the next <code>Hold</code>.</li>
+</ul>
+<!-- snippet: lesson-7.4 internal/ticketing/domain/inventory.go#ShowInventory.ConfirmHold -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/d12d48222c20/internal/ticketing/domain/inventory.go"><code>internal/ticketing/domain/inventory.go</code></a> at <code>lesson-7.4</code></div>
+<pre><code>// ConfirmHold sells the seats of a paid order's hold (TKT-8). A hold that
+// lapsed, even if not swept yet, or that was released, can't be confirmed:
+// the order must be refunded (the saga's compensation). Confirming the same
+// order again is a no-op, because the saga may redeliver. Selling the last
+// available seat records InventorySoldOut, exactly once (TKT-10).
+func (inv *ShowInventory) ConfirmHold(id HoldID, order OrderID, now time.Time) error {
+	if inv.isSoldTo(order) {
+		return nil
+	}
+	h, ok := inv.holds[id]
+	if !ok {
+		return fmt.Errorf("%w: %s", ErrHoldNotFound, id)
+	}
+	if h.IsExpired(now) {
+		return fmt.Errorf("%w: hold %s lapsed at %s", ErrHoldExpired, id, h.expiresAt.Format(time.RFC3339))
+	}
+	for _, ref := range h.seats {
+		s := inv.seats[ref]
+		s.state, s.holdID, s.orderID = Sold, HoldID{}, order
+	}
+	delete(inv.holds, id)
+	inv.events.Record(SeatsSold{ShowID: inv.showID, HoldID: id, OrderID: order, Seats: h.Seats(), At: now})
+	if !inv.soldOut &amp;&amp; inv.allSold() {
+		inv.soldOut = true
+		inv.events.Record(InventorySoldOut{ShowID: inv.showID, At: now})
+	}
+	return nil
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l7-5">
@@ -89,6 +273,86 @@
   <li>The repository writes only <em>changed</em> seats, not all 50k. Track dirty seats in the aggregate, or diff them in the adapter. Discuss which.</li>
   <li><code>GET /shows/{id}/seats</code> is a query that reads the <code>seats</code> table directly, with no aggregate load.</li>
 </ol></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-7.4 lesson-7.5 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-7.4</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/ecac32752de7"><code>lesson-7.5</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/d12d48222c20...ecac32752de7">this lesson's 8 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>The repository writes only the seats its pending events touched (<code>changedSeats</code>): the events are the change log, so a 2-seat hold doesn't rewrite 50,000 rows.</li>
+</ul>
+<!-- snippet: lesson-7.5 internal/ticketing/adapters/driven/postgres/inventory_repository.go#changedSeats -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/ecac32752de7/internal/ticketing/adapters/driven/postgres/inventory_repository.go"><code>internal/ticketing/adapters/driven/postgres/inventory_repository.go</code></a> at <code>lesson-7.5</code></div>
+<pre><code>// changedSeats lists the seats the pending events touched.
+func changedSeats(events []sharedkernel.DomainEvent) map[domain.SeatRef]bool {
+	changed := map[domain.SeatRef]bool{}
+	mark := func(refs []domain.SeatRef) {
+		for _, r := range refs {
+			changed[r] = true
+		}
+	}
+	for _, ev := range events {
+		switch e := ev.(type) {
+		case domain.SeatsHeld:
+			mark(e.Seats)
+		case domain.HoldReleased:
+			mark(e.Seats)
+		case domain.HoldExpired:
+			mark(e.Seats)
+		case domain.SeatsSold:
+			mark(e.Seats)
+		case domain.InventoryClosed:
+			mark(e.ReleasedSeats)
+		}
+	}
+	return changed
+}</code></pre>
+<!-- /snippet -->
+<!-- snippet: lesson-7.5 internal/ticketing/application/inventory.go#HoldSeatsHandler.Handle -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/ecac32752de7/internal/ticketing/application/inventory.go"><code>internal/ticketing/application/inventory.go</code></a> at <code>lesson-7.5</code></div>
+<pre><code>// Handle holds the seats. On a hot show every hold races for the same
+// inventory version, so a lost race is retried a few times before the
+// customer gets a conflict.
+func (h *HoldSeatsHandler) Handle(ctx context.Context, cmd HoldSeats) (HoldResult, error) {
+	showID, err := domain.ParseShowID(cmd.ShowID)
+	if err != nil {
+		return HoldResult{}, fmt.Errorf("hold seats: %w", err)
+	}
+	customer, err := domain.ParseCustomerID(cmd.CustomerID)
+	if err != nil {
+		return HoldResult{}, fmt.Errorf("hold seats: %w", err)
+	}
+	seats := make([]domain.SeatRef, 0, len(cmd.Seats))
+	for _, raw := range cmd.Seats {
+		ref, err := domain.ParseSeatRef(raw)
+		if err != nil {
+			return HoldResult{}, fmt.Errorf("hold seats: %w", err)
+		}
+		seats = append(seats, ref)
+	}
+	id := h.ids.NewHoldID()
+	var result HoldResult
+	err = RetryOnConflict(ctx, conflictAttempts, func(ctx context.Context) error {
+		inv, err := h.inventories.Get(ctx, showID)
+		if err != nil {
+			return fmt.Errorf("load: %w", err)
+		}
+		now := h.clock.Now()
+		if err := inv.Hold(id, customer, seats, now, h.ttl); err != nil {
+			return err
+		}
+		if err := h.inventories.Save(ctx, inv); err != nil {
+			return fmt.Errorf("save: %w", err)
+		}
+		result = HoldResult{HoldID: id, ExpiresAt: now.Add(h.ttl)}
+		return nil
+	})
+	if err != nil {
+		return HoldResult{}, fmt.Errorf("hold seats: %w", err)
+	}
+	return result, nil
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l7-6">
@@ -100,6 +364,52 @@
   <li>One available seat and 50 goroutines calling HoldSeats: exactly 1 success and 49 <code>ErrSeatUnavailable</code> or conflict-exhausted errors, never 2 successes.</li>
   <li>Measure it: a show with 1,000 seats, 200 concurrent holds for distinct seats. How many retries? What's the p99 latency? Write the numbers into ADR-005's consequences.</li>
 </ol></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-7.5 lesson-7.6 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-7.5</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/cb038f6b47be"><code>lesson-7.6</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/ecac32752de7...cb038f6b47be">this lesson's 1 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>S6 holds: one winner for the last seat. The measurement is the real lesson: 200 holds on 200 <em>different</em> seats, and only 3 succeed within 3 retries (594 conflicts, p50 ≈ 0.8 s). That is the cost of one aggregate per show, and 9.1 comes back to it.</li>
+</ul>
+<!-- snippet: lesson-7.6 internal/ticketing/adapters/driven/postgres/race_test.go#TestS6_RaceForTheLastSeat -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/cb038f6b47be/internal/ticketing/adapters/driven/postgres/race_test.go"><code>internal/ticketing/adapters/driven/postgres/race_test.go</code></a> at <code>lesson-7.6</code></div>
+<pre><code>// S6 — 1 available seat, 50 concurrent holds: exactly 1 wins (TKT-5).
+func TestS6_RaceForTheLastSeat(t *testing.T) {
+	repo := postgres.NewInventoryRepository(pgtest.New(t))
+	showID := openShow(t, repo, 1)
+	hold := application.NewHoldSeatsHandler(repo, ids.New(idgen.UUIDv7{}), clock.NewFixed(now), 10*time.Minute)
+
+	errs := make([]error, 50)
+	var wg sync.WaitGroup
+	for i := range errs {
+		wg.Go(func() {
+			_, errs[i] = hold.Handle(context.Background(), application.HoldSeats{
+				ShowID: showID, CustomerID: uuid.NewString(), Seats: []string{"FLOOR/GA/0001"},
+			})
+		})
+	}
+	wg.Wait()
+
+	var wins, unavailable, exhausted int
+	for _, err := range errs {
+		switch {
+		case err == nil:
+			wins++
+		case errors.Is(err, domain.ErrSeatUnavailable):
+			unavailable++
+		case errors.Is(err, application.ErrConcurrentModification):
+			exhausted++
+		default:
+			t.Errorf("unexpected error: %v", err)
+		}
+	}
+	if wins != 1 {
+		t.Fatalf("%d holds won the last seat, want exactly 1 (TKT-5)", wins)
+	}
+	t.Logf("1 win, %d seat unavailable, %d gave up after %d conflicts", unavailable, exhausted, 3)
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l7-7">
@@ -116,6 +426,65 @@
   <li>Fake gateway modes: approve, decline, delay. It records calls so tests can assert "Refund was called for order X".</li>
 </ol></div>
 <div class="callout why"><span class="label">The payment port is an Anti-Corruption Layer</span><p>Real providers speak their own language (intents, captures, webhooks). The port speaks <em>ours</em>: Charge and Refund. A future Stripe adapter does the translation, and the domain never learns that word.</p></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-7.6 lesson-7.7 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-7.6</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/c9b81b245fde"><code>lesson-7.7</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/cb038f6b47be...c9b81b245fde">this lesson's 2 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>The payment port speaks our language (<code>Charge</code>, <code>Refund</code>), not a provider's: the port itself is an anti-corruption layer.</li>
+</ul>
+<!-- snippet: lesson-7.7 internal/ticketing/application/ports.go#PaymentGateway -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/c9b81b245fde/internal/ticketing/application/ports.go"><code>internal/ticketing/application/ports.go</code></a> at <code>lesson-7.7</code></div>
+<pre><code>// PaymentGateway charges and refunds money through an external provider.
+// It speaks our language (Charge, Refund), not the provider's (intents,
+// captures, webhooks): the port is an anti-corruption layer, and a real
+// adapter does the translation.
+type PaymentGateway interface {
+	// Charge takes amount for the order. The order ID is the idempotency
+	// key: charging the same order twice charges once. A refused card is
+	// ErrPaymentDeclined.
+	Charge(ctx context.Context, orderID domain.OrderID, amount sharedkernel.Money) (domain.PaymentRef, error)
+
+	// Refund gives amount back for a charge.
+	Refund(ctx context.Context, ref domain.PaymentRef, amount sharedkernel.Money) error
+}</code></pre>
+<!-- /snippet -->
+<!-- snippet: lesson-7.7 internal/ticketing/domain/order.go#PlaceOrder -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/c9b81b245fde/internal/ticketing/domain/order.go"><code>internal/ticketing/domain/order.go</code></a> at <code>lesson-7.7</code></div>
+<pre><code>// PlaceOrder starts a checkout for the customer's own, live hold (TKT-6). The
+// total is the sum of the lines, in one currency.
+func PlaceOrder(id OrderID, customer CustomerID, email ContactEmail, hold HoldView, now time.Time) (*Order, error) {
+	if id.IsZero() || customer.IsZero() {
+		return nil, fmt.Errorf("%w: zero order or customer id", ErrInvalidID)
+	}
+	if email == (ContactEmail{}) {
+		return nil, fmt.Errorf("%w: no contact email", ErrInvalidContactEmail)
+	}
+	if hold.Customer != customer {
+		return nil, fmt.Errorf("%w: hold %s", ErrNotHoldOwner, hold.HoldID)
+	}
+	if !now.Before(hold.ExpiresAt) {
+		return nil, fmt.Errorf("%w: hold %s", ErrHoldExpired, hold.HoldID)
+	}
+	if len(hold.Lines) == 0 {
+		return nil, fmt.Errorf("%w: hold %s has no seats", ErrHoldNotFound, hold.HoldID)
+	}
+	total := hold.Lines[0].Price
+	for _, l := range hold.Lines[1:] {
+		var err error
+		if total, err = total.Add(l.Price); err != nil {
+			return nil, err
+		}
+	}
+	o := &amp;Order{
+		id: id, showID: hold.ShowID, holdID: hold.HoldID, customer: customer, email: email,
+		lines: slices.Clone(hold.Lines), total: total, status: Pending,
+	}
+	o.events.Record(OrderPlaced{OrderID: id, ShowID: hold.ShowID, HoldID: hold.HoldID, CustomerID: customer, Total: total, At: now})
+	return o, nil
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l7-8">
@@ -133,6 +502,115 @@
   <li>HTTP: <code>POST /orders</code> takes <code>{"holdId", "customerId", "contactEmail"}</code>, all typed by the customer. A missing or malformed field → 422; a hold that isn't this customer's → 403 (TKT-6).</li>
   <li>The S1 outer-loop test goes green.</li>
 </ol></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-7.7 lesson-7.8 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-7.7</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/e83071892236"><code>lesson-7.8</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/c9b81b245fde...e83071892236">this lesson's 5 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>The saga's steps talk over a private topic (<code>ticketing.internal</code>, keyed by order); its messages are not a Published Language and live in <code>adapters/sagamsg</code>.</li>
+  <li>Ticket IDs derive from order + seat, so a redelivered <code>SeatsSold</code> can't issue duplicates.</li>
+</ul>
+<!-- snippet: lesson-7.8 internal/ticketing/application/checkout.go#CheckoutHandler.Handle -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/e83071892236/internal/ticketing/application/checkout.go"><code>internal/ticketing/application/checkout.go</code></a> at <code>lesson-7.8</code></div>
+<pre><code>// Handle places the order (tx1), charges it outside any transaction, and
+// records the outcome (tx2). It only reads the inventory: confirming the hold
+// is the saga's next step, driven by OrderPaid. A declined card leaves the
+// hold in place, so the customer can try again.
+func (h *CheckoutHandler) Handle(ctx context.Context, cmd Checkout) (CheckoutResult, error) {
+	email, err := domain.NewContactEmail(cmd.ContactEmail)
+	if err != nil {
+		return CheckoutResult{}, fmt.Errorf("checkout: %w", err)
+	}
+	customer, err := domain.ParseCustomerID(cmd.CustomerID)
+	if err != nil {
+		return CheckoutResult{}, fmt.Errorf("checkout: %w", err)
+	}
+	holdID, err := domain.ParseHoldID(cmd.HoldID)
+	if err != nil {
+		return CheckoutResult{}, fmt.Errorf("checkout: %w", err)
+	}
+	inv, err := h.inventories.GetByHold(ctx, holdID)
+	if err != nil {
+		return CheckoutResult{}, fmt.Errorf("checkout: %w", err)
+	}
+	hold, err := inv.HoldView(holdID)
+	if err != nil {
+		return CheckoutResult{}, fmt.Errorf("checkout: %w", err)
+	}
+	order, err := domain.PlaceOrder(h.ids.NewOrderID(), customer, email, hold, h.clock.Now())
+	if err != nil {
+		return CheckoutResult{}, fmt.Errorf("checkout: %w", err)
+	}
+	if err := h.orders.Save(ctx, order); err != nil {
+		return CheckoutResult{}, fmt.Errorf("checkout: place: %w", err)
+	}
+
+	ref, chargeErr := h.gateway.Charge(ctx, order.ID(), order.Total())
+	order, err = h.orders.Get(ctx, order.ID())
+	if err != nil {
+		return CheckoutResult{}, fmt.Errorf("checkout: reload: %w", err)
+	}
+	switch {
+	case chargeErr == nil:
+		err = order.MarkPaid(ref, h.clock.Now())
+	case errors.Is(chargeErr, ErrPaymentDeclined):
+		err = order.MarkPaymentFailed(chargeErr.Error(), h.clock.Now())
+	default:
+		// Unknown outcome: the order stays Pending. A reconciliation job
+		// (the provider's records, keyed by order ID) settles it.
+		return CheckoutResult{}, fmt.Errorf("checkout: charge: %w", chargeErr)
+	}
+	if err != nil {
+		return CheckoutResult{}, fmt.Errorf("checkout: %w", err)
+	}
+	if err := h.orders.Save(ctx, order); err != nil {
+		return CheckoutResult{}, fmt.Errorf("checkout: record payment: %w", err)
+	}
+	return CheckoutResult{OrderID: order.ID(), Status: order.Status()}, nil
+}</code></pre>
+<!-- /snippet -->
+<!-- snippet: lesson-7.8 internal/ticketing/application/saga.go#ConfirmHoldHandler.Handle -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/e83071892236/internal/ticketing/application/saga.go"><code>internal/ticketing/application/saga.go</code></a> at <code>lesson-7.8</code></div>
+<pre><code>// Handle confirms the hold. If it lapsed or is gone, the inventory records
+// HoldConfirmationFailed instead and the saga compensates with a refund
+// (TKT-8). Redelivery is a no-op: the domain knows the order is confirmed.
+func (h *ConfirmHoldHandler) Handle(ctx context.Context, cmd ConfirmHold) error {
+	showID, err := domain.ParseShowID(cmd.ShowID)
+	if err != nil {
+		return fmt.Errorf("confirm hold: %w", err)
+	}
+	holdID, err := domain.ParseHoldID(cmd.HoldID)
+	if err != nil {
+		return fmt.Errorf("confirm hold: %w", err)
+	}
+	orderID, err := domain.ParseOrderID(cmd.OrderID)
+	if err != nil {
+		return fmt.Errorf("confirm hold: %w", err)
+	}
+	err = RetryOnConflict(ctx, conflictAttempts, func(ctx context.Context) error {
+		inv, err := h.inventories.Get(ctx, showID)
+		if err != nil {
+			return fmt.Errorf("load: %w", err)
+		}
+		now := h.clock.Now()
+		if err := inv.ConfirmHold(holdID, orderID, now); err != nil {
+			if !errors.Is(err, domain.ErrHoldExpired) &amp;&amp; !errors.Is(err, domain.ErrHoldNotFound) {
+				return err
+			}
+			inv.RejectConfirmation(holdID, orderID, err, now)
+		}
+		if err := h.inventories.Save(ctx, inv); err != nil {
+			return fmt.Errorf("save: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("confirm hold: %w", err)
+	}
+	return nil
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l7-9">
@@ -146,6 +624,64 @@
   <li>The scheduler, with an injected tick channel, calls the use case once per tick and stops on context cancel.</li>
 </ol></div>
 <div class="callout discuss"><span class="label">Discuss</span><p>HTTP, Kafka and a ticker all "drive" the application. What do the three adapters have in common? Which port do they call?</p></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-7.8 lesson-7.9 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-7.8</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/d46da400a9e6"><code>lesson-7.9</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/e83071892236...d46da400a9e6">this lesson's 2 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>The scheduler takes a tick channel, so its test sends ticks instead of sleeping.</li>
+</ul>
+<!-- snippet: lesson-7.9 internal/ticketing/adapters/driving/scheduler/scheduler.go#Run -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/d46da400a9e6/internal/ticketing/adapters/driving/scheduler/scheduler.go"><code>internal/ticketing/adapters/driving/scheduler/scheduler.go</code></a> at <code>lesson-7.9</code></div>
+<pre><code>// Run calls job once per tick until ctx is done. Errors are logged; the next
+// tick tries again. Production passes time.NewTicker(d).C; tests pass their
+// own channel, so nothing sleeps.
+func Run(ctx context.Context, ticks &lt;-chan time.Time, job func(context.Context) error, logger *slog.Logger) {
+	for {
+		select {
+		case &lt;-ctx.Done():
+			return
+		case &lt;-ticks:
+			if err := job(ctx); err != nil &amp;&amp; ctx.Err() == nil {
+				logger.WarnContext(ctx, "scheduled job failed", "error", err)
+			}
+		}
+	}
+}</code></pre>
+<!-- /snippet -->
+<!-- snippet: lesson-7.9 internal/ticketing/application/expire_holds.go#ExpireHoldsHandler.Handle -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/d46da400a9e6/internal/ticketing/application/expire_holds.go"><code>internal/ticketing/application/expire_holds.go</code></a> at <code>lesson-7.9</code></div>
+<pre><code>// Handle sweeps every show with lapsed holds, one inventory transaction each.
+func (h *ExpireHoldsHandler) Handle(ctx context.Context) error {
+	now := h.clock.Now()
+	shows, err := h.expired.ShowsWithExpiredHolds(ctx, now)
+	if err != nil {
+		return fmt.Errorf("expire holds: %w", err)
+	}
+	var errs []error
+	for _, showID := range shows {
+		err := RetryOnConflict(ctx, conflictAttempts, func(ctx context.Context) error {
+			inv, err := h.inventories.Get(ctx, showID)
+			if err != nil {
+				return fmt.Errorf("load: %w", err)
+			}
+			inv.ExpireHolds(now)
+			if err := h.inventories.Save(ctx, inv); err != nil {
+				return fmt.Errorf("save: %w", err)
+			}
+			return nil
+		})
+		if err != nil {
+			errs = append(errs, fmt.Errorf("show %s: %w", showID, err))
+		}
+	}
+	if err := errors.Join(errs...); err != nil {
+		return fmt.Errorf("expire holds: %w", err)
+	}
+	return nil
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l7-10">
@@ -160,6 +696,66 @@
   <li><code>show.cancelled.v1</code> for a show that was cancelled while still Draft (so no inventory exists) is a harmless no-op, not a DLQ entry.</li>
   <li>Show side: <code>inventory_sold_out</code> arriving for a show that has already been cancelled. <code>ticketing.events</code> and <code>show.events</code> are different topics, so nothing orders them. <code>MarkSoldOut</code> on a terminal show must be ignored, not rejected.</li>
 </ol></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-7.9 lesson-7.10 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-7.9</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/6a6d16fd0f89"><code>lesson-7.10</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/d46da400a9e6...6a6d16fd0f89">this lesson's 7 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>Show's consumer group reads <code>venue.events</code> and <code>ticketing.events</code>, routed by event-type prefix (<code>byEventPrefix</code>). One group per context, whatever it listens to.</li>
+</ul>
+<!-- snippet: lesson-7.10 internal/ticketing/application/cancellation.go#OnInventoryClosedHandler.Handle -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/6a6d16fd0f89/internal/ticketing/application/cancellation.go"><code>internal/ticketing/application/cancellation.go</code></a> at <code>lesson-7.10</code></div>
+<pre><code>// Handle voids and refunds. Re-running it finds nothing left to do.
+func (h *OnInventoryClosedHandler) Handle(ctx context.Context, cmd OnInventoryClosed) error {
+	showID, err := domain.ParseShowID(cmd.ShowID)
+	if err != nil {
+		return fmt.Errorf("on inventory closed: %w", err)
+	}
+	tickets, err := h.tickets.ListByShow(ctx, showID)
+	if err != nil {
+		return fmt.Errorf("on inventory closed: %w", err)
+	}
+	var errs []error
+	for _, t := range tickets {
+		if t.Status() == domain.VoidedTicket {
+			continue
+		}
+		t.Void(h.clock.Now())
+		if err := h.tickets.Save(ctx, t); err != nil {
+			errs = append(errs, fmt.Errorf("void ticket %s: %w", t.ID(), err))
+		}
+	}
+	orders, err := h.orders.ListPaidForShow(ctx, showID)
+	if err != nil {
+		return fmt.Errorf("on inventory closed: %w", err)
+	}
+	for _, o := range orders {
+		if err := h.refund.Handle(ctx, RefundOrder{OrderID: o.ID().String()}); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if err := errors.Join(errs...); err != nil {
+		return fmt.Errorf("on inventory closed: %w", err)
+	}
+	return nil
+}</code></pre>
+<!-- /snippet -->
+<!-- snippet: lesson-7.10 cmd/stagehand/serve.go#byEventPrefix -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/6a6d16fd0f89/cmd/stagehand/serve.go"><code>cmd/stagehand/serve.go</code></a> at <code>lesson-7.10</code></div>
+<pre><code>// byEventPrefix routes one consumer group's records to the consumer of the
+// topic they came from: a context has one group, whatever it listens to.
+func byEventPrefix(routes map[string]kafka.Handler) kafka.Handler {
+	return func(ctx context.Context, env kafka.Envelope) error {
+		for prefix, handle := range routes {
+			if strings.HasPrefix(env.EventType, prefix) {
+				return handle(ctx, env)
+			}
+		}
+		return nil
+	}
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 </main>
 <script src="assets/course.js"></script>

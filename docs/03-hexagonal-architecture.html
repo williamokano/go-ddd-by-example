@@ -165,16 +165,17 @@ type AddSection struct {          // the command: primitives only, comes from an
 
 type AddSectionHandler struct {
 	venues VenueRepository        // driven port
+	clock  Clock                  // driven port: time is an input (ADR-008)
 }
 
-func NewAddSectionHandler(venues VenueRepository) *AddSectionHandler { ... }
+func NewAddSectionHandler(venues VenueRepository, clock Clock) *AddSectionHandler { ... }
 
 func (h *AddSectionHandler) Handle(ctx context.Context, cmd AddSection) error {
 	id, err := domain.ParseVenueID(cmd.VenueID)       // 1. parse into domain types
 	...
 	venue, err := h.venues.Get(ctx, id)               // 2. load
 	...
-	if err := venue.AddSection(section); err != nil { // 3. ONE behaviour call; rules live in the domain
+	if err := venue.AddSection(section, h.clock.Now()); err != nil { // 3. ONE behaviour call; rules live in the domain
 		return err
 	}
 	return h.venues.Save(ctx, venue)                  // 4. save (+ outbox, atomically)
@@ -186,12 +187,12 @@ func (h *AddSectionHandler) Handle(ctx context.Context, cmd AddSection) error {
 ├─ adapters/driving/httpapi   decode JSON → application.AddSection{...}       (protocol → command)
 │                             call handler.Handle(ctx, cmd)
 ├─ application                parse IDs/VOs, venues.Get(ctx, id)              (orchestration)
-│                             venue.AddSection(section)
+│                             venue.AddSection(section, now)
 ├─ domain                     check VEN-2, VEN-3, VEN-4; append; record SectionAdded   (rules)
 ├─ application                venues.Save(ctx, venue)
 ├─ adapters/driven/postgres   BEGIN; UPDATE venue … WHERE version=$n; upsert sections;
 │                             INSERT outbox (events → messages); COMMIT                 (technology)
-└─ adapters/driving/httpapi   201 Created  |  errors.Is(err, domain.ErrDuplicateSectionCode) → 409
+└─ adapters/driving/httpapi   204 No Content  |  errors.Is(err, domain.ErrDuplicateSectionCode) → 409
 
 … later, asynchronously:  platform/outbox relay → Kafka topic → other contexts' consumers</code></pre>
 

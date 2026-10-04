@@ -125,6 +125,18 @@ ol.tests { counter-reset: t; list-style: none; padding-left: 0; }
 ol.tests li { counter-increment: t; padding-left: 34px; position: relative; }
 ol.tests li::before { content: counter(t); position: absolute; left: 0; top: 1px; width: 24px; height: 24px; border-radius: 50%; background: var(--tdd-bg); color: var(--tdd); font-size: .75rem; font-weight: 700; display: grid; place-items: center; }
 
+/* reference solution (collapsed spoiler at the end of a lesson) */
+details.solution { border: 1px dashed var(--border); border-radius: 8px; margin: 18px 0 4px; background: var(--surface-2); }
+details.solution > summary { cursor: pointer; padding: 9px 14px; font-weight: 600; font-size: .9rem; color: var(--muted); list-style-position: inside; }
+details.solution > summary:hover { color: var(--text); }
+details.solution[open] > summary { border-bottom: 1px dashed var(--border); }
+details.solution > :not(summary) { margin-left: 14px; margin-right: 14px; }
+details.solution > :last-child { margin-bottom: 14px; }
+details.solution .resume { font-size: .9rem; }
+details.solution .snippet-src { font-size: .8rem; color: var(--muted); margin: 14px 14px -8px; overflow-wrap: anywhere; }
+details.solution pre { background: var(--code-bg); margin-top: 10px; tab-size: 4; }
+details.solution ul { padding-left: 20px; }
+
 /* term lists (key terms page) */
 dl.terms { margin: 12px 0; }
 dl.terms > dt { font-weight: 700; margin-top: 16px; scroll-margin-top: 16px; }
