@@ -9,17 +9,20 @@ import (
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/domain"
 )
 
-type (
-	confirmHoldStep interface {
-		Handle(context.Context, ConfirmHold) error
-	}
-	issueTicketsStep interface {
-		Handle(context.Context, IssueTickets) error
-	}
-	refundOrderStep interface {
-		Handle(context.Context, RefundOrder) error
-	}
-)
+// ConfirmHoldStep is the saga step that sells a paid order's seats.
+type ConfirmHoldStep interface {
+	Handle(context.Context, ConfirmHold) error
+}
+
+// IssueTicketsStep is the saga step that issues the tickets.
+type IssueTicketsStep interface {
+	Handle(context.Context, IssueTickets) error
+}
+
+// RefundOrderStep is the saga's compensation.
+type RefundOrderStep interface {
+	Handle(context.Context, RefundOrder) error
+}
 
 // CheckoutOrchestrator runs the checkout as a process manager (9.4): each
 // saga fact goes to the order's CheckoutProcess, which decides the next
@@ -32,26 +35,26 @@ type (
 // is idempotent, does nothing new.
 type CheckoutOrchestrator struct {
 	processes CheckoutProcessRepository
-	confirm   confirmHoldStep
-	issue     issueTicketsStep
-	refund    refundOrderStep
+	confirm   ConfirmHoldStep
+	issue     IssueTicketsStep
+	refund    RefundOrderStep
 	clock     Clock
 }
 
 // NewCheckoutOrchestrator wires the process manager to the steps it drives.
-func NewCheckoutOrchestrator(processes CheckoutProcessRepository, confirm confirmHoldStep, issue issueTicketsStep,
-	refund refundOrderStep, clock Clock) *CheckoutOrchestrator {
+func NewCheckoutOrchestrator(processes CheckoutProcessRepository, confirm ConfirmHoldStep, issue IssueTicketsStep,
+	refund RefundOrderStep, clock Clock) *CheckoutOrchestrator {
 	return &CheckoutOrchestrator{processes: processes, confirm: confirm, issue: issue, refund: refund, clock: clock}
 }
 
 // Confirm handles OrderPaid; it starts the process.
-func (o *CheckoutOrchestrator) Confirm() confirmHoldStep { return orchestratedConfirm{o} }
+func (o *CheckoutOrchestrator) Confirm() ConfirmHoldStep { return orchestratedConfirm{o} }
 
 // Issue handles SeatsSold.
-func (o *CheckoutOrchestrator) Issue() issueTicketsStep { return orchestratedIssue{o} }
+func (o *CheckoutOrchestrator) Issue() IssueTicketsStep { return orchestratedIssue{o} }
 
 // Refund handles HoldConfirmationFailed.
-func (o *CheckoutOrchestrator) Refund() refundOrderStep { return orchestratedRefund{o} }
+func (o *CheckoutOrchestrator) Refund() RefundOrderStep { return orchestratedRefund{o} }
 
 type (
 	orchestratedConfirm struct{ o *CheckoutOrchestrator }

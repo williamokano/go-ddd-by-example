@@ -66,25 +66,25 @@ type CheckoutProcess struct {
 }
 
 // StartCheckout starts the process for a placed order.
-func StartCheckout(order OrderID, show ShowID, now time.Time) (*CheckoutProcess, error) {
+func StartCheckout(order OrderID, show ShowID, _ time.Time) (*CheckoutProcess, error) {
 	if order.IsZero() || show.IsZero() {
 		return nil, fmt.Errorf("%w: zero order or show id", ErrInvalidID)
 	}
 	return &CheckoutProcess{orderID: order, showID: show, state: CheckoutStarted}, nil
 }
 
-// OrderPaid: the money is in, so confirm the held seats.
+// OrderPaid means the money is in, so the held seats are confirmed next.
 func (p *CheckoutProcess) OrderPaid(now time.Time) (CheckoutStep, error) {
 	return p.advance(CheckoutStarted, CheckoutAwaitingSeats, StepConfirmSeats, now)
 }
 
-// SeatsSold: the seats are the order's, so issue the tickets. That is the
-// last step: the checkout is complete.
+// SeatsSold means the seats are the order's, so the tickets are issued next.
+// That is the last step: the checkout is complete.
 func (p *CheckoutProcess) SeatsSold(now time.Time) (CheckoutStep, error) {
 	return p.advance(CheckoutAwaitingSeats, CheckoutCompleted, StepIssueTickets, now)
 }
 
-// ConfirmationFailed: the hold was gone, so give the money back (TKT-8).
+// ConfirmationFailed means the hold was gone, so the money goes back (TKT-8).
 func (p *CheckoutProcess) ConfirmationFailed(now time.Time) (CheckoutStep, error) {
 	return p.advance(CheckoutAwaitingSeats, CheckoutCompensated, StepRefund, now)
 }
