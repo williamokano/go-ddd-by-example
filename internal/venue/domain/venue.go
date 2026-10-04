@@ -49,8 +49,12 @@ func (v *Venue) Status() Status { return v.status }
 
 // AddSection adds a section to the venue's layout. Section codes are unique
 // within the venue (VEN-2): only the root sees all the sections, so only the
-// root can enforce it.
+// root can enforce it. The layout can only change while the venue is a
+// draft (VEN-4).
 func (v *Venue) AddSection(s Section) error {
+	if v.status != Draft {
+		return fmt.Errorf("%w: venue is %s", ErrVenueNotDraft, v.status)
+	}
 	if s.IsZero() {
 		return fmt.Errorf("%w: zero section", ErrInvalidSection)
 	}

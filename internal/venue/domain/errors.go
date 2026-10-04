@@ -12,6 +12,7 @@ var (
 	ErrDuplicateSectionCode   = errors.New("venue: duplicate section code")                   // VEN-2
 	ErrVenueHasNoSections     = errors.New("venue: cannot activate a venue without sections") // VEN-5
 	ErrInvalidVenueTransition = errors.New("venue: invalid lifecycle transition")             // VEN-5, VEN-6
+	ErrVenueNotDraft          = errors.New("venue: layout can only change while draft")       // VEN-4
 	ErrInvalidSection         = errors.New("venue: invalid section")                          // VEN-3
 	ErrDuplicateRowLabel      = errors.New("venue: duplicate row label")                      // VEN-3
 	ErrInvalidRow             = errors.New("venue: invalid row")                              // VEN-3

@@ -104,6 +104,27 @@ func TestVenue_AddSection(t *testing.T) {
 	})
 }
 
+func TestVenue_AddSection_OnlyWhileDraft(t *testing.T) {
+	for name, newVenue := range map[string]func(*testing.T) *domain.Venue{
+		"active":  newActiveVenue,
+		"retired": newRetiredVenue,
+	} {
+		t.Run(name+" venue rejects layout changes (VEN-4)", func(t *testing.T) {
+			venue := newVenue(t)
+			before := venue.Sections()
+
+			err := venue.AddSection(gaSection(t, "BALCONY", 100))
+
+			if !errors.Is(err, domain.ErrVenueNotDraft) {
+				t.Errorf("AddSection() error = %v, want %v", err, domain.ErrVenueNotDraft)
+			}
+			if diff := cmp.Diff(sectionCodes(before), sectionCodes(venue.Sections())); diff != "" {
+				t.Errorf("Sections() changed (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestVenue_AddSection_RejectsAZeroSection(t *testing.T) {
 	venue := newDraftVenue(t)
 
