@@ -1,0 +1,9 @@
+{
+  "order_id": "0192f5e0-0000-7000-8000-0000000000d1",
+  "show_id": "0192f5e0-0000-7000-8000-000000000001",
+  "customer_id": "0192f5e0-0000-7000-8000-0000000000c1",
+  "contact_email": "ana@example.com",
+  "amount": 9000,
+  "currency": "EUR",
+  "refunded_at": "2026-11-01T20:00:00Z"
+}
