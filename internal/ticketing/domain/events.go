@@ -88,8 +88,9 @@ func (e InventorySoldOut) OccurredAt() time.Time { return e.At }
 
 // InventoryClosed records that sales stopped for good (TKT-11).
 type InventoryClosed struct {
-	ShowID ShowID
-	At     time.Time
+	ShowID        ShowID
+	ReleasedSeats []SeatRef // the seats of the holds it released
+	At            time.Time
 }
 
 // EventName implements DomainEvent.

@@ -186,12 +186,15 @@ func (inv *ShowInventory) Close(now time.Time) {
 	if inv.closed {
 		return
 	}
+	var released []SeatRef
 	for _, id := range inv.holdIDs() {
-		inv.freeSeats(inv.holds[id])
+		h := inv.holds[id]
+		inv.freeSeats(h)
+		released = append(released, h.seats...)
 		delete(inv.holds, id)
 	}
 	inv.closed = true
-	inv.events.Record(InventoryClosed{ShowID: inv.showID, At: now})
+	inv.events.Record(InventoryClosed{ShowID: inv.showID, ReleasedSeats: released, At: now})
 }
 
 func (inv *ShowInventory) isSoldTo(order OrderID) bool {
