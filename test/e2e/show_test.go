@@ -21,7 +21,7 @@ func (c *client) activeVenue() string {
 	id := c.registerVenue("Coliseu " + uuid.NewString()[:8])
 	mustStatus(c.t, c.do(http.MethodPost, "/venues/"+id+"/sections", map[string]any{
 		"code": "ORCH", "name": "Orchestra", "kind": "seated",
-		"rows": []map[string]any{{"label": "A", "seats": 2}},
+		"rows": []map[string]any{{"label": "A", "seats": 2, "accessibleSeats": []int{2}}},
 	}), http.StatusNoContent)
 	mustStatus(c.t, c.do(http.MethodPost, "/venues/"+id+"/sections", map[string]any{
 		"code": "FLOOR", "name": "Floor", "kind": "ga", "capacity": 3,
