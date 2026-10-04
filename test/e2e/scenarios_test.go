@@ -17,8 +17,8 @@ import (
 // HOLD_TTL=3s and HOLD_SWEEP_INTERVAL=500ms (docker-compose.yml defaults to
 // the real 10m and 5s).
 
-// S2 — Hold expires: the seat goes back on sale and the hold can no longer
-// be bought (TKT-4).
+// S2 — Hold expires: the seat goes back on sale, the hold can no longer be
+// bought, and another customer can hold the seat (TKT-4).
 func TestS2_HoldExpires(t *testing.T) {
 	c := newClient(t)
 	show := c.publishedShow()
@@ -36,6 +36,9 @@ func TestS2_HoldExpires(t *testing.T) {
 	})
 	if r.Status != http.StatusNotFound && r.Status != http.StatusConflict {
 		t.Errorf("checkout of an expired hold: status %d, want 404 or 409: %s", r.Status, r.Body)
+	}
+	if status := c.rawHold(show, uuid.NewString(), "ORCH/A/1"); status != http.StatusCreated {
+		t.Errorf("another customer holds the seat: status %d, want 201", status)
 	}
 }
 
