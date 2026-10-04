@@ -16,7 +16,7 @@
 
 <div class="callout why"><span class="label">How this track relates to the course</span>
 <ul>
-  <li><strong>Additive only.</strong> No existing chapter, rule or ADR is edited; the only changes to existing files are the sidebar entry, a pointer on the welcome page, and two small stylesheet fixes for narrow screens. Where this track changes the meaning of something (for example "Payments: buy it, fake adapter"), it says so and records an <a href="ext-decisions.html">extension ADR</a>.</li>
+  <li><strong>Additive only.</strong> No existing ADR is edited, and the only changes to existing files are the sidebar entry, a pointer on the welcome page, two small stylesheet fixes for narrow screens, and one fix to the main course that writing this track exposed: the order now carries a <em>contact email</em> given at checkout (TKT-6, lessons 7.7, 7.8 and 8.2), because Notifications had nowhere to send the tickets. Where this track changes the meaning of something (for example "Payments: buy it, fake adapter"), it says so and records an <a href="ext-decisions.html">extension ADR</a>.</li>
   <li><strong>Ignorable.</strong> Nothing in Parts 0–9 depends on it. Skip it, do it later, or do only the extensions you care about, as long as you respect the prerequisites below.</li>
   <li><strong>Same rules.</strong> Failing test first, simplest code, refactor. The dependency rule and the architecture test still apply, and several lessons extend that test.</li>
   <li><strong>Same format.</strong> Lessons use the same "Goal / Rules / Your turn / TDD script / Discuss" shape, with ids like <code>E5.3</code> and progress ticks in the sidebar. Track your progress in <code>tasks/extension.md</code>, separate from the course checklist.</li>
@@ -39,7 +39,7 @@
   <tr><td>E2 identity</td><td>Part 4 (HTTP, composition root, architecture test); E2.7 needs Part 1's <code>Venue</code></td><td>nothing</td></tr>
   <tr><td>E3 observability</td><td>Part 5 (outbox, consumers); E3.3 is richer after Part 7</td><td>nothing; labels by role are nicer after E2</td></tr>
   <tr><td>E4 audit</td><td>Part 8 (8.3 correlation ids, 8.4 inbox and <code>TxManager</code>)</td><td>E2 (the actor)</td></tr>
-  <tr><td>E5 payments</td><td>Part 8 (8.4 inbox for webhooks)</td><td>E2 for E5.9–E5.12 (refund and denylist permissions, and the customer's email for the denylist); E1 makes E5.9's amounts richer but isn't required</td></tr>
+  <tr><td>E5 payments</td><td>Part 8 (8.4 inbox for webhooks)</td><td>E2 for E5.9–E5.12 (refund and denylist permissions, and the account email the denylist also blocks); E1 makes E5.9's amounts richer but isn't required</td></tr>
   <tr><td>E6 fraud</td><td>Part 8</td><td>E5 (it screens before payments and learns from them); E2 for manual review</td></tr>
 </table></div>
 <pre><code>E1 pricing                           (independent: domain only)

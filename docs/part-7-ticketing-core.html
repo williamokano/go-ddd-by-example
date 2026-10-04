@@ -109,7 +109,8 @@
   <dt>Creates</dt><dd><code>domain/order.go</code>; the <code>application.PaymentGateway</code> port (<code>Charge(ctx, orderID, amount) (PaymentRef, error)</code>, <code>Refund(ctx, ref, amount) error</code>); <code>adapters/driven/payment/fakegateway</code></dd>
 </dl>
 <div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
-  <li><code>PlaceOrder(orderID, customer, hold view, prices, now)</code>: the total is the sum of the lines; mixed currencies → error; the order is Pending and records <code>OrderPlaced</code>.</li>
+  <li><code>PlaceOrder(orderID, customer, contactEmail, hold view, prices, now)</code>: the total is the sum of the lines; mixed currencies → error; the order is Pending and records <code>OrderPlaced</code>.</li>
+  <li><code>ContactEmail</code> is a value object: trimmed and lower-cased, and a malformed address → error before any order exists (TKT-6).</li>
   <li>Transition table for Pending → Paid / PaymentFailed, Paid → Fulfilled / Refunded, Fulfilled → Refunded, plus the illegal ones.</li>
   <li>Fake gateway modes: approve, decline, delay. It records calls so tests can assert "Refund was called for order X".</li>
 </ol></div>
@@ -128,6 +129,7 @@
   <li>ConfirmHold handler: on <code>OrderPaid</code>, the inventory confirms. Redelivery is a no-op.</li>
   <li>IssueTickets handler: on <code>SeatsSold</code>, one ticket per seat with unique codes (TKT-9), and the order becomes Fulfilled. Redelivery issues no duplicates. How do you detect that? (A deterministic ticket ID derived from order + seat, or a uniqueness constraint.)</li>
   <li>RefundOrder handler: on <code>HoldConfirmationFailed</code>, the gateway refunds and the order becomes Refunded. <strong>This is the compensation.</strong></li>
+  <li>HTTP: <code>POST /orders</code> takes <code>{"holdId", "contactEmail"}</code>; the customer still comes from the <code>X-Customer-ID</code> header. A missing or malformed email → 422.</li>
   <li>The S1 outer-loop test goes green.</li>
 </ol></div>
 </section>

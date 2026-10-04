@@ -266,7 +266,7 @@ type ProviderNotification interface{ isNotification() }
 </dl>
 <div class="table-wrap"><table class="rules">
   <tr><th>Id</th><th>Rule</th></tr>
-  <tr><td>TKT-17</td><td>When Payments reports a chargeback for an order, the order becomes <code>ChargedBack</code> and its tickets are voided for good (a gate scan must fail, 9.2). <strong>Nothing is refunded</strong>: the bank has already taken the money back. Ticketing publishes <code>ticketing.order_charged_back.v1</code> with the order, the customer and the payment method's fingerprint.</td></tr>
+  <tr><td>TKT-17</td><td>When Payments reports a chargeback for an order, the order becomes <code>ChargedBack</code> and its tickets are voided for good (a gate scan must fail, 9.2). <strong>Nothing is refunded</strong>: the bank has already taken the money back. Ticketing publishes <code>ticketing.order_charged_back.v1</code> with the order, the customer, the order's contact email and the payment method's fingerprint.</td></tr>
 </table></div>
 <div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
   <li><code>OpenDispute(disputeID, paymentID, amount, reasonCode, respondBy, now)</code> only for a captured payment (possibly partly or fully refunded); the amount can't exceed what was captured. Records <code>DisputeOpened</code>.</li>
@@ -311,38 +311,39 @@ type ProviderNotification interface{ isNotification() }
 <dl class="meta">
   <dt>Goal</dt><dd>A charged-back customer can't buy anything again: not with the same account, not with the same email on a new account, and not with the same card on any account.</dd>
   <dt>Rules</dt><dd>TKT-19 (new), PAY-9, DNY-4</dd>
-  <dt>Touches</dt><dd>Denylist (a policy and a projection), Ticketing (<code>HoldSeats</code>, <code>Checkout</code>), Payments (<code>AuthorizePayment</code>), Identity's published contract (E2)</dd>
+  <dt>Touches</dt><dd>Denylist (a policy, and a projection of Identity's events), Ticketing (<code>HoldSeats</code>, <code>Checkout</code>), Payments (<code>AuthorizePayment</code>), Identity's published contract (E2)</dd>
 </dl>
 <div class="table-wrap"><table class="rules">
   <tr><th>Id</th><th>Rule</th></tr>
-  <tr><td>TKT-19</td><td>A customer whose account or email is denylisted can't hold seats or place orders. The refusal is the same generic error for every reason, and it happens before any seat is touched.</td></tr>
+  <tr><td>TKT-19</td><td>A customer whose account is denylisted can't hold seats or place orders, and no order can be placed with a denylisted contact email. The refusal is the same generic error for every reason, and it happens before any seat is touched.</td></tr>
 </table></div>
 <pre><code>ticketing.order_charged_back.v1
-   {orderRef, customerId, paymentMethodFingerprint}
+   {orderRef, customerId, contactEmail, paymentMethodFingerprint}
         │
         ▼
 Denylist policy BlockOnChargeback
    block customer:&lt;id&gt;
-   block email:&lt;hash&gt;        ◄── projection customerId → email
-   block payment_method:&lt;fp&gt;     (from identity.user_* events, E2)
+   block email:&lt;hash of contactEmail&gt;
+   block email:&lt;hash of account email&gt;  ◄── projection customerId →
+   block payment_method:&lt;fp&gt;                account email (Identity, E2)
 
 Enforcement: each context checks the identifiers it owns
-   Ticketing  HoldSeats, Checkout
-              └─► Check({customer})            TKT-19
-                  (Denylist also checks that customer's email)
+   Ticketing  HoldSeats ─► Check({customer})                 TKT-19
+              Checkout  ─► Check({customer, email})          TKT-19
+              (a customer check also covers its account email)
    Payments   AuthorizePayment
               └─► DescribePaymentMethod
-              └─► Check({payment_method})      PAY-9</code></pre>
+              └─► Check({payment_method})                    PAY-9</code></pre>
 <div class="callout tdd"><span class="label">TDD script (outside-in)</span><ol class="tests">
-  <li><strong>Acceptance (red):</strong> a customer buys, the fake provider opens a dispute → the order is ChargedBack, tickets are void, and then: (a) the same account can't hold seats; (b) a <em>new</em> account with the same email can't hold seats; (c) a different, clean account paying with the same card is declined with <code>PaymentMethodNotAccepted</code>; (d) a clean account with a different card buys normally.</li>
-  <li>Policy <code>BlockOnChargeback</code>: one event → three entries, each with reason <code>chargeback</code> and the dispute as source. Redelivery adds nothing (DNY-2 + inbox).</li>
-  <li>Projection: Denylist keeps <code>customerId → email hash</code> from Identity's events (publish <code>identity.user_registered.v1</code> and <code>identity.user_email_changed.v1</code> from E2 if you haven't). A check for <code>customer:X</code> also checks X's email, which is how (b) is caught.</li>
-  <li>Ticketing: <code>HoldSeats</code> and <code>Checkout</code> call the denylist before touching the inventory; blocked → <code>ErrPurchaseNotAllowed</code> → 403 with a generic body. With E2, the customer id comes from the principal, so it can't be spoofed.</li>
+  <li><strong>Acceptance (red):</strong> a customer buys, the fake provider opens a dispute → the order is ChargedBack, tickets are void, and then: (a) the same account can't hold seats; (b) a <em>new</em> account can't check out with the same contact email, and can't even hold seats if its <em>account</em> email is the blocked one; (c) a different, clean account paying with the same card is declined with <code>PaymentMethodNotAccepted</code>; (d) a clean account with a different card buys normally.</li>
+  <li>Policy <code>BlockOnChargeback</code>: one event → entries for the customer, the order's contact email, the customer's account email (when the projection knows it; often the same value, so DNY-2 collapses them) and the card, each with reason <code>chargeback</code> and the dispute as source. Redelivery adds nothing (DNY-2 + inbox).</li>
+  <li>Projection: Denylist keeps <code>customerId → account email hash</code> from Identity's events (publish <code>identity.user_registered.v1</code> and <code>identity.user_email_changed.v1</code> from E2 if you haven't). A check for <code>customer:X</code> also checks X's account email, which is how a fresh account with the blocked address is caught at <code>HoldSeats</code>.</li>
+  <li>Ticketing: <code>HoldSeats</code> checks <code>{customer}</code>; <code>Checkout</code> checks <code>{customer, email: contactEmail}</code>. Both run before touching the inventory or the order; blocked → <code>ErrPurchaseNotAllowed</code> → 403 with a generic body. With E2, the customer id comes from the principal, so it can't be spoofed.</li>
   <li>Payments: <code>AuthorizePayment</code> calls <code>DescribePaymentMethod</code> (the fake returns a fingerprint per test token, Stripe returns the card's fingerprint), checks it, and refuses without authorizing (PAY-9). The fingerprint is stored on the payment, which is where E5.10's event gets it.</li>
   <li>Staff with <code>denylist:manage</code> can lift an entry through <code>DELETE /denylist/{kind}/{value}</code> with a mandatory reason; with E4, both the block and the lift are in the audit trail.</li>
   <li>The denylist being unavailable fails the purchase (fail closed): it's our own database, so if it's down, so is checkout. Contrast with the fraud vendor in E6.4.</li>
 </ol></div>
-<div class="callout why"><span class="label">Why a context of its own, and why not block the token?</span><p>Blocking is a policy many contexts will use (chargebacks today, confirmed fraud in E6, a staff decision tomorrow) about identifiers that belong to different contexts (Identity owns emails, Payments owns card fingerprints, Ticketing owns customers). Putting the list in any one of them would make the others depend on its model. A tiny generic context with a published <code>Check</code> keeps the dependency pointing the right way (ADR-E17). The token is useless to block: the browser gets a new one every time. The provider's card fingerprint is stable across tokens for the same card, so that's the identifier.</p></div>
+<div class="callout why"><span class="label">Why a context of its own, and why not block the token?</span><p>Blocking is a policy many contexts will use (chargebacks today, confirmed fraud in E6, a staff decision tomorrow) about identifiers that belong to different contexts (Identity owns account emails, Ticketing owns customers and contact emails, Payments owns card fingerprints). Putting the list in any one of them would make the others depend on its model. A tiny generic context with a published <code>Check</code> keeps the dependency pointing the right way (ADR-E17). The token is useless to block: the browser gets a new one every time. The provider's card fingerprint is stable across tokens for the same card, so that's the identifier.</p></div>
 <div class="callout discuss"><span class="label">Discuss</span><p>A family shares one card; one member charges back. Everyone is now blocked. Is that the business you want? What would you change (expiry, staff review, blocking only the card), and in which rule?</p></div>
 </section>
 
