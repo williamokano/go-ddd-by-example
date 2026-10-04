@@ -17,7 +17,7 @@ func DecodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes))
 	dec.DisallowUnknownFields()
 	err := dec.Decode(dst)
-	if err == nil && dec.Decode(&struct{}{}) != io.EOF {
+	if err == nil && !errors.Is(dec.Decode(&struct{}{}), io.EOF) {
 		err = errors.New("body must contain a single JSON value")
 	}
 	if err != nil {
