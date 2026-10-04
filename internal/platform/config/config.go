@@ -23,6 +23,7 @@ type Config struct {
 	HoldSweepInterval  time.Duration // HOLD_SWEEP_INTERVAL, default 5s: how often holds are expired
 	SagaStyle          string        // SAGA_STYLE: orchestration (default, 9.4) | choreography (ADR-010)
 	ShowSweepInterval  time.Duration // SHOW_SWEEP_INTERVAL, default 1m: how often ended shows complete (SHW-9)
+	OTLPEndpoint       string        // OTEL_EXPORTER_OTLP_ENDPOINT: where spans go (9.7); empty exports nothing
 
 	// ContextDatabaseURLs is each context's connection, as its own role
 	// (9.6): <CONTEXT>_DATABASE_URL, defaulting to DATABASE_URL. Migrations
@@ -40,6 +41,7 @@ func Load(getenv func(string) string) (Config, error) {
 		DatabaseURL:     getenv("DATABASE_URL"),
 		PaymentFakeMode: or(getenv("PAYMENT_FAKE_MODE"), "approve"),
 		SagaStyle:       or(getenv("SAGA_STYLE"), "orchestration"),
+		OTLPEndpoint:    getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
 	}
 	cfg.ContextDatabaseURLs = make(map[string]string, len(Contexts))
 	for _, ctx := range Contexts {

@@ -24,6 +24,7 @@ import (
 	"github.com/williamokano/go-ddd-by-example/internal/platform/outbox"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/postgres"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/scheduler"
+	"github.com/williamokano/go-ddd-by-example/internal/platform/telemetry"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/trace"
 	showids "github.com/williamokano/go-ddd-by-example/internal/show/adapters/driven/ids"
 	showpg "github.com/williamokano/go-ddd-by-example/internal/show/adapters/driven/postgres"
@@ -54,6 +55,12 @@ func serve(ctx context.Context) error {
 		return fmt.Errorf("config: %w", err)
 	}
 	logger := slog.New(trace.NewHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel})))
+
+	shutdownTracing, err := telemetry.Setup(ctx, "stagehand", cfg.OTLPEndpoint)
+	if err != nil {
+		return fmt.Errorf("telemetry: %w", err)
+	}
+	defer func() { _ = shutdownTracing(context.WithoutCancel(ctx)) }() // flush the last spans
 
 	// One pool per context, each connected as its context's role (9.6):
 	// Postgres refuses any query outside the context's own schema.
@@ -193,7 +200,7 @@ func serve(ctx context.Context) error {
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpx.Chain(mux, httpx.RequestID, httpx.Correlation, httpx.Recover(logger), httpx.AccessLog(logger), fakegateway.ModeHeader),
+		Handler:           httpx.Chain(mux, httpx.RequestID, httpx.Tracing, httpx.Correlation, httpx.Recover(logger), httpx.AccessLog(logger), fakegateway.ModeHeader),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	return runServer(ctx, server, logger)

@@ -79,13 +79,19 @@ services:
       HOLD_TTL: ${HOLD_TTL:-10m}
       HOLD_SWEEP_INTERVAL: ${HOLD_SWEEP_INTERVAL:-5s}
       SAGA_STYLE: ${SAGA_STYLE:-orchestration}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     depends_on:
       migrate: { condition: service_completed_successfully }
       kafka-init: { condition: service_completed_successfully }
+      jaeger: { condition: service_started }
     healthcheck:
       test: ["CMD", "/stagehand", "healthcheck"]
       interval: 2s
       retries: 30
+
+  jaeger:                               # 9.7: traces at http://localhost:16686
+    image: jaegertracing/jaeger:2.10.0
+    ports: ["16686:16686", "4318:4318"]
 
 volumes:
   pgdata: {}

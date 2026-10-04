@@ -37,14 +37,15 @@ func TestLoad(t *testing.T) {
 		got, err := config.Load(env(map[string]string{
 			"DATABASE_URL": "postgres://x", "HTTP_ADDR": ":9000", "LOG_LEVEL": "debug",
 			"KAFKA_BROKERS": "k1:9092, k2:9092", "OUTBOX_POLL_INTERVAL": "1s", "HOLD_TTL": "30s", "PAYMENT_FAKE_MODE": "decline",
-			"SAGA_STYLE": "choreography",
+			"SAGA_STYLE":                  "choreography",
+			"OTEL_EXPORTER_OTLP_ENDPOINT": "http://jaeger:4318",
 		}))
 
 		if err != nil {
 			t.Fatalf("Load() error = %v", err)
 		}
 		if got.HTTPAddr != ":9000" || got.LogLevel != slog.LevelDebug || got.OutboxPollInterval != time.Second || got.HoldTTL != 30*time.Second || got.PaymentFakeMode != "decline" ||
-			got.SagaStyle != "choreography" {
+			got.SagaStyle != "choreography" || got.OTLPEndpoint != "http://jaeger:4318" {
 			t.Errorf("config = %+v", got)
 		}
 		if diff := cmp.Diff([]string{"k1:9092", "k2:9092"}, got.KafkaBrokers); diff != "" {
