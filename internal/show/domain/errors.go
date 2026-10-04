@@ -13,6 +13,9 @@ var (
 	// SHW-2: doorsOpen ≤ startsAt < endsAt, at most 12h, start in the future.
 	ErrInvalidSchedule = errors.New("show: invalid schedule")
 
+	// SHW-3: no two non-cancelled shows overlap at the same venue.
+	ErrScheduleConflict = errors.New("show: schedule conflict")
+
 	// SHW-4: prices are positive amounts of one currency.
 	ErrInvalidMoney     = errors.New("show: invalid money")
 	ErrCurrencyMismatch = errors.New("show: currency mismatch")
