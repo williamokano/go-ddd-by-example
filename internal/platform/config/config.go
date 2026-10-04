@@ -20,6 +20,7 @@ type Config struct {
 	OutboxPollInterval time.Duration // OUTBOX_POLL_INTERVAL, default 200ms
 	HoldTTL            time.Duration // HOLD_TTL, default 10m (TKT-4); shorten it in e2e tests
 	PaymentFakeMode    string        // PAYMENT_FAKE_MODE: approve | decline | delay:3s; default approve
+	HoldSweepInterval  time.Duration // HOLD_SWEEP_INTERVAL, default 5s: how often holds are expired
 }
 
 // Load builds the Config from getenv (os.Getenv in main, a map in tests).
@@ -43,6 +44,9 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, err
 	}
 	if cfg.HoldTTL, err = duration(getenv, "HOLD_TTL", "10m"); err != nil {
+		return Config{}, err
+	}
+	if cfg.HoldSweepInterval, err = duration(getenv, "HOLD_SWEEP_INTERVAL", "5s"); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil

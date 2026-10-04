@@ -38,3 +38,6 @@ INSERT INTO ticketing.holds (hold_id, show_id, customer_id, seats, expires_at) V
 -- The read side: seats straight from the table.
 -- name: InventoryExists :one
 SELECT EXISTS (SELECT 1 FROM ticketing.inventories WHERE show_id = $1);
+
+-- name: ShowsWithExpiredHolds :many
+SELECT DISTINCT show_id FROM ticketing.holds WHERE expires_at <= $1;

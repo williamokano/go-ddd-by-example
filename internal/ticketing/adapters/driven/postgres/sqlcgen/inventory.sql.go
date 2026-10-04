@@ -206,6 +206,30 @@ func (q *Queries) ListSeats(ctx context.Context, showID uuid.UUID) ([]ListSeatsR
 	return items, nil
 }
 
+const showsWithExpiredHolds = `-- name: ShowsWithExpiredHolds :many
+SELECT DISTINCT show_id FROM ticketing.holds WHERE expires_at <= $1
+`
+
+func (q *Queries) ShowsWithExpiredHolds(ctx context.Context, expiresAt time.Time) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, showsWithExpiredHolds, expiresAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var show_id uuid.UUID
+		if err := rows.Scan(&show_id); err != nil {
+			return nil, err
+		}
+		items = append(items, show_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateInventory = `-- name: UpdateInventory :execrows
 UPDATE ticketing.inventories
 SET closed = $2, sold_out = $3, version = version + 1, updated_at = now()

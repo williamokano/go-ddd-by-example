@@ -28,6 +28,7 @@ import (
 	ticketingpg "github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/driven/postgres"
 	ticketingconsumer "github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/driving/consumer"
 	ticketinghttp "github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/driving/httpapi"
+	"github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/driving/scheduler"
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/sagamsg"
 	ticketingapp "github.com/williamokano/go-ddd-by-example/internal/ticketing/application"
 	"github.com/williamokano/go-ddd-by-example/internal/venue/adapters/driven/ids"
@@ -120,6 +121,12 @@ func serve(ctx context.Context) error {
 		Refund:  ticketingapp.NewRefundOrderHandler(orders, gateway, clk),
 	}, logger)
 	consume(ctx, &background, cfg, "ticketing-saga", []string{sagamsg.Topic}, saga.Handle, logger)
+
+	// A scheduler drives the application too: expire lapsed holds (TKT-4).
+	expireHolds := ticketingapp.NewExpireHoldsHandler(inventories, ticketingpg.NewExpiredHolds(pool), clk)
+	sweep := time.NewTicker(cfg.HoldSweepInterval)
+	defer sweep.Stop()
+	background.Go(func() { scheduler.Run(ctx, sweep.C, expireHolds.Handle, logger) })
 	showEvents := ticketingconsumer.NewShowConsumer(ticketingapp.NewOpenInventoryHandler(inventories, clk), logger)
 	consume(ctx, &background, cfg, "ticketing", []string{showcontracts.Topic}, showEvents.Handle, logger)
 

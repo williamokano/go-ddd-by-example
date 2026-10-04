@@ -22,7 +22,7 @@ func TestLoad(t *testing.T) {
 		want := config.Config{
 			HTTPAddr: ":8080", DatabaseURL: "postgres://x", LogLevel: slog.LevelInfo,
 			KafkaBrokers: []string{"localhost:9092"}, OutboxPollInterval: 200 * time.Millisecond,
-			HoldTTL: 10 * time.Minute, PaymentFakeMode: "approve",
+			HoldTTL: 10 * time.Minute, PaymentFakeMode: "approve", HoldSweepInterval: 5 * time.Second,
 		}
 		if diff := cmp.Diff(want, got); diff != "" {
 			t.Errorf("config mismatch (-want +got):\n%s", diff)
