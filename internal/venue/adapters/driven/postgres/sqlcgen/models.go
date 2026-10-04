@@ -8,7 +8,19 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+type VenueOutbox struct {
+	ID          int64
+	EventID     uuid.UUID
+	Topic       string
+	MsgKey      string
+	EventType   string
+	Payload     []byte
+	OccurredAt  time.Time
+	PublishedAt pgtype.Timestamptz
+}
 
 type VenueSection struct {
 	VenueID  uuid.UUID

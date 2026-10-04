@@ -12,16 +12,23 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/williamokano/go-ddd-by-example/internal/platform/idgen"
+	"github.com/williamokano/go-ddd-by-example/internal/platform/outbox"
 	"github.com/williamokano/go-ddd-by-example/internal/venue/adapters/driven/postgres/sqlcgen"
 	"github.com/williamokano/go-ddd-by-example/internal/venue/application"
 	"github.com/williamokano/go-ddd-by-example/internal/venue/domain"
 )
 
 // VenueRepository implements application.VenueRepository on Postgres.
-type VenueRepository struct{ pool *pgxpool.Pool }
+type VenueRepository struct {
+	pool       *pgxpool.Pool
+	newEventID func() uuid.UUID
+}
 
 // NewVenueRepository returns a repository using pool.
-func NewVenueRepository(pool *pgxpool.Pool) *VenueRepository { return &VenueRepository{pool: pool} }
+func NewVenueRepository(pool *pgxpool.Pool) *VenueRepository {
+	return &VenueRepository{pool: pool, newEventID: idgen.UUIDv7{}.New}
+}
 
 // Get implements application.VenueRepository.
 func (r *VenueRepository) Get(ctx context.Context, id domain.VenueID) (*domain.Venue, error) {
@@ -45,8 +52,9 @@ func (r *VenueRepository) Get(ctx context.Context, id domain.VenueID) (*domain.V
 }
 
 // Save implements application.VenueRepository: one transaction writes the
-// venue row (insert, or update guarded by the version) and replaces its
-// sections. Replacing is fine: layouts only change while the venue is a draft.
+// venue row (insert, or update guarded by the version), replaces its sections
+// (fine: layouts only change while the venue is a draft) and writes the
+// venue's integration events to the outbox (ADR-004).
 func (r *VenueRepository) Save(ctx context.Context, v *domain.Venue) (err error) {
 	uid, err := uuid.Parse(v.ID().String())
 	if err != nil {
@@ -81,12 +89,16 @@ func (r *VenueRepository) Save(ctx context.Context, v *domain.Venue) (err error)
 			return fmt.Errorf("save venue %s: insert section %s: %w", v.ID(), s.Code(), err)
 		}
 	}
+	msgs, err := ToOutboxMessages(v.PullEvents(), r.newEventID)
+	if err != nil {
+		return fmt.Errorf("save venue %s: %w", v.ID(), err)
+	}
+	if err := outbox.Write(ctx, tx, "venue", msgs); err != nil {
+		return fmt.Errorf("save venue %s: %w", v.ID(), err)
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("save venue %s: commit: %w", v.ID(), err)
 	}
-	// Part 5 writes these to the outbox in the same transaction. For now
-	// they are drained and dropped.
-	v.PullEvents()
 	return nil
 }
 
