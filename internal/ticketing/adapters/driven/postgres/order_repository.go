@@ -43,6 +43,8 @@ type orderRow struct {
 	TotalAmount                    int64
 	Currency, Status, PaymentRef   string
 	Version                        int32
+	SubtotalAmount, FeeAmount      int64
+	VatAmount                      int64
 }
 
 var orderStatuses = map[string]domain.OrderStatus{}
@@ -87,9 +89,14 @@ func toOrder(r orderRow) (*domain.Order, error) {
 	if err != nil {
 		return nil, fmt.Errorf("order %s: %w", r.ID, err)
 	}
-	total, err := money(r.TotalAmount, r.Currency)
-	if err != nil {
-		return nil, fmt.Errorf("order %s: %w", r.ID, err)
+	var pricing domain.PriceBreakdown
+	for _, m := range []struct {
+		into   *sharedkernel.Money
+		amount int64
+	}{{&pricing.Subtotal, r.SubtotalAmount}, {&pricing.Fee, r.FeeAmount}, {&pricing.VAT, r.VatAmount}, {&pricing.Total, r.TotalAmount}} {
+		if *m.into, err = money(m.amount, r.Currency); err != nil {
+			return nil, fmt.Errorf("order %s: %w", r.ID, err)
+		}
 	}
 	var stored []lineJSON
 	if err := json.Unmarshal(r.Lines, &stored); err != nil {
@@ -97,7 +104,7 @@ func toOrder(r orderRow) (*domain.Order, error) {
 	}
 	state := domain.OrderState{
 		ID: domain.NewOrderID(r.ID), ShowID: domain.NewShowID(r.ShowID), HoldID: domain.NewHoldID(r.HoldID),
-		Customer: domain.NewCustomerID(r.CustomerID), Email: email, Total: total,
+		Customer: domain.NewCustomerID(r.CustomerID), Email: email, Pricing: pricing,
 		Status: orderStatuses[r.Status], Version: int(r.Version),
 	}
 	for _, l := range stored {
@@ -153,6 +160,7 @@ func (r *OrderRepository) Save(ctx context.Context, o *domain.Order) (err error)
 			ID: o.ID().UUID(), ShowID: o.ShowID().UUID(), HoldID: o.HoldID().UUID(), CustomerID: o.Customer().UUID(),
 			ContactEmail: o.ContactEmail().String(), Lines: b, TotalAmount: o.Total().Amount(),
 			Currency: o.Total().Currency().String(), Status: o.Status().String(), PaymentRef: o.PaymentRef().String(),
+			SubtotalAmount: o.Pricing().Subtotal.Amount(), FeeAmount: o.Pricing().Fee.Amount(), VatAmount: o.Pricing().VAT.Amount(),
 		})
 		if err != nil {
 			return fmt.Errorf("save order %s: %w", o.ID(), err)

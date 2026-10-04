@@ -29,12 +29,15 @@ type CheckoutHandler struct {
 	orders      OrderRepository
 	gateway     PaymentGateway
 	ids         IDGenerator
+	pricing     domain.PricingPolicy
 	clock       Clock
 }
 
-// NewCheckoutHandler wires the use case to its ports.
-func NewCheckoutHandler(inventories InventoryRepository, orders OrderRepository, gateway PaymentGateway, ids IDGenerator, clock Clock) *CheckoutHandler {
-	return &CheckoutHandler{inventories: inventories, orders: orders, gateway: gateway, ids: ids, clock: clock}
+// NewCheckoutHandler wires the use case to its ports and to the pricing
+// policy (TKT-15), a domain service the composition root picks.
+func NewCheckoutHandler(inventories InventoryRepository, orders OrderRepository, gateway PaymentGateway, ids IDGenerator,
+	pricing domain.PricingPolicy, clock Clock) *CheckoutHandler {
+	return &CheckoutHandler{inventories: inventories, orders: orders, gateway: gateway, ids: ids, pricing: pricing, clock: clock}
 }
 
 // Handle places the order (tx1), charges it outside any transaction, and
@@ -62,7 +65,7 @@ func (h *CheckoutHandler) Handle(ctx context.Context, cmd Checkout) (CheckoutRes
 	if err != nil {
 		return CheckoutResult{}, fmt.Errorf("checkout: %w", err)
 	}
-	order, err := domain.PlaceOrder(h.ids.NewOrderID(), customer, email, hold, h.clock.Now())
+	order, err := domain.PlaceOrder(h.ids.NewOrderID(), customer, email, hold, h.pricing, h.clock.Now())
 	if err != nil {
 		return CheckoutResult{}, fmt.Errorf("checkout: %w", err)
 	}

@@ -1,9 +1,9 @@
 -- name: GetSectionInventory :one
-SELECT show_id, section, position, starts_at, closed, sold_out, version
+SELECT show_id, section, position, starts_at, closed, sold_out, version, country
 FROM ticketing.section_inventories WHERE show_id = $1 AND section = $2;
 
 -- name: ListSectionInventories :many
-SELECT show_id, section, position, starts_at, closed, sold_out, version
+SELECT show_id, section, position, starts_at, closed, sold_out, version, country
 FROM ticketing.section_inventories WHERE show_id = $1 ORDER BY position;
 
 -- name: ListSeats :many
@@ -17,8 +17,8 @@ SELECT hold_id, customer_id, seats, expires_at FROM ticketing.holds WHERE show_i
 SELECT show_id, section FROM ticketing.holds WHERE hold_id = $1;
 
 -- name: InsertSectionInventory :execrows
-INSERT INTO ticketing.section_inventories (show_id, section, position, starts_at, closed, sold_out, version)
-VALUES ($1, $2, $3, $4, $5, $6, 1)
+INSERT INTO ticketing.section_inventories (show_id, section, position, starts_at, closed, sold_out, version, country)
+VALUES ($1, $2, $3, $4, $5, $6, 1, $7)
 ON CONFLICT (show_id, section) DO NOTHING;
 
 -- name: UpdateSectionInventory :execrows

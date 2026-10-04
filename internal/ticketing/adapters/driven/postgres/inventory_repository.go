@@ -86,7 +86,7 @@ func load(ctx context.Context, q *sqlcgen.Queries, row sqlcgen.ListSectionInvent
 		return nil, fmt.Errorf("get inventory %s/%s holds: %w", row.ShowID, row.Section, err)
 	}
 	state := domain.InventoryState{
-		ShowID: domain.NewShowID(row.ShowID), Section: row.Section, Position: int(row.Position), StartsAt: row.StartsAt,
+		ShowID: domain.NewShowID(row.ShowID), Section: row.Section, Position: int(row.Position), Country: row.Country, StartsAt: row.StartsAt,
 		Closed: row.Closed, SoldOut: row.SoldOut, Version: int(row.Version),
 	}
 	for _, s := range seats {
@@ -194,7 +194,7 @@ func (r *InventoryRepository) Save(ctx context.Context, inv *domain.SectionInven
 
 func insertInventory(ctx context.Context, q *sqlcgen.Queries, inv *domain.SectionInventory) error {
 	n, err := q.InsertSectionInventory(ctx, sqlcgen.InsertSectionInventoryParams{
-		ShowID: inv.ShowID().UUID(), Section: inv.Section(), Position: int32(inv.Position()),
+		ShowID: inv.ShowID().UUID(), Section: inv.Section(), Position: int32(inv.Position()), Country: inv.Country(),
 		StartsAt: inv.StartsAt(), Closed: inv.IsClosed(), SoldOut: inv.IsSoldOut(),
 	})
 	if err != nil {

@@ -73,19 +73,22 @@ type TicketingHold struct {
 }
 
 type TicketingOrder struct {
-	ID           uuid.UUID
-	ShowID       uuid.UUID
-	HoldID       uuid.UUID
-	CustomerID   uuid.UUID
-	ContactEmail string
-	Lines        []byte
-	TotalAmount  int64
-	Currency     string
-	Status       string
-	PaymentRef   string
-	Version      int32
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID             uuid.UUID
+	ShowID         uuid.UUID
+	HoldID         uuid.UUID
+	CustomerID     uuid.UUID
+	ContactEmail   string
+	Lines          []byte
+	TotalAmount    int64
+	Currency       string
+	Status         string
+	PaymentRef     string
+	Version        int32
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	SubtotalAmount int64
+	FeeAmount      int64
+	VatAmount      int64
 }
 
 type TicketingOutbox struct {
@@ -125,6 +128,7 @@ type TicketingSectionInventory struct {
 	Version   int32
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	Country   string
 }
 
 type TicketingTicket struct {

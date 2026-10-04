@@ -87,10 +87,10 @@ func Place(t *testing.T, show domain.ShowID) *domain.Order {
 	customer := domain.NewCustomerID(uuid.New())
 	email, _ := domain.NewContactEmail("ana@example.com")
 	view := domain.HoldView{
-		HoldID: domain.NewHoldID(uuid.New()), ShowID: show, Customer: customer, ExpiresAt: now.Add(time.Minute),
+		HoldID: domain.NewHoldID(uuid.New()), ShowID: show, Country: "PT", Customer: customer, ExpiresAt: now.Add(time.Minute),
 		Lines: []domain.OrderLine{{Seat: a, Price: price}, {Seat: b, Price: price}},
 	}
-	o, err := domain.PlaceOrder(domain.NewOrderID(uuid.New()), customer, email, view, now)
+	o, err := domain.PlaceOrder(domain.NewOrderID(uuid.New()), customer, email, view, domain.StandardPricing(), now)
 	if err != nil {
 		t.Fatal(err)
 	}

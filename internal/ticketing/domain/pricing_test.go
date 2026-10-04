@@ -85,3 +85,18 @@ func TestPricingPolicy(t *testing.T) {
 		t.Errorf("unknown country: error = %v, want %v", err, domain.ErrNoVATRate)
 	}
 }
+
+// Stagehand's own rules, as the business set them (TKT-15).
+func TestStandardPricing(t *testing.T) {
+	policy := domain.StandardPricing()
+
+	two, err := policy.Price(lines(t, "ORCH/A/1", "ORCH/A/2"), "PT")
+	if err != nil || two.Fee != eur(t, 900) || two.VAT != eur(t, 594) {
+		t.Errorf("2 seats in PT = %v, %v; want 10%% fee and 6%% VAT", two, err)
+	}
+	group, err := policy.Price(lines(t, "FLOOR/GA/0001", "FLOOR/GA/0002", "FLOOR/GA/0003",
+		"FLOOR/GA/0004", "FLOOR/GA/0005", "FLOOR/GA/0006"), "PT")
+	if err != nil || group.Fee != eur(t, 1050) {
+		t.Errorf("6 seats = %v, %v; want the 7%% group fee", group, err)
+	}
+}

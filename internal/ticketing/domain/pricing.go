@@ -136,3 +136,18 @@ func (p PricingPolicy) Price(lines []OrderLine, country string) (PriceBreakdown,
 	}
 	return PriceBreakdown{Subtotal: subtotal, Fee: fee, VAT: vat, Total: total}, nil
 }
+
+// StandardPricing is Stagehand's pricing (TKT-15): a 10% service fee, 7%
+// for groups of six or more, never below EUR 1.50; VAT at the venue
+// country's rate for live performances. Illustrative rates, not tax advice.
+func StandardPricing() PricingPolicy {
+	eur, _ := sharedkernel.NewCurrency("EUR")
+	minimum, _ := sharedkernel.NewMoney(150, eur)
+	return PricingPolicy{
+		Fees: []FeeRule{
+			{Name: "group", When: SeatsAtLeast(6), Percent: 700, Minimum: minimum},
+			{Name: "standard", When: AnyOrder(), Percent: 1000, Minimum: minimum},
+		},
+		VAT: map[string]int64{"PT": 600, "ES": 2100, "FR": 550, "DE": 700, "NL": 900, "IT": 1000, "BE": 600, "IE": 900},
+	}
+}

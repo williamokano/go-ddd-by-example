@@ -30,7 +30,7 @@ func newSaga(t *testing.T, mode fakegateway.Mode) *sagaFixture {
 	orders, tickets, gateway := memory.NewOrderRepository(), memory.NewTicketRepository(), fakegateway.New(mode)
 	return &sagaFixture{
 		fixture: f, orders: orders, tickets: tickets, gateway: gateway,
-		checkout: application.NewCheckoutHandler(f.inventories, orders, gateway, f.ids, f.clock),
+		checkout: application.NewCheckoutHandler(f.inventories, orders, gateway, f.ids, domain.StandardPricing(), f.clock),
 		confirm:  application.NewConfirmHoldHandler(f.inventories, f.clock),
 		issue:    application.NewIssueTicketsHandler(orders, tickets, f.ids, f.clock),
 		refund:   application.NewRefundOrderHandler(orders, gateway, f.clock),
@@ -63,7 +63,7 @@ func TestCheckout(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if o := f.order(t, res.OrderID); o.Status() != domain.Paid || o.Total().String() != "EUR 90.00" {
+		if o := f.order(t, res.OrderID); o.Status() != domain.Paid || o.Total().String() != "EUR 104.94" { // 90.00 + 10% fee + 6% VAT (TKT-15)
 			t.Errorf("order = %v %v", o.Status(), o.Total())
 		}
 		if !published[domain.OrderPaid](f.orders.Published()) {
@@ -285,5 +285,21 @@ func TestReturnOrder_OnlyByTheBuyer(t *testing.T) {
 
 	if !errors.Is(err, domain.ErrNotOrderOwner) {
 		t.Errorf("error = %v, want %v (TKT-14)", err, domain.ErrNotOrderOwner)
+	}
+}
+
+// TKT-15 through the use case: the venue's country reaches the price.
+func TestCheckout_PricesWithFeeAndVAT(t *testing.T) {
+	f := newSaga(t, fakegateway.Mode{})
+	_, _, order := f.paidOrder(t) // ORCH/A/1 + A/2 at EUR 45, in Portugal
+
+	got := f.order(t, order).Pricing()
+
+	if got.Subtotal.Amount() != 9000 || got.Fee.Amount() != 900 || got.VAT.Amount() != 594 || got.Total.Amount() != 10494 {
+		t.Errorf("pricing = %v, want 90.00 + 9.00 fee + 5.94 VAT", got)
+	}
+	view, err := application.NewOrderQueries(f.orders, f.tickets).Get(f.ctx, order)
+	if err != nil || view.Amount != 10494 || view.Subtotal != 9000 || view.Fee != 900 || view.VAT != 594 {
+		t.Errorf("view = %+v, %v", view, err)
 	}
 }

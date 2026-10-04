@@ -40,6 +40,7 @@ import (
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/sagamsg"
 	ticketingapp "github.com/williamokano/go-ddd-by-example/internal/ticketing/application"
 	ticketingcontracts "github.com/williamokano/go-ddd-by-example/internal/ticketing/contracts"
+	ticketingdomain "github.com/williamokano/go-ddd-by-example/internal/ticketing/domain"
 	"github.com/williamokano/go-ddd-by-example/internal/venue/adapters/driven/ids"
 	venuepg "github.com/williamokano/go-ddd-by-example/internal/venue/adapters/driven/postgres"
 	"github.com/williamokano/go-ddd-by-example/internal/venue/adapters/driving/httpapi"
@@ -143,7 +144,7 @@ func serve(ctx context.Context) error {
 		Hold:     ticketingapp.NewHoldSeatsHandler(inventories, ticketingIDs, clk, cfg.HoldTTL),
 		Release:  ticketingapp.NewReleaseHoldHandler(inventories, clk),
 		Seats:    ticketingpg.NewSeatQueries(ticketingPool),
-		Checkout: ticketingapp.NewCheckoutHandler(inventories, orders, gateway, ticketingIDs, clk),
+		Checkout: ticketingapp.NewCheckoutHandler(inventories, orders, gateway, ticketingIDs, ticketingdomain.StandardPricing(), clk),
 		Orders:   ticketingapp.NewOrderQueries(orders, tickets),
 		CheckIn:  ticketingapp.NewCheckInHandler(tickets, ticketingpg.NewShowSchedule(ticketingPool), clk),
 		Return:   ticketingapp.NewReturnOrderHandler(orders, ticketingpg.NewShowSchedule(ticketingPool), refund, clk),

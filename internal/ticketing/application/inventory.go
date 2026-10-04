@@ -14,6 +14,7 @@ import (
 // consumer translates show.published.v1 into it.
 type OpenInventory struct {
 	ShowID   string
+	Country  string // the venue's, for VAT (TKT-15)
 	StartsAt time.Time
 	Sections []SectionSpec
 }
@@ -64,6 +65,7 @@ func (h *OpenInventoryHandler) Handle(ctx context.Context, cmd OpenInventory) er
 		opened[inv.Section()] = true
 	}
 	layout, err := newLayout(cmd.Sections)
+	layout.Country = cmd.Country
 	if err != nil {
 		return fmt.Errorf("open inventory: %w", err)
 	}

@@ -43,7 +43,7 @@ func (q *Queries) GetSectionByHold(ctx context.Context, holdID uuid.UUID) (GetSe
 }
 
 const getSectionInventory = `-- name: GetSectionInventory :one
-SELECT show_id, section, position, starts_at, closed, sold_out, version
+SELECT show_id, section, position, starts_at, closed, sold_out, version, country
 FROM ticketing.section_inventories WHERE show_id = $1 AND section = $2
 `
 
@@ -60,6 +60,7 @@ type GetSectionInventoryRow struct {
 	Closed   bool
 	SoldOut  bool
 	Version  int32
+	Country  string
 }
 
 func (q *Queries) GetSectionInventory(ctx context.Context, arg GetSectionInventoryParams) (GetSectionInventoryRow, error) {
@@ -73,6 +74,7 @@ func (q *Queries) GetSectionInventory(ctx context.Context, arg GetSectionInvento
 		&i.Closed,
 		&i.SoldOut,
 		&i.Version,
+		&i.Country,
 	)
 	return i, err
 }
@@ -116,8 +118,8 @@ type InsertSeatsParams struct {
 }
 
 const insertSectionInventory = `-- name: InsertSectionInventory :execrows
-INSERT INTO ticketing.section_inventories (show_id, section, position, starts_at, closed, sold_out, version)
-VALUES ($1, $2, $3, $4, $5, $6, 1)
+INSERT INTO ticketing.section_inventories (show_id, section, position, starts_at, closed, sold_out, version, country)
+VALUES ($1, $2, $3, $4, $5, $6, 1, $7)
 ON CONFLICT (show_id, section) DO NOTHING
 `
 
@@ -128,6 +130,7 @@ type InsertSectionInventoryParams struct {
 	StartsAt time.Time
 	Closed   bool
 	SoldOut  bool
+	Country  string
 }
 
 func (q *Queries) InsertSectionInventory(ctx context.Context, arg InsertSectionInventoryParams) (int64, error) {
@@ -138,6 +141,7 @@ func (q *Queries) InsertSectionInventory(ctx context.Context, arg InsertSectionI
 		arg.StartsAt,
 		arg.Closed,
 		arg.SoldOut,
+		arg.Country,
 	)
 	if err != nil {
 		return 0, err
@@ -247,7 +251,7 @@ func (q *Queries) ListSeats(ctx context.Context, arg ListSeatsParams) ([]ListSea
 }
 
 const listSectionInventories = `-- name: ListSectionInventories :many
-SELECT show_id, section, position, starts_at, closed, sold_out, version
+SELECT show_id, section, position, starts_at, closed, sold_out, version, country
 FROM ticketing.section_inventories WHERE show_id = $1 ORDER BY position
 `
 
@@ -259,6 +263,7 @@ type ListSectionInventoriesRow struct {
 	Closed   bool
 	SoldOut  bool
 	Version  int32
+	Country  string
 }
 
 func (q *Queries) ListSectionInventories(ctx context.Context, showID uuid.UUID) ([]ListSectionInventoriesRow, error) {
@@ -278,6 +283,7 @@ func (q *Queries) ListSectionInventories(ctx context.Context, showID uuid.UUID) 
 			&i.Closed,
 			&i.SoldOut,
 			&i.Version,
+			&i.Country,
 		); err != nil {
 			return nil, err
 		}

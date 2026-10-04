@@ -1,14 +1,15 @@
 -- name: GetOrder :one
-SELECT id, show_id, hold_id, customer_id, contact_email, lines, total_amount, currency, status, payment_ref, version
+SELECT id, show_id, hold_id, customer_id, contact_email, lines, total_amount, currency, status, payment_ref, version, subtotal_amount, fee_amount, vat_amount
 FROM ticketing.orders WHERE id = $1;
 
 -- name: ListPaidOrdersForShow :many
-SELECT id, show_id, hold_id, customer_id, contact_email, lines, total_amount, currency, status, payment_ref, version
+SELECT id, show_id, hold_id, customer_id, contact_email, lines, total_amount, currency, status, payment_ref, version, subtotal_amount, fee_amount, vat_amount
 FROM ticketing.orders WHERE show_id = $1 AND status IN ('paid', 'fulfilled');
 
 -- name: InsertOrder :execrows
-INSERT INTO ticketing.orders (id, show_id, hold_id, customer_id, contact_email, lines, total_amount, currency, status, payment_ref, version)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 1)
+INSERT INTO ticketing.orders (id, show_id, hold_id, customer_id, contact_email, lines, total_amount, currency, status, payment_ref, version,
+                              subtotal_amount, fee_amount, vat_amount)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 1, $11, $12, $13)
 ON CONFLICT (id) DO NOTHING;
 
 -- name: UpdateOrder :execrows

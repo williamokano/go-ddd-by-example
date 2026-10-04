@@ -46,7 +46,7 @@ func newFixture(t *testing.T) *fixture {
 // EUR 45, FLOOR 3 GA places at EUR 25, starting in a month.
 func openCmd(showID string) application.OpenInventory {
 	return application.OpenInventory{
-		ShowID: showID, StartsAt: fixedNow.Add(30 * 24 * time.Hour),
+		ShowID: showID, StartsAt: fixedNow.Add(30 * 24 * time.Hour), Country: "PT",
 		Sections: []application.SectionSpec{
 			{Code: "ORCH", Kind: "seated", Rows: []application.RowSpec{{Label: "A", Seats: 2, Accessible: []int{2}}}, Price: 4500, Currency: "EUR"},
 			{Code: "FLOOR", Kind: "ga", Capacity: 3, Price: 2500, Currency: "EUR"},

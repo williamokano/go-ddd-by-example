@@ -12,8 +12,11 @@ type OrderView struct {
 	ID       string
 	ShowID   string
 	Status   string
-	Amount   int64
+	Amount   int64 // the total: Subtotal + Fee + VAT (TKT-15)
 	Currency string
+	Subtotal int64
+	Fee      int64
+	VAT      int64
 	Tickets  []TicketView
 }
 
@@ -49,6 +52,7 @@ func (q *OrderQueries) Get(ctx context.Context, id domain.OrderID) (OrderView, e
 	v := OrderView{
 		ID: o.ID().String(), ShowID: o.ShowID().String(), Status: o.Status().String(),
 		Amount: o.Total().Amount(), Currency: o.Total().Currency().String(), Tickets: []TicketView{},
+		Subtotal: o.Pricing().Subtotal.Amount(), Fee: o.Pricing().Fee.Amount(), VAT: o.Pricing().VAT.Amount(),
 	}
 	for _, t := range tickets {
 		v.Tickets = append(v.Tickets, TicketView{Seat: t.Seat().String(), Code: t.Code().String(), Status: t.Status().String()})

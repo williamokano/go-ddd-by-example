@@ -13,22 +13,25 @@ import (
 )
 
 const getOrder = `-- name: GetOrder :one
-SELECT id, show_id, hold_id, customer_id, contact_email, lines, total_amount, currency, status, payment_ref, version
+SELECT id, show_id, hold_id, customer_id, contact_email, lines, total_amount, currency, status, payment_ref, version, subtotal_amount, fee_amount, vat_amount
 FROM ticketing.orders WHERE id = $1
 `
 
 type GetOrderRow struct {
-	ID           uuid.UUID
-	ShowID       uuid.UUID
-	HoldID       uuid.UUID
-	CustomerID   uuid.UUID
-	ContactEmail string
-	Lines        []byte
-	TotalAmount  int64
-	Currency     string
-	Status       string
-	PaymentRef   string
-	Version      int32
+	ID             uuid.UUID
+	ShowID         uuid.UUID
+	HoldID         uuid.UUID
+	CustomerID     uuid.UUID
+	ContactEmail   string
+	Lines          []byte
+	TotalAmount    int64
+	Currency       string
+	Status         string
+	PaymentRef     string
+	Version        int32
+	SubtotalAmount int64
+	FeeAmount      int64
+	VatAmount      int64
 }
 
 func (q *Queries) GetOrder(ctx context.Context, id uuid.UUID) (GetOrderRow, error) {
@@ -46,6 +49,9 @@ func (q *Queries) GetOrder(ctx context.Context, id uuid.UUID) (GetOrderRow, erro
 		&i.Status,
 		&i.PaymentRef,
 		&i.Version,
+		&i.SubtotalAmount,
+		&i.FeeAmount,
+		&i.VatAmount,
 	)
 	return i, err
 }
@@ -72,22 +78,26 @@ func (q *Queries) GetTicketByCode(ctx context.Context, code string) (TicketingTi
 }
 
 const insertOrder = `-- name: InsertOrder :execrows
-INSERT INTO ticketing.orders (id, show_id, hold_id, customer_id, contact_email, lines, total_amount, currency, status, payment_ref, version)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 1)
+INSERT INTO ticketing.orders (id, show_id, hold_id, customer_id, contact_email, lines, total_amount, currency, status, payment_ref, version,
+                              subtotal_amount, fee_amount, vat_amount)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 1, $11, $12, $13)
 ON CONFLICT (id) DO NOTHING
 `
 
 type InsertOrderParams struct {
-	ID           uuid.UUID
-	ShowID       uuid.UUID
-	HoldID       uuid.UUID
-	CustomerID   uuid.UUID
-	ContactEmail string
-	Lines        []byte
-	TotalAmount  int64
-	Currency     string
-	Status       string
-	PaymentRef   string
+	ID             uuid.UUID
+	ShowID         uuid.UUID
+	HoldID         uuid.UUID
+	CustomerID     uuid.UUID
+	ContactEmail   string
+	Lines          []byte
+	TotalAmount    int64
+	Currency       string
+	Status         string
+	PaymentRef     string
+	SubtotalAmount int64
+	FeeAmount      int64
+	VatAmount      int64
 }
 
 func (q *Queries) InsertOrder(ctx context.Context, arg InsertOrderParams) (int64, error) {
@@ -102,6 +112,9 @@ func (q *Queries) InsertOrder(ctx context.Context, arg InsertOrderParams) (int64
 		arg.Currency,
 		arg.Status,
 		arg.PaymentRef,
+		arg.SubtotalAmount,
+		arg.FeeAmount,
+		arg.VatAmount,
 	)
 	if err != nil {
 		return 0, err
@@ -137,22 +150,25 @@ func (q *Queries) InsertTicket(ctx context.Context, arg InsertTicketParams) erro
 }
 
 const listPaidOrdersForShow = `-- name: ListPaidOrdersForShow :many
-SELECT id, show_id, hold_id, customer_id, contact_email, lines, total_amount, currency, status, payment_ref, version
+SELECT id, show_id, hold_id, customer_id, contact_email, lines, total_amount, currency, status, payment_ref, version, subtotal_amount, fee_amount, vat_amount
 FROM ticketing.orders WHERE show_id = $1 AND status IN ('paid', 'fulfilled')
 `
 
 type ListPaidOrdersForShowRow struct {
-	ID           uuid.UUID
-	ShowID       uuid.UUID
-	HoldID       uuid.UUID
-	CustomerID   uuid.UUID
-	ContactEmail string
-	Lines        []byte
-	TotalAmount  int64
-	Currency     string
-	Status       string
-	PaymentRef   string
-	Version      int32
+	ID             uuid.UUID
+	ShowID         uuid.UUID
+	HoldID         uuid.UUID
+	CustomerID     uuid.UUID
+	ContactEmail   string
+	Lines          []byte
+	TotalAmount    int64
+	Currency       string
+	Status         string
+	PaymentRef     string
+	Version        int32
+	SubtotalAmount int64
+	FeeAmount      int64
+	VatAmount      int64
 }
 
 func (q *Queries) ListPaidOrdersForShow(ctx context.Context, showID uuid.UUID) ([]ListPaidOrdersForShowRow, error) {
@@ -176,6 +192,9 @@ func (q *Queries) ListPaidOrdersForShow(ctx context.Context, showID uuid.UUID) (
 			&i.Status,
 			&i.PaymentRef,
 			&i.Version,
+			&i.SubtotalAmount,
+			&i.FeeAmount,
+			&i.VatAmount,
 		); err != nil {
 			return nil, err
 		}
