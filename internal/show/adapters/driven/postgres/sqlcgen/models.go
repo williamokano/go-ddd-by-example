@@ -11,6 +11,33 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type ShowOutbox struct {
+	ID          int64
+	EventID     uuid.UUID
+	Topic       string
+	MsgKey      string
+	EventType   string
+	Payload     []byte
+	OccurredAt  time.Time
+	PublishedAt pgtype.Timestamptz
+}
+
+type ShowShow struct {
+	ID                 uuid.UUID
+	VenueID            uuid.UUID
+	PromoterID         uuid.UUID
+	Title              string
+	DoorsOpen          time.Time
+	StartsAt           time.Time
+	EndsAt             time.Time
+	Status             string
+	Prices             []byte
+	CancellationReason string
+	Version            int32
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+}
+
 type ShowVenueLayout struct {
 	VenueID   uuid.UUID
 	Name      string
