@@ -152,7 +152,7 @@ func serve(ctx context.Context) error {
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpx.Chain(mux, httpx.RequestID, httpx.Recover(logger), httpx.AccessLog(logger)),
+		Handler:           httpx.Chain(mux, httpx.RequestID, httpx.Recover(logger), httpx.AccessLog(logger), fakegateway.ModeHeader),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	return runServer(ctx, server, logger)

@@ -12,6 +12,8 @@ test: ## fast tests (domain, application, http, contract, arch)
 test-integration: ## adapter tests against real Postgres (testcontainers; needs Docker)
 	go test -tags=integration ./...
 
+test-e2e: export HOLD_TTL = 3s
+test-e2e: export HOLD_SWEEP_INTERVAL = 500ms
 test-e2e: up ## the full stack in Docker Compose, driven over HTTP
 	go test -tags=e2e -count=1 ./test/e2e/...
 

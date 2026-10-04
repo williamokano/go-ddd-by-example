@@ -39,7 +39,13 @@ func (c *client) publishedShow() string {
 // publishedShowBy is publishedShow for a promoter the test needs to know.
 func (c *client) publishedShowBy(promoter string) string {
 	c.t.Helper()
-	show := c.draftShow(c.activeVenue(), promoter, schedule(30*24*time.Hour))
+	return c.publishedShowAt(c.activeVenue(), promoter)
+}
+
+// publishedShowAt publishes a show a month from now at the given venue.
+func (c *client) publishedShowAt(venueID, promoter string) string {
+	c.t.Helper()
+	show := c.draftShow(venueID, promoter, schedule(30*24*time.Hour))
 	c.priceAndPublish(show, promoter)
 	return show
 }
@@ -48,12 +54,33 @@ func (c *client) publishedShowBy(promoter string) string {
 func (c *client) buy(showID string, seats ...string) string {
 	c.t.Helper()
 	customer := uuid.NewString()
-	h := c.hold(showID, customer, seats...)
+	return c.checkout(c.hold(showID, customer, seats...), customer, nil)
+}
+
+// checkout places an order for a hold, with optional test-only headers
+// (fakegateway's X-Fake-Payment-Mode), and returns the order id.
+func (c *client) checkout(h holdJSON, customer string, headers map[string]string) string {
+	c.t.Helper()
 	var placed struct{ ID string }
-	mustStatus(c.t, c.do(http.MethodPost, "/orders", map[string]any{
+	mustStatus(c.t, c.doWith(http.MethodPost, "/orders", map[string]any{
 		"holdId": h.HoldID, "customerId": customer, "contactEmail": "ana@example.com",
-	}), http.StatusCreated).decode(c.t, &placed)
+	}, headers), http.StatusCreated).decode(c.t, &placed)
 	return placed.ID
+}
+
+// seatStates reads every seat's state from Ticketing's API.
+func (c *client) seatStates(showID string) map[string]string {
+	c.t.Helper()
+	var seats []struct {
+		Ref   string `json:"ref"`
+		State string `json:"state"`
+	}
+	mustStatus(c.t, c.do(http.MethodGet, "/shows/"+showID+"/seats", nil), http.StatusOK).decode(c.t, &seats)
+	states := make(map[string]string, len(seats))
+	for _, s := range seats {
+		states[s.Ref] = s.State
+	}
+	return states
 }
 
 // order reads an order.

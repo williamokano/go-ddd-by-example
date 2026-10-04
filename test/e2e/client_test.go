@@ -43,6 +43,12 @@ func (r response) decode(t *testing.T, v any) {
 
 func (c *client) do(method, path string, body any) response {
 	c.t.Helper()
+	return c.doWith(method, path, body, nil)
+}
+
+// doWith is do with extra request headers.
+func (c *client) doWith(method, path string, body any, headers map[string]string) response {
+	c.t.Helper()
 	var reader io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -56,6 +62,9 @@ func (c *client) do(method, path string, body any) response {
 		c.t.Fatal(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
 	resp, err := c.http.Do(req)
 	if err != nil {
 		c.t.Fatalf("%s %s: %v (is the app running? make up)", method, path, err)
