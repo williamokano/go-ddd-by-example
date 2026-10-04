@@ -62,4 +62,13 @@ func TestNewAddress(t *testing.T) {
 			t.Errorf("Country() = %q, want %q", got, want)
 		}
 	})
+
+	t.Run("addresses built from the same input are equal", func(t *testing.T) {
+		a, _ := domain.NewAddress("Rua da Alegria 12", "Lisboa", "PT")
+		b, _ := domain.NewAddress(" Rua da Alegria 12", "Lisboa ", "pt")
+
+		if a != b {
+			t.Errorf("%+v != %+v, want value equality", a, b)
+		}
+	})
 }
