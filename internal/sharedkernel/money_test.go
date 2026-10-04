@@ -73,3 +73,30 @@ func TestMoney(t *testing.T) {
 		}
 	})
 }
+
+// Fees and VAT are percentages of money (9.8), in basis points (1% = 100),
+// rounded half up to the cent: no float64 anywhere.
+func TestMoney_Percent(t *testing.T) {
+	for _, tt := range []struct {
+		amount, bp, want int64
+	}{
+		{9000, 1000, 900}, // 10% of 90.00
+		{9900, 600, 594},  // 6% of 99.00
+		{1250, 550, 69},   // 5.5% of 12.50 = 0.6875 → 0.69
+		{1, 5000, 1},      // 50% of 0.01 = 0.005 → 0.01
+		{0, 2100, 0},
+	} {
+		if got := eurMoney(t, tt.amount).Percent(tt.bp); got != eurMoney(t, tt.want) {
+			t.Errorf("%d bp of %d = %v, want %d", tt.bp, tt.amount, got, tt.want)
+		}
+	}
+}
+
+func TestMoney_Max(t *testing.T) {
+	if got := eurMoney(t, 150).Max(eurMoney(t, 90)); got != eurMoney(t, 150) {
+		t.Errorf("Max = %v", got)
+	}
+	if got := eurMoney(t, 90).Max(eurMoney(t, 150)); got != eurMoney(t, 150) {
+		t.Errorf("Max = %v", got)
+	}
+}

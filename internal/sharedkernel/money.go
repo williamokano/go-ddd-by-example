@@ -66,3 +66,17 @@ func (m Money) Add(other Money) (Money, error) {
 func (m Money) String() string {
 	return fmt.Sprintf("%s %d.%02d", m.currency, m.amount/100, m.amount%100)
 }
+
+// Percent returns bp basis points of m (1% = 100 bp), rounded half up to the
+// minor unit. Fees and VAT are computed this way (9.8).
+func (m Money) Percent(bp int64) Money {
+	return Money{amount: (m.amount*bp + 5000) / 10000, currency: m.currency}
+}
+
+// Max returns the larger of m and other, which must share m's currency.
+func (m Money) Max(other Money) Money {
+	if other.amount > m.amount {
+		return other
+	}
+	return m
+}
