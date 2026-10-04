@@ -31,7 +31,7 @@ func Run(t *testing.T, newLayouts func(t *testing.T) application.VenueLayouts) {
 		layout := domain.VenueLayout{
 			VenueID: domain.NewVenueID(uuid.New()), Name: "Coliseu", Active: true,
 			Sections: []domain.LayoutSection{
-				{Code: "ORCH", Kind: "seated", Rows: []domain.LayoutRow{{Label: "A", Seats: 10}}},
+				{Code: "ORCH", Kind: "seated", Rows: []domain.LayoutRow{{Label: "A", Seats: 10, Accessible: []int{1, 2}}}},
 				{Code: "FLOOR", Kind: "ga", Capacity: 500},
 			},
 		}

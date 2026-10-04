@@ -31,8 +31,9 @@ type sectionJSON struct {
 }
 
 type rowJSON struct {
-	Label string `json:"label"`
-	Seats int    `json:"seats"`
+	Label      string `json:"label"`
+	Seats      int    `json:"seats"`
+	Accessible []int  `json:"accessible,omitempty"`
 }
 
 // Get implements application.VenueLayouts.
@@ -52,7 +53,7 @@ func (l *VenueLayouts) Get(ctx context.Context, id domain.VenueID) (domain.Venue
 	for _, s := range sections {
 		ls := domain.LayoutSection{Code: s.Code, Kind: s.Kind, Capacity: s.Capacity}
 		for _, r := range s.Rows {
-			ls.Rows = append(ls.Rows, domain.LayoutRow{Label: r.Label, Seats: r.Seats})
+			ls.Rows = append(ls.Rows, domain.LayoutRow{Label: r.Label, Seats: r.Seats, Accessible: r.Accessible})
 		}
 		layout.Sections = append(layout.Sections, ls)
 	}
@@ -65,7 +66,7 @@ func (l *VenueLayouts) Upsert(ctx context.Context, layout domain.VenueLayout) er
 	for _, s := range layout.Sections {
 		sj := sectionJSON{Code: s.Code, Kind: s.Kind, Capacity: s.Capacity}
 		for _, r := range s.Rows {
-			sj.Rows = append(sj.Rows, rowJSON{Label: r.Label, Seats: r.Seats})
+			sj.Rows = append(sj.Rows, rowJSON{Label: r.Label, Seats: r.Seats, Accessible: r.Accessible})
 		}
 		sections = append(sections, sj)
 	}

@@ -22,8 +22,9 @@ type LayoutSection struct {
 
 // LayoutRow is one row of a seated section.
 type LayoutRow struct {
-	Label string
-	Seats int
+	Label      string
+	Seats      int
+	Accessible []int // seat numbers with step-free access, sorted
 }
 
 // SectionCodes lists the venue's section codes, in layout order.

@@ -98,7 +98,7 @@ func activated(venueID string) application.OnVenueActivated {
 	return application.OnVenueActivated{
 		VenueID: venueID, Name: "Coliseu",
 		Sections: []application.LayoutSectionSpec{
-			{Code: "ORCH", Kind: "seated", Rows: []application.RowSpec{{Label: "A", Seats: 10}}},
+			{Code: "ORCH", Kind: "seated", Rows: []application.RowSpec{{Label: "A", Seats: 10, Accessible: []int{1, 2}}}},
 			{Code: "FLOOR", Kind: "ga", Capacity: 500},
 		},
 	}

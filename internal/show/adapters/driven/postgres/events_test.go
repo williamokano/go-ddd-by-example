@@ -31,7 +31,7 @@ func TestToOutboxMessages_ShowPublished(t *testing.T) {
 	floor, _ := sharedkernel.NewMoney(2500, eur)
 	prices, _ := domain.NewPriceList(map[string]sharedkernel.Money{"ORCH": orch, "FLOOR": floor})
 	layout := domain.VenueLayout{VenueID: venueID, Active: true, Sections: []domain.LayoutSection{
-		{Code: "ORCH", Kind: "seated", Rows: []domain.LayoutRow{{Label: "A", Seats: 2}}},
+		{Code: "ORCH", Kind: "seated", Rows: []domain.LayoutRow{{Label: "A", Seats: 2, Accessible: []int{2}}}},
 		{Code: "FLOOR", Kind: "ga", Capacity: 3},
 	}}
 
@@ -40,8 +40,9 @@ func TestToOutboxMessages_ShowPublished(t *testing.T) {
 		domain.ShowPublished{ShowID: showID, VenueID: venueID, Title: "Fado", Schedule: schedule, Layout: layout, Prices: prices, At: at},
 	}, newID)
 
-	if err != nil || len(msgs) != 1 {
-		t.Fatalf("got %d messages, %v; want 1", len(msgs), err)
+	// v1 and v2 side by side while consumers migrate (9.3); v1 first.
+	if err != nil || len(msgs) != 2 || msgs[1].Type != contracts.TypeShowPublishedV2 || msgs[1].Key != showID.String() {
+		t.Fatalf("got %d messages, %v; want show.published.v1 then v2", len(msgs), err)
 	}
 	if msgs[0].Topic != contracts.Topic || msgs[0].Key != showID.String() || msgs[0].Type != contracts.TypeShowPublishedV1 {
 		t.Errorf("message = %+v", msgs[0])
@@ -60,6 +61,14 @@ func TestToOutboxMessages_ShowPublished(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("payload mismatch (-want +got):\n%s", diff)
+	}
+	var v2 contracts.ShowPublishedV2
+	if err := json.Unmarshal(msgs[1].Payload, &v2); err != nil {
+		t.Fatal(err)
+	}
+	wantSeats := []contracts.SeatV2{{Row: "A", Number: 1}, {Row: "A", Number: 2, Accessible: true}}
+	if diff := cmp.Diff(wantSeats, v2.Sections[0].Seats); diff != "" || v2.Sections[1].Capacity != 3 || v2.ShowID != showID.String() {
+		t.Errorf("v2 payload = %+v\nseats (-want +got):\n%s", v2, diff)
 	}
 }
 

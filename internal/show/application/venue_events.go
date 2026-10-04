@@ -27,8 +27,9 @@ type LayoutSectionSpec struct {
 
 // RowSpec is one row of a seated section.
 type RowSpec struct {
-	Label string
-	Seats int
+	Label      string
+	Seats      int
+	Accessible []int
 }
 
 // OnVenueActivatedHandler keeps the local VenueLayout projection up to date.
@@ -50,7 +51,7 @@ func (h *OnVenueActivatedHandler) Handle(ctx context.Context, cmd OnVenueActivat
 	for _, s := range cmd.Sections {
 		section := domain.LayoutSection{Code: s.Code, Kind: s.Kind, Capacity: s.Capacity}
 		for _, r := range s.Rows {
-			section.Rows = append(section.Rows, domain.LayoutRow{Label: r.Label, Seats: r.Seats})
+			section.Rows = append(section.Rows, domain.LayoutRow{Label: r.Label, Seats: r.Seats, Accessible: r.Accessible})
 		}
 		layout.Sections = append(layout.Sections, section)
 	}

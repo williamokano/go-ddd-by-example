@@ -68,7 +68,7 @@ func toOnVenueActivated(e contracts.VenueActivatedV1) application.OnVenueActivat
 	for _, s := range e.Sections {
 		spec := application.LayoutSectionSpec{Code: s.Code, Kind: s.Kind, Capacity: s.Capacity}
 		for _, r := range s.Rows {
-			spec.Rows = append(spec.Rows, application.RowSpec{Label: r.Label, Seats: r.Seats})
+			spec.Rows = append(spec.Rows, application.RowSpec{Label: r.Label, Seats: r.Seats, Accessible: r.AccessibleSeats})
 		}
 		cmd.Sections = append(cmd.Sections, spec)
 	}
