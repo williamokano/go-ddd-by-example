@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Part 5 · Outbox and Kafka</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main class="content">
+<header>
+  <div class="kicker">Course · Part 5</div>
+  <h1>Integration events: outbox, relay, Kafka</h1>
+  <p class="lead">The second piece of infrastructure. Venue's domain events become public integration events, are written to the outbox in the same transaction as the aggregate, and are relayed to Kafka. We also build the consumer machinery that Show and Ticketing will use.</p>
+</header>
+<p>Read <a href="04-events-and-messaging.html">Chapter 4</a> before starting this part.</p>
+
+<section class="lesson" id="l5-1">
+<h3><span class="lesson-id">5.1</span> Kafka in Compose</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>A single-node KRaft Kafka with declared topics, and a UI to watch them.</dd>
+  <dt>Creates</dt><dd>The <code>kafka</code>, <code>kafka-init</code> and <code>kafka-ui</code> services (Chapter 6)</dd>
+</dl>
+<div class="callout do"><span class="label">Your turn</span><p><code>make infra</code>, open <code>http://localhost:8081</code>, check that the four topics exist, produce a message by hand from the UI, and consume it.</p></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>Why are auto-created topics disabled? (Topics are part of the architecture: their partition count decides parallelism and ordering, and a typo shouldn't silently create a new topic.)</p></div>
+</section>
+
+<section class="lesson" id="l5-2">
+<h3><span class="lesson-id">5.2</span> The Published Language: <code>venue/contracts</code></h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Define the public, versioned shape of <code>venue.activated.v1</code> and <code>venue.retired.v1</code>.</dd>
+  <dt>Concepts</dt><dd><a href="04-events-and-messaging.html">Domain vs integration events</a>, Open Host Service + Published Language</dd>
+  <dt>Creates</dt><dd><code>internal/venue/contracts/events.go</code> (<code>Topic</code>, type constants, payload structs), <code>events_test.go</code>, <code>testdata/*.golden.json</code></dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>Golden test: a known <code>VenueActivatedV1</code> marshals to exactly <code>testdata/venue.activated.v1.golden.json</code> (with an <code>-update</code> flag to regenerate).</li>
+  <li>The same for <code>VenueRetiredV1</code>.</li>
+  <li>Unmarshalling a payload that has an extra unknown field still works (forward compatibility).</li>
+</ol></div>
+<div class="callout warn"><span class="label">Rule</span><p><code>contracts</code> imports <strong>only stdlib</strong>. It uses no domain types, because consumers must be able to depend on it without depending on your model.</p></div>
+</section>
+
+<section class="lesson" id="l5-3">
+<h3><span class="lesson-id">5.3</span> Writing the outbox atomically</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd><code>Save</code> persists the aggregate <em>and</em> its translated events in one transaction (ADR-004).</dd>
+  <dt>Creates</dt><dd><code>db/migrations/0000N_venue_outbox.sql</code>; <code>internal/platform/outbox/{message,writer}.go</code>; <code>internal/venue/adapters/driven/postgres/events.go</code> (domain → contracts translation)</dd>
+</dl>
+<p>Not every domain event becomes an integration event. <code>VenueRegistered</code> and <code>SectionAdded</code> are internal facts nobody outside needs. Only <code>VenueActivated</code> and <code>VenueRetired</code> are translated. The translator decides that.</p>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>Unit: the translator maps <code>VenueActivated</code> → one <code>outbox.Message</code> (topic <code>venue.events</code>, key = venue ID, type <code>venue.activated.v1</code>, payload JSON) and maps <code>SectionAdded</code> → nothing.</li>
+  <li>Integration: activating and saving a venue leaves exactly one unpublished outbox row with the expected type and key.</li>
+  <li>Integration: a save that fails with <code>ErrConcurrentModification</code> leaves <strong>no</strong> outbox row. This is the whole point of atomicity.</li>
+</ol></div>
+</section>
+
+<section class="lesson" id="l5-4">
+<h3><span class="lesson-id">5.4</span> The relay</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>A loop that moves outbox rows to Kafka with at-least-once semantics.</dd>
+  <dt>Creates</dt><dd><code>internal/platform/outbox/relay.go</code> (depends on a <code>Publisher</code> interface), <code>internal/platform/kafka/producer.go</code> (franz-go implementation)</dd>
+</dl>
+<p>Notice the pattern repeating inside <code>platform</code>: the relay declares a <code>Publisher</code> port, and Kafka is just one adapter. The relay's logic can be unit-tested with a fake publisher.</p>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>Unit (Postgres + fake publisher): pending rows are published in <code>id</code> order and marked published.</li>
+  <li>A publisher error leaves the rows unpublished and they're retried next tick.</li>
+  <li>Two relays running at once (<code>FOR UPDATE SKIP LOCKED</code>) never publish the same row in the same tick.</li>
+  <li>Integration (Postgres + Kafka containers): an outbox row ends up on the topic with the envelope headers and the aggregate ID as key.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>The relay crashes after Kafka acknowledged the message but before the <code>UPDATE … published_at</code>. What happens on restart? Who has to cope with that?</p></div>
+</section>
+
+<section class="lesson" id="l5-5">
+<h3><span class="lesson-id">5.5</span> The consumer runner</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Reusable consumer-group plumbing, so context consumers only write "event type → command".</dd>
+  <dt>Creates</dt><dd><code>internal/platform/kafka/consumer.go</code>: <code>Run(ctx, group, topics, handler func(ctx, Envelope) error)</code></dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script (integration)</span><ol class="tests">
+  <li>A produced message reaches the handler with a decoded envelope.</li>
+  <li>The offset is committed only after the handler succeeds. After a restart, a message whose handler failed is delivered again.</li>
+  <li>After N failures the message goes to <code>&lt;topic&gt;.dlq</code> with an <code>error</code> header, and consumption continues.</li>
+  <li>Context cancellation stops the runner cleanly.</li>
+</ol></div>
+</section>
+
+<section class="lesson" id="l5-6">
+<h3><span class="lesson-id">5.6</span> Wire it and watch it</h3>
+<div class="callout do"><span class="label">Your turn</span><ol>
+  <li>Start the relay in <code>serve</code> as a goroutine tied to the root context.</li>
+  <li><code>make up</code>, activate a venue with <code>api/venue.http</code>, and see <code>venue.activated.v1</code> in Kafka UI.</li>
+  <li>Experiment: <code>docker compose stop kafka</code>, activate another venue (the HTTP call still succeeds!), look at the outbox backlog in psql, <code>docker compose start kafka</code>, and watch it drain.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>The HTTP call succeeded while Kafka was down. Is that a bug or a feature? What would the user have seen with a dual write?</p></div>
+<h4>Done when</h4>
+<ul><li>Venue publishes reliably, and the consumer runner exists and is tested, ready for Show.</li></ul>
+</section>
+</main>
+<script src="assets/course.js"></script>
+</body>
+</html>

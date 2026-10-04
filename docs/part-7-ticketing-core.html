@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Part 7 · Ticketing Core</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main class="content">
+<header>
+  <div class="kicker">Course · Part 7</div>
+  <h1>Ticketing: the core domain</h1>
+  <p class="lead">This is where the business wins or loses, so it gets the most modelling care. You'll extract the shared kernel, design aggregate boundaries on purpose, protect "never sell a seat twice" under concurrency, integrate an external payment provider through a port, and run a saga with compensation.</p>
+</header>
+
+<section class="lesson" id="l7-1">
+<h3><span class="lesson-id">7.1</span> Extract the shared kernel</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Promote <code>Money</code>/<code>Currency</code> and the domain-event building block to <code>internal/sharedkernel</code>, now that a third context needs them (ADR-009).</dd>
+  <dt>Concepts</dt><dd><a href="02-ddd-building-blocks.html#shared-kernel">Shared kernel</a></dd>
+</dl>
+<div class="callout do"><span class="label">Your turn (a pure refactoring, so stay green the whole time)</span><ol>
+  <li>Create <code>internal/sharedkernel</code> and move Show's <code>Money</code> and its tests there.</li>
+  <li>Update Show to import it, and run the tests.</li>
+  <li>Move <code>DomainEvent</code>/<code>Events</code> from Venue and Show, and run the tests.</li>
+  <li>Update the architecture test: <code>sharedkernel</code> imports only stdlib.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>Someone proposes adding <code>SeatRef</code> to the shared kernel "since Ticketing and Venue both have seats". What's your answer? (Chapter 1: "Seat" means three things.)</p></div>
+</section>
+
+<section class="lesson" id="l7-2">
+<h3><span class="lesson-id">7.2</span> Design workshop: aggregate boundaries</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Decide on the aggregates <em>before</em> coding, and write down why.</dd>
+  <dt>Concepts</dt><dd>Vernon's four rules, ADR-005, ADR-010</dd>
+  <dt>Creates</dt><dd><code>test/e2e/purchase_test.go</code> (the outer loop for S1, red); your notes</dd>
+</dl>
+<div class="callout do"><span class="label">Your turn (paper first)</span><ol>
+  <li>For each of TKT-1…TKT-12, which data must be <em>immediately</em> consistent for the rule to hold?</li>
+  <li>Propose aggregates. Compare at least three options for TKT-5: per show, per section, per seat.</li>
+  <li>For each option, what happens when 5,000 people try to buy in the first minute?</li>
+  <li>Compare your answer with ADR-005. Where do you disagree?</li>
+</ol></div>
+</section>
+
+<section class="lesson" id="l7-3">
+<h3><span class="lesson-id">7.3</span> <code>ShowInventory</code>: opening and holding seats</h3>
+<dl class="meta">
+  <dt>Rules</dt><dd>TKT-1, TKT-2, TKT-3, TKT-5, TKT-12</dd>
+  <dt>Creates</dt><dd><code>internal/ticketing/domain/{seat_ref,inventory,hold,events,errors}.go</code> + tests</dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li><code>SeatRef</code> parses <code>"ORCH/A/12"</code> and <code>"FLOOR/GA/0457"</code> and rejects malformed input.</li>
+  <li><code>OpenInventory(showID, layoutSnapshot, startsAt, now)</code> enumerates every seat (rows × seat numbers, GA places) with its section price, all Available, and records <code>InventoryOpened</code>.</li>
+  <li><code>Hold(holdID, customer, seats, now, ttl)</code> marks the seats Held and records <code>SeatsHeld{expiresAt}</code>.</li>
+  <li>Holding a seat that's already held or sold → <code>ErrSeatUnavailable</code>, and <strong>no</strong> seat changes (all or nothing).</li>
+  <li>0 seats or more than 8 seats → error. The same seat twice in one request → error.</li>
+  <li>A second active hold by the same customer → <code>ErrCustomerAlreadyHolding</code>.</li>
+  <li>Holding after the show's start → <code>ErrSalesClosed</code>.</li>
+</ol></div>
+</section>
+
+<section class="lesson" id="l7-4">
+<h3><span class="lesson-id">7.4</span> Time-based behaviour: release, expire, confirm, sold out, close</h3>
+<dl class="meta">
+  <dt>Rules</dt><dd>TKT-4, TKT-8, TKT-10, TKT-11</dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li><code>ReleaseHold(holdID, customer)</code> frees the seats. Someone else's hold → error.</li>
+  <li><code>ExpireHolds(now)</code> frees only holds with <code>expiresAt ≤ now</code>, and records <code>HoldExpired</code> for each. A fixed clock means no sleeping.</li>
+  <li><code>ConfirmHold(holdID, orderID, now)</code> on a valid hold → the seats are Sold, and <code>SeatsSold{orderID, seats}</code> is recorded.</li>
+  <li><code>ConfirmHold</code> on an expired hold, even one not yet swept, → <code>ErrHoldExpired</code>, and the seats are not sold.</li>
+  <li>Confirming the same order twice is a no-op (idempotent, because the saga may redeliver).</li>
+  <li>Selling the last available seat records <code>InventorySoldOut</code> exactly once.</li>
+  <li><code>Close(now)</code> releases all holds and rejects any new hold.</li>
+</ol></div>
+</section>
+
+<section class="lesson" id="l7-5">
+<h3><span class="lesson-id">7.5</span> Inventory application, persistence, HTTP, and reacting to Show</h3>
+<dl class="meta">
+  <dt>Creates</dt><dd>OpenInventory (from <code>show.published.v1</code>), HoldSeats, ReleaseHold handlers; Postgres repo (<code>ticketing.inventories</code>, <code>ticketing.seats</code>, <code>ticketing.holds</code>); HTTP <code>POST /shows/{id}/holds</code>, <code>DELETE /holds/{id}</code>, <code>GET /shows/{id}/seats</code>; a consumer for <code>show.events</code></dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script (highlights)</span><ol class="tests">
+  <li>Receiving <code>show.published.v1</code> twice opens the inventory once (TKT-1).</li>
+  <li>HoldSeats retries on <code>ErrConcurrentModification</code> (up to 3 times) and then gives up with a 409.</li>
+  <li>The repository writes only <em>changed</em> seats, not all 50k. Track dirty seats in the aggregate, or diff them in the adapter. Discuss which.</li>
+  <li><code>GET /shows/{id}/seats</code> is a query that reads the <code>seats</code> table directly, with no aggregate load.</li>
+</ol></div>
+</section>
+
+<section class="lesson" id="l7-6">
+<h3><span class="lesson-id">7.6</span> The race for the last seat (S6)</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Prove TKT-5 under real concurrency against real Postgres.</dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script (integration)</span><ol class="tests">
+  <li>One available seat and 50 goroutines calling HoldSeats: exactly 1 success and 49 <code>ErrSeatUnavailable</code> or conflict-exhausted errors, never 2 successes.</li>
+  <li>Measure it: a show with 1,000 seats, 200 concurrent holds for distinct seats. How many retries? What's the p99 latency? Write the numbers into ADR-005's consequences.</li>
+</ol></div>
+</section>
+
+<section class="lesson" id="l7-7">
+<h3><span class="lesson-id">7.7</span> The <code>Order</code> aggregate and the payment port</h3>
+<dl class="meta">
+  <dt>Rules</dt><dd>TKT-6, TKT-7</dd>
+  <dt>Concepts</dt><dd>A driven port to an external system as an ACL; a spy fake</dd>
+  <dt>Creates</dt><dd><code>domain/order.go</code>; the <code>application.PaymentGateway</code> port (<code>Charge(ctx, orderID, amount) (PaymentRef, error)</code>, <code>Refund(ctx, ref, amount) error</code>); <code>adapters/driven/payment/fakegateway</code></dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li><code>PlaceOrder(orderID, customer, hold view, prices, now)</code>: the total is the sum of the lines; mixed currencies → error; the order is Pending and records <code>OrderPlaced</code>.</li>
+  <li>Transition table for Pending → Paid / PaymentFailed, Paid → Fulfilled / Refunded, Fulfilled → Refunded, plus the illegal ones.</li>
+  <li>Fake gateway modes: approve, decline, delay. It records calls so tests can assert "Refund was called for order X".</li>
+</ol></div>
+<div class="callout why"><span class="label">The payment port is an Anti-Corruption Layer</span><p>Real providers speak their own language (intents, captures, webhooks). The port speaks <em>ours</em>: Charge and Refund. A future Stripe adapter does the translation, and the domain never learns that word.</p></div>
+</section>
+
+<section class="lesson" id="l7-8">
+<h3><span class="lesson-id">7.8</span> Checkout and the saga</h3>
+<dl class="meta">
+  <dt>Rules</dt><dd>TKT-8, TKT-9; ADR-010</dd>
+  <dt>Creates</dt><dd>The Checkout use case (place + charge); the <code>Ticket</code> aggregate; saga handlers ConfirmHold, IssueTickets, RefundOrder; a consumer on <code>ticketing.internal</code></dd>
+</dl>
+<p>Follow the diagram in <a href="04-events-and-messaging.html">Chapter 4 → The checkout saga</a>.</p>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>Checkout (with fakes): approved payment → order Paid, <code>OrderPaid</code> saved. Declined → PaymentFailed, and the hold stays (the customer can retry).</li>
+  <li>ConfirmHold handler: on <code>OrderPaid</code>, the inventory confirms. Redelivery is a no-op.</li>
+  <li>IssueTickets handler: on <code>SeatsSold</code>, one ticket per seat with unique codes (TKT-9), and the order becomes Fulfilled. Redelivery issues no duplicates. How do you detect that? (A deterministic ticket ID derived from order + seat, or a uniqueness constraint.)</li>
+  <li>RefundOrder handler: on <code>HoldConfirmationFailed</code>, the gateway refunds and the order becomes Refunded. <strong>This is the compensation.</strong></li>
+  <li>The S1 outer-loop test goes green.</li>
+</ol></div>
+</section>
+
+<section class="lesson" id="l7-9">
+<h3><span class="lesson-id">7.9</span> A scheduler is a driving adapter too</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Expire holds as time passes (TKT-4).</dd>
+  <dt>Creates</dt><dd>An <code>ExpireHolds</code> use case and an <code>InventoriesWithExpiredHolds(now)</code> query port; <code>adapters/driving/scheduler</code> (a ticker that calls the use case)</dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>Use case: with a fixed clock 11 minutes after the hold, the seats are Available again.</li>
+  <li>The scheduler, with an injected tick channel, calls the use case once per tick and stops on context cancel.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>HTTP, Kafka and a ticker all "drive" the application. What do the three adapters have in common? Which port do they call?</p></div>
+</section>
+
+<section class="lesson" id="l7-10">
+<h3><span class="lesson-id">7.10</span> Closing the loops with Show</h3>
+<dl class="meta">
+  <dt>Rules</dt><dd>TKT-10, TKT-11, SHW-8</dd>
+  <dt>Creates</dt><dd><code>ticketing/contracts</code> with golden tests; the outbox translation; Show's consumer for <code>ticketing.events</code>; Ticketing's handler for <code>show.cancelled.v1</code></dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li><code>InventorySoldOut</code> → <code>ticketing.inventory_sold_out.v1</code> → Show is SoldOut (S4, e2e).</li>
+  <li><code>show.cancelled.v1</code> → the inventory closes, every ticket is voided, and every Paid/Fulfilled order is refunded. Each of those is its own transaction, driven by events.</li>
+  <li><code>show.cancelled.v1</code> for a show that was cancelled while still Draft (so no inventory exists) is a harmless no-op, not a DLQ entry.</li>
+  <li>Show side: <code>inventory_sold_out</code> arriving for a show that has already been cancelled. <code>ticketing.events</code> and <code>show.events</code> are different topics, so nothing orders them. <code>MarkSoldOut</code> on a terminal show must be ignored, not rejected.</li>
+</ol></div>
+</section>
+</main>
+<script src="assets/course.js"></script>
+</body>
+</html>

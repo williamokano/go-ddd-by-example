@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DDD Building Blocks</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main class="content">
+<header>
+  <div class="kicker">Reference · Chapter 2</div>
+  <h1>DDD building blocks</h1>
+  <p class="lead">What each concept is, how to recognise it in Stagehand, how to write it in idiomatic Go, and the mistakes to avoid. Lessons link here when they introduce a concept.</p>
+</header>
+
+<h2 id="strategic-tactical">Strategic vs tactical DDD</h2>
+<p>DDD has two halves:</p>
+<ul>
+  <li><strong>Strategic design</strong> decides <em>what</em> to model and <em>where the boundaries are</em>: ubiquitous language, subdomains, bounded contexts, context maps. Chapter 1 is our strategic design. This half matters most: a perfect aggregate inside the wrong boundary is still wrong.</li>
+  <li><strong>Tactical design</strong> is the patterns for writing the model inside one context: entities, value objects, aggregates, domain events, domain services, repositories, factories. That's this chapter.</li>
+</ul>
+
+<h2 id="ubiquitous-language">Ubiquitous language</h2>
+<p>The business words, used <em>everywhere</em>: in conversations, docs, tests, type names, method names, event names. If the business says "hold seats", the method is <code>inventory.Hold(...)</code>, not <code>inventory.Reserve(...)</code> or <code>SetSeatStatus(seat, 2)</code>. When you notice you're translating between what people say and what the code says, rename the code.</p>
+<div class="callout warn"><span class="label">Pitfall</span>CRUD verbs (<code>UpdateShow</code>, <code>SetStatus</code>) in a domain model are a smell. The business never says "update the show status to 3". It says "publish the show" or "cancel the show". Model the intention, not the data change.</div>
+
+<h2 id="value-object">Value object</h2>
+<p>An object defined entirely by its attributes. It has <strong>no identity</strong>: two <code>Money{1500, EUR}</code> are interchangeable, just as two €10 notes are. Value objects are:</p>
+<ul>
+  <li><strong>Immutable.</strong> Operations return a new value (<code>a.Add(b)</code> returns a new <code>Money</code>).</li>
+  <li><strong>Self-validating.</strong> You can't build an invalid one. The constructor is the only way in.</li>
+  <li><strong>Compared by value.</strong> In Go, a struct of comparable fields gets <code>==</code> for free.</li>
+</ul>
+<p>Stagehand examples: <code>Money</code>, <code>Address</code>, <code>SectionCode</code>, <code>Row</code>, <code>Schedule</code>, <code>PriceList</code>, <code>SeatRef</code>, <code>TicketCode</code>, and all the typed IDs.</p>
+<pre><code>package domain
+
+// SectionCode identifies a section within a venue, e.g. "ORCH" or "BAL-L".
+type SectionCode struct{ value string }   // unexported field ⇒ only the constructor can build one
+
+func NewSectionCode(raw string) (SectionCode, error) {
+	v := strings.ToUpper(strings.TrimSpace(raw))
+	if !sectionCodePattern.MatchString(v) {
+		return SectionCode{}, fmt.Errorf("%w: %q", ErrInvalidSectionCode, raw)
+	}
+	return SectionCode{value: v}, nil
+}
+
+func (c SectionCode) String() string { return c.value }   // value receiver: VOs are copied freely</code></pre>
+<div class="callout why"><span class="label">Why bother? ("parse, don't validate")</span><p>When a function takes a <code>SectionCode</code> instead of a <code>string</code>, the type system proves the value was validated. Validation happens once, at the edge, and the rest of the code can trust its inputs. Primitive obsession (strings and ints everywhere) spreads validation thin and loses meaning.</p></div>
+<div class="callout warn"><span class="label">Go pitfall: the zero value</span><p>In Go, anyone can write <code>SectionCode{}</code> and skip your constructor. You can't fully prevent this. Mitigate it: keep fields unexported (so outside packages can only make the empty zero value), give the VO an <code>IsZero()</code> method, and have aggregates reject zero values passed in. Go has no private constructors, so be explicit about it.</p></div>
+
+<h2 id="entity">Entity</h2>
+<p>An object with an <strong>identity</strong> that persists while its attributes change. A section is still "the ORCH section" after you rename it. Two entities are equal when their IDs are equal, whatever their attributes.</p>
+<ul>
+  <li>Stagehand: <code>Section</code> (inside Venue, identified by <code>SectionCode</code>, a <em>local</em> identity that only has to be unique within its venue) and <code>Hold</code> (inside ShowInventory). Aggregate roots are entities too.</li>
+  <li>In Go, use <strong>pointer receivers</strong> for methods that mutate, and unexported fields with getter methods. Don't write setters. Write behaviour methods named after the business operation.</li>
+</ul>
+<div class="callout discuss"><span class="label">Entity or value object?</span><p>Ask: "If two of these had identical attributes, would the business consider them the same thing?" Two identical rows "A, 20 seats" in the same section is a duplicate (an error), and a row has no life of its own, so <code>Row</code> is a VO. Two holds with identical seats at different times are different holds, so <code>Hold</code> is an entity.</p></div>
+
+<h2 id="aggregate">Aggregate and aggregate root</h2>
+<p>An <strong>aggregate</strong> is a cluster of entities and value objects that has to stay consistent <em>as a unit</em>. One entity in the cluster is the <strong>aggregate root</strong>, the only object the outside world may hold a reference to or call.</p>
+<pre class="diagram"><code>   ┌─────────────────────────── Venue aggregate ────────────────────────────┐
+   │                                                                         │
+   │   Venue  ◀── aggregate ROOT (entity, global identity VenueID)           │
+   │    │  name: string, address: Address (VO), status: Status              │
+   │    │                                                                    │
+   │    ├── Section "ORCH" (entity, local identity SectionCode)             │
+   │    │     rows: [Row{A,20}, Row{B,22}] (VOs)                            │
+   │    └── Section "FLOOR" (entity) kind: GA, capacity: 500                 │
+   │                                                                         │
+   └─────────────────────────────────────────────────────────────────────────┘
+   Outside code calls venue.AddSection(...), never section.AddRow(...) directly.</code></pre>
+<h3>Why is the root the root?</h3>
+<p>Because <strong>invariants span the whole cluster</strong>, and only an object that sees the whole cluster can enforce them. "Section codes are unique within a venue" (VEN-2) can't be checked by a <code>Section</code>, because a section doesn't know about its siblings. "No layout changes once Active" (VEN-4) depends on the venue's status. If outside code could get hold of a <code>*Section</code> and change it, it could bypass both rules. So:</p>
+<ol>
+  <li>The root is the <strong>single entry point</strong>. Every change goes through a method on the root, which checks the invariants before and after.</li>
+  <li>The root controls access. Internals are returned as copies or read-only views, never as mutable pointers.</li>
+  <li>The root has the <strong>global identity</strong>. Inner entities only need identity that's unique within the aggregate.</li>
+</ol>
+<h3>The four rules of aggregate design (Vaughn Vernon)</h3>
+<ol>
+  <li><strong>Model true invariants inside consistency boundaries.</strong> An aggregate exists to protect rules that must hold <em>immediately</em> after every change, not "eventually".</li>
+  <li><strong>Design small aggregates.</strong> Big aggregates mean more lock contention, slower loads and more conflicts.</li>
+  <li><strong>Reference other aggregates by ID only.</strong> <code>Show</code> stores a <code>VenueID</code>, never a <code>*Venue</code>. That makes the boundary explicit and keeps loading cheap.</li>
+  <li><strong>Use eventual consistency outside the boundary.</strong> <em>One transaction modifies one aggregate.</em> Changes to other aggregates react to domain events.</li>
+</ol>
+<div class="callout why"><span class="label">Why "one aggregate per transaction"?</span><p>An aggregate is a unit of consistency, so it's also the unit of concurrency control (optimistic locking with a version number). If one transaction modifies two aggregates, it has to win both locks. Contention then compounds, and your boundary hasn't actually protected anything. The rule pushes us toward events and sagas, which is what Part 7's checkout does. You'll see the trade-off first-hand.</p></div>
+<div class="callout discuss"><span class="label">The big design question in Stagehand</span><p>Is "a seat is never sold twice" (TKT-5) protected by one <code>ShowInventory</code> aggregate per show, by one aggregate per section, or by one per seat? Each answer has a cost. One per show is simple and fully consistent, but it serialises every hold on a busy show. One per seat scales, but then "hold 4 seats atomically" spans 4 aggregates. We start with one per show (ADR-005) and revisit it in Part 9.</p></div>
+
+<h2 id="domain-event">Domain event</h2>
+<p>Something that happened in the domain that domain experts care about. It's named in the <strong>past tense</strong> (<code>SeatsHeld</code>, <code>ShowCancelled</code>), immutable, and carries the data needed to understand it (IDs, the relevant values, <code>OccurredAt</code>).</p>
+<ul>
+  <li><strong>The aggregate records events</strong> as a side effect of its behaviour methods. It doesn't publish them, because it knows nothing about Kafka.</li>
+  <li>After the aggregate is persisted, the events are <strong>pulled</strong> from it (<code>PullEvents()</code> returns them and clears the list) and written to the <strong>outbox</strong> in the <em>same</em> database transaction.</li>
+  <li>Tests assert on events: "when I activate the venue, a <code>VenueActivated</code> event is recorded". Testing behaviour through events is more robust than poking at internal state.</li>
+</ul>
+<pre><code>// sharedkernel (after Part 7's extraction; before that it lives in venue/domain)
+type DomainEvent interface {
+	EventName() string        // e.g. "venue.VenueActivated"
+	OccurredAt() time.Time
+}
+
+type Events struct{ pending []DomainEvent }   // embedded in aggregate roots
+
+func (e *Events) Record(ev DomainEvent)      { e.pending = append(e.pending, ev) }
+func (e *Events) PullEvents() []DomainEvent  { out := e.pending; e.pending = nil; return out }</code></pre>
+<p>Domain events vs <strong>integration events</strong>: a domain event is internal to a context and may change freely. An integration event is a <em>public contract</em> (Published Language), versioned, and translated from domain events at the boundary. See <a href="04-events-and-messaging.html">Chapter 4</a>.</p>
+
+<h2 id="domain-service">Domain service</h2>
+<p>Domain logic that <strong>doesn't naturally belong to a single entity or value object</strong>, usually because it needs several aggregates or a concept that isn't a thing. It is:</p>
+<ul>
+  <li>Named in the ubiquitous language (<code>SchedulingPolicy</code>, not <code>ShowHelper</code>).</li>
+  <li><strong>Stateless</strong>, and in our codebase <strong>pure</strong>: no I/O. The application layer loads what it needs and passes it in.</li>
+  <li>Stagehand example: <code>SchedulingPolicy.EnsureNoOverlap(candidate Schedule, existing []Show) error</code> implements SHW-3. No single <code>Show</code> knows about the other shows at the venue.</li>
+</ul>
+<div class="callout warn"><span class="label">Pitfall</span>If every rule ends up in services and your entities are bags of getters and setters, you have an <strong>anemic domain model</strong>. Try the entity first. Use a domain service only when the logic really doesn't fit any single object.</div>
+
+<h2 id="application-service">Application service (use case)</h2>
+<p>The coordinator of <strong>one use case</strong>. It contains <em>no business rules</em>. Its job is a fixed recipe:</p>
+<ol>
+  <li>Receive a command (a plain struct of primitives/DTOs).</li>
+  <li>Parse the input into domain types (value objects).</li>
+  <li>Load the aggregate(s) through a repository port, and get the time from the Clock port and new IDs from the IDGenerator port.</li>
+  <li><strong>Call one behaviour method on the aggregate</strong> (or a domain service).</li>
+  <li>Save the aggregate. Its events go to the outbox atomically.</li>
+  <li>Return a result (an ID or a DTO, never the aggregate itself).</li>
+</ol>
+<p>It also owns the cross-cutting application concerns: the transaction boundary, authorisation checks ("is this actor the promoter of this show?"), idempotency keys, logging and metrics.</p>
+
+<h3>Domain service vs application service — the comparison</h3>
+<div class="table-wrap"><table>
+  <tr><th></th><th>Domain service</th><th>Application service</th></tr>
+  <tr><td>Lives in</td><td><code>internal/&lt;ctx&gt;/domain</code></td><td><code>internal/&lt;ctx&gt;/application</code></td></tr>
+  <tr><td>Contains business rules?</td><td>Yes, that's its whole point</td><td><strong>No</strong>. Rules belong in the domain</td></tr>
+  <tr><td>Does I/O?</td><td>No (pure)</td><td>Yes, through ports</td></tr>
+  <tr><td>Knows about transactions?</td><td>No</td><td>Yes</td></tr>
+  <tr><td>Speaks</td><td>Domain types</td><td>Commands/DTOs on the outside, domain types inside</td></tr>
+  <tr><td>Example</td><td><code>SchedulingPolicy</code></td><td><code>PublishShowHandler</code></td></tr>
+  <tr><td>Tested with</td><td>Plain unit tests</td><td>Unit tests with in-memory fakes for the ports</td></tr>
+</table></div>
+<div class="callout discuss"><span class="label">The litmus test</span><p>"Would this rule still exist if Stagehand sold tickets with paper forms and a phone line?" If yes, it's domain: a seat can't be sold twice, holds expire. If it only exists because of software ("load from DB, then save, then commit"), it's application or infrastructure.</p></div>
+
+<h2 id="repository">Repository</h2>
+<p>A collection-like abstraction for <strong>loading and saving whole aggregates</strong>. There's <em>one repository per aggregate root</em>, not one per table. <code>VenueRepository</code> saves the venue <em>with</em> its sections, even though they live in two tables.</p>
+<pre><code>// internal/venue/application/ports.go — a DRIVEN port
+type VenueRepository interface {
+	Get(ctx context.Context, id domain.VenueID) (*domain.Venue, error) // ErrVenueNotFound
+	Save(ctx context.Context, v *domain.Venue) error                    // insert or update, optimistic lock, writes outbox
+}</code></pre>
+<ul>
+  <li>The interface is defined by the <strong>consumer</strong> (the application layer). The implementation is an adapter (<code>adapters/driven/postgres</code>). This is <em>dependency inversion</em>: the core doesn't depend on Postgres; Postgres depends on the core's interface.</li>
+  <li>Keep repositories small: <code>Get</code>, <code>Save</code>, and only the finder methods a use case actually needs. Screens and lists use the <em>query side</em> (read models), not repositories.</li>
+</ul>
+<div class="callout why"><span class="label">Where should repository interfaces live? (decision)</span><p>Evans puts repository interfaces in the domain layer. Many hexagonal codebases put all driven ports in the application layer. <strong>We put them in <code>application</code></strong>, which keeps the domain 100% pure: no interfaces to infrastructure, no <code>context.Context</code>, nothing to fake in domain tests. A domain service that "needs" a repository gets the data passed in by the application service instead. See ADR-002.</p></div>
+
+<h2 id="factory">Factories, constructors and reconstitution</h2>
+<p>There are two different ways to bring an aggregate into memory, and you must keep them apart:</p>
+<ul>
+  <li><strong>Creation</strong> (<code>domain.RegisterVenue(id, name, addr, now)</code>): validates everything, sets the initial state, and <strong>records a creation event</strong>. Name it with the business verb if one exists.</li>
+  <li><strong>Reconstitution</strong> (<code>domain.RehydrateVenue(snapshot)</code>): used <em>only</em> by repositories to rebuild an aggregate from storage. It does <strong>not</strong> record events (nothing new happened) and trusts the data it gets (it was valid when it was saved).</li>
+</ul>
+<div class="callout warn"><span class="label">Pitfall</span>Don't export a big <code>NewVenue(all, fields, ...)</code> that both creates and reconstitutes. Repositories would emit "VenueRegistered" every time they load. Use two functions with two names and two jobs.</div>
+
+<h2 id="policy">Policies, process managers and sagas</h2>
+<ul>
+  <li><strong>Policy</strong> (event-storming lilac sticky note): "<em>whenever</em> X happens, <em>then</em> do Y". Example: "whenever a venue is retired, cancel its future shows" (SHW-7). In code it's an event handler that calls a use case.</li>
+  <li><strong>Saga / process manager</strong>: a long-running business process across several aggregates or contexts, driven by events, with <strong>compensating actions</strong> when a later step fails. Stagehand's checkout is one: OrderPaid → ConfirmHold → (SeatsSold → IssueTickets) | (HoldConfirmationFailed → RefundOrder). We use <em>choreography</em> (each step reacts to the previous event). The alternative is <em>orchestration</em> (a stateful coordinator that sends commands).</li>
+</ul>
+
+<h2 id="shared-kernel">Shared kernel</h2>
+<p>A <strong>small, explicitly shared subset of the domain model</strong> that two or more contexts agree to use identically and to change only together. Ours: <code>Money</code> and <code>Currency</code> (every context means exactly the same thing by €15.00), plus the tiny domain-event building block.</p>
+<div class="callout warn"><span class="label">Shared kernel is NOT a "common" / "utils" package</span>
+<ul>
+  <li>It contains <strong>domain concepts</strong>, not technical helpers. Database helpers, the Kafka client, config and logging live in <code>internal/platform</code>, which is technical plumbing, not part of any model.</li>
+  <li>It must stay <strong>tiny and stable</strong>. Every change hits every context. If you want to add <code>Seat</code> to it, stop: that word means three different things (Chapter 1).</li>
+  <li>It earns its place by <em>emerging</em>. In Part 6 Show writes its own Money. In Part 7 Ticketing needs the identical concept, and we deliberately promote it. Duplication first, extraction once the need is proven.</li>
+</ul></div>
+
+<h2 id="errors">Domain errors</h2>
+<p>Business rule violations are expected outcomes, not crashes. Model them as exported sentinel errors (or small typed errors when they carry data) in the domain package:</p>
+<pre><code>var (
+	ErrVenueNotDraft        = errors.New("venue: layout can only change while draft")   // VEN-4
+	ErrDuplicateSectionCode = errors.New("venue: duplicate section code")               // VEN-2
+)
+
+// Wrap with context, test with errors.Is:
+return fmt.Errorf("%w: %s", ErrDuplicateSectionCode, code)</code></pre>
+<p>The HTTP adapter maps them to status codes (validation → 422, not found → 404, conflict/state → 409). The domain never knows about HTTP.</p>
+
+<h2 id="go-idioms">Go-specific modelling idioms (summary)</h2>
+<div class="table-wrap"><table>
+  <tr><th>Concept</th><th>Go idiom we use</th></tr>
+  <tr><td>Encapsulation</td><td>Unexported fields. The package boundary is the encapsulation boundary, so one package per context layer.</td></tr>
+  <tr><td>Value objects</td><td>Small structs, value receivers, constructor <code>NewX(...) (X, error)</code>, comparable with <code>==</code> when possible.</td></tr>
+  <tr><td>Entities / roots</td><td>Pointer receivers, behaviour methods, getters without a <code>Get</code> prefix (<code>v.Name()</code>), no setters.</td></tr>
+  <tr><td>Typed IDs</td><td><code>type VenueID struct{ uuid.UUID }</code> or <code>type VenueID uuid.UUID</code>. You can't pass a <code>ShowID</code> where a <code>VenueID</code> is expected.</td></tr>
+  <tr><td>Enums / states</td><td><code>type Status uint8</code> + constants + <code>String()</code>. Transitions are methods on the aggregate, not public assignments.</td></tr>
+  <tr><td>Time</td><td>Domain methods take <code>now time.Time</code> as a parameter. Only the Clock port calls <code>time.Now()</code>.</td></tr>
+  <tr><td>Collections in aggregates</td><td>Return copies (<code>slices.Clone</code>) or iterators (<code>iter.Seq</code>), never the internal slice or map.</td></tr>
+</table></div>
+</main>
+<script src="assets/course.js"></script>
+</body>
+</html>

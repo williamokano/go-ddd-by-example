@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Key Terms</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main class="content">
+<header>
+  <div class="kicker">Start here · Chapter 0</div>
+  <h1>Key terms in ten minutes</h1>
+  <p class="lead">Every term the course uses, in one or two sentences each, with a Stagehand example. Read this once now. When a word in a lesson feels fuzzy, come back here, then follow the link to the chapter that covers it in depth.</p>
+</header>
+
+<h2 id="driving-driven">First: "driving" and "driven"</h2>
+<p>Hexagonal architecture splits the world outside your application into two sides. The names we use for them are <strong>driving</strong> and <strong>driven</strong>. Alistair Cockburn, who invented the pattern, chose them, and they appear in folder names throughout this repo (<code>adapters/driving/…</code>, <code>adapters/driven/…</code>).</p>
+
+<div class="cards">
+  <div class="card"><h4>Driving side</h4><p>Things that <strong>drive</strong> (use) our application. <strong>They start the conversation:</strong> they call us. Our application is passive here and waits to be asked. Examples: a customer's HTTP request, a Kafka message from another context, a timer that ticks, a test.</p></div>
+  <div class="card"><h4>Driven side</h4><p>Things our application <strong>drives</strong> (uses). <strong>We start the conversation:</strong> we call them. They wait to be asked. Examples: Postgres, the Kafka producer, the payment provider, the system clock.</p></div>
+</div>
+
+<div class="callout why"><span class="label">One question decides it: who calls first?</span>
+<p>Think of a car. The <strong>driver</strong> drives the car: they start every interaction by turning the wheel or pressing a pedal. The car in turn drives its <strong>wheels</strong>, which only ever react to the car. Our application is the car: users and messages are drivers, and databases and payment providers are wheels.</p>
+<p>It isn't about which way the <em>data</em> flows. <code>GET /venues/{id}</code> sends data <em>out</em> to the user, but the user called first, so it's <strong>driving</strong>. <code>repository.Get(id)</code> brings data <em>in</em>, but we called first, so it's <strong>driven</strong>.</p></div>
+
+<h3>Ports and adapters</h3>
+<dl class="terms">
+  <dt>Port</dt>
+  <dd>An entry or exit point of the application, <strong>defined in the application's own language</strong>. In Go, it's a set of types and methods: a use case's command plus its <code>Handle</code> method, or an interface such as <code>VenueRepository</code>. A port knows nothing about HTTP, SQL or Kafka. Think of it as a socket in the wall.</dd>
+  <dt>Adapter</dt>
+  <dd>A piece of code that connects one technology to a port, translating in both directions. Think of it as the plug that fits the socket. You can swap the Postgres plug for an in-memory plug and the application doesn't notice.</dd>
+</dl>
+<p>Combine the two words and you get the four terms used everywhere in the course:</p>
+<div class="table-wrap"><table>
+  <tr><th>Term</th><th>What it is</th><th>Who owns the definition</th><th>Stagehand example</th></tr>
+  <tr><td><strong>Driving port</strong></td><td>What the application <em>offers</em>: its use cases</td><td>The application</td><td><code>RegisterVenueHandler.Handle(ctx, RegisterVenue)</code></td></tr>
+  <tr><td><strong>Driving adapter</strong></td><td>Turns an outside protocol into a call to a driving port</td><td>—</td><td>HTTP handler, Kafka consumer, hold-expiry scheduler</td></tr>
+  <tr><td><strong>Driven port</strong></td><td>What the application <em>needs</em>: an interface it declares</td><td>The application</td><td><code>VenueRepository</code>, <code>PaymentGateway</code>, <code>Clock</code></td></tr>
+  <tr><td><strong>Driven adapter</strong></td><td>Implements a driven port with a real technology</td><td>—</td><td>Postgres repository, fake payment gateway, system clock</td></tr>
+</table></div>
+<p>Note the "who owns" column. <strong>The application defines both kinds of port.</strong> Adapters always depend on the application, never the other way round. That's the dependency rule.</p>
+
+<h3>The same ideas under other names</h3>
+<p>You'll meet these in books, blog posts and other codebases. They mean the same thing:</p>
+<div class="table-wrap"><table>
+  <tr><th>We say</th><th>Also called</th><th>Where you'll see it</th></tr>
+  <tr><td>Driving</td><td>primary · inbound · <strong>in</strong> · input · user-side · left side</td><td>Cockburn uses "primary" too. "In/out ports" (<code>port/in</code>) comes from Tom Hombergs' <em>Get Your Hands Dirty on Clean Architecture</em>, popular in Java codebases.</td></tr>
+  <tr><td>Driven</td><td>secondary · outbound · <strong>out</strong> · output · SPI · server-side · right side</td><td>The same sources. Clean Architecture calls driven ports "gateway interfaces".</td></tr>
+  <tr><td>Driving port</td><td>use case · input port · application API</td><td>Clean Architecture: "input boundary".</td></tr>
+  <tr><td>Driven port</td><td>output port · secondary port · gateway</td><td>Clean Architecture: "output boundary".</td></tr>
+</table></div>
+<p><strong>Why we use driving/driven:</strong> "in/out" and "inbound/outbound" are fine once you define them by <em>who calls first</em>. Read literally, though, they suggest a data direction, and the <code>GET</code> example above shows how that misleads. "Driving/driven" carries the right meaning in the word itself. (ADR-003; the full picture is in <a href="03-hexagonal-architecture.html">Chapter 3</a>.)</p>
+
+<h2 id="strategic">Strategic DDD: the big picture</h2>
+<dl class="terms">
+  <dt>Domain</dt>
+  <dd>The business area the software serves. Here, selling tickets for live shows.</dd>
+  <dt>Domain expert</dt>
+  <dd>The people who know the business: venue managers, promoters, box office staff. Our code should speak their language.</dd>
+  <dt>Ubiquitous language</dt>
+  <dd>The shared vocabulary between experts and developers, used everywhere, including in type and method names. Example: we say <em>hold</em> seats, never <em>reserve</em> or <em>lock</em>. <a href="02-ddd-building-blocks.html#ubiquitous-language">More →</a></dd>
+  <dt>Subdomain</dt>
+  <dd>A part of the business <em>problem</em>. <strong>Core</strong>: what makes us win (Ticketing). <strong>Supporting</strong>: needed and specific to us (Venue, Show). <strong>Generic</strong>: everyone needs it, so buy it (Payments, Notifications). <a href="01-the-domain.html">More →</a></dd>
+  <dt>Bounded context</dt>
+  <dd>A boundary in the <em>solution</em> inside which each word has exactly one meaning and one model applies. In Stagehand: Venue Management, Show Scheduling, Ticketing, Notifications. In code, one tree under <code>internal/</code>.</dd>
+  <dt>Context map</dt>
+  <dd>A diagram of how the bounded contexts relate and integrate.</dd>
+  <dt>Upstream / downstream</dt>
+  <dd>Upstream changes flow down to whoever depends on them. Venue is upstream of Show, and Show is downstream of Venue.</dd>
+  <dt>Published Language (PL) / Open Host Service (OHS)</dt>
+  <dd>A context's documented, versioned public protocol, separate from its internal model. Ours: the integration events in <code>internal/&lt;ctx&gt;/contracts</code>.</dd>
+  <dt>Anti-Corruption Layer (ACL)</dt>
+  <dd>A translation layer on the downstream side that converts a foreign model into our own, so upstream changes can't leak into our domain. Example: Show turning <code>venue.activated.v1</code> into its own <code>VenueLayout</code>.</dd>
+  <dt>Conformist</dt>
+  <dd>A downstream context that simply adopts the upstream's model as it is. Notifications does this.</dd>
+  <dt>Shared kernel</dt>
+  <dd>A <em>small</em> piece of domain model that several contexts share and change only together. Ours: <code>Money</code>, <code>Currency</code> and the domain-event building block. It's not a "utils" package. <a href="02-ddd-building-blocks.html#shared-kernel">More →</a></dd>
+  <dt>Event storming</dt>
+  <dd>A workshop where you put domain events on sticky notes along a timeline to discover the domain and its boundaries. Lesson 0.1.</dd>
+</dl>
+
+<h2 id="tactical">Tactical DDD: the building blocks</h2>
+<dl class="terms">
+  <dt id="value-object">Value object</dt>
+  <dd>
+    <p>An object defined only by its values. It has <strong>no identity</strong>: two <code>Money{1500, EUR}</code> are interchangeable, just as two €10 notes are. It has three properties:</p>
+    <ul>
+      <li><strong>Immutable.</strong> You never change one. You make a new one (<code>a.Add(b)</code> returns a new Money).</li>
+      <li><strong>Always valid.</strong> Its constructor rejects bad input, so if you hold one, it's valid.</li>
+      <li><strong>Equal by value.</strong> Same fields means same thing (<code>==</code> in Go).</li>
+    </ul>
+    <p>Most of a good model is value objects. Stagehand's include <code>VenueID</code>, <code>Address</code>, <code>SectionCode</code>, <code>Row</code>, <code>Schedule</code>, <code>Money</code>, <code>PriceList</code>, <code>SeatRef</code>, <code>OrderLine</code> and <code>TicketCode</code>. You'll write your first one in lesson 1.1. <a href="02-ddd-building-blocks.html#value-object">More →</a></p>
+  </dd>
+  <dt>Entity</dt>
+  <dd>An object with an <strong>identity</strong> that stays the same while its data changes. A <code>Section</code> is still "ORCH" after it's renamed, and a <code>Hold</code> is a specific hold even if another one covers the same seats. <a href="02-ddd-building-blocks.html#entity">More →</a></dd>
+  <dt>Invariant</dt>
+  <dd>A business rule that must <em>always</em> hold. Example: "a seat is never sold twice" (TKT-5).</dd>
+  <dt>Aggregate</dt>
+  <dd>A cluster of entities and value objects that must stay consistent together. It's the boundary inside which invariants are enforced immediately, and it's saved and loaded as one unit. <a href="02-ddd-building-blocks.html#aggregate">More →</a></dd>
+  <dt>Aggregate root</dt>
+  <dd>The one entity of an aggregate that the outside world may touch. All changes go through its methods, so it can check the invariants that span the cluster. <code>Venue</code> is the root, and nobody outside edits a <code>Section</code> directly.</dd>
+  <dt>Domain event</dt>
+  <dd>A fact that happened and that the business cares about, in the past tense: <code>SeatsHeld</code>, <code>ShowCancelled</code>. The aggregate records it, and it's published later. <a href="02-ddd-building-blocks.html#domain-event">More →</a></dd>
+  <dt>Domain service</dt>
+  <dd>Business logic that doesn't belong to any single entity, usually because it spans several aggregates. It's stateless and pure. Example: <code>SchedulingPolicy</code> (no two shows overlap at a venue). <a href="02-ddd-building-blocks.html#domain-service">More →</a></dd>
+  <dt>Application service / use case</dt>
+  <dd>The coordinator for one user intention: parse input, load, call the domain, save. It contains <strong>no business rules</strong>. Example: <code>PublishShowHandler</code>. <a href="02-ddd-building-blocks.html#application-service">More →</a></dd>
+  <dt>Command / query</dt>
+  <dd>A <em>command</em> asks to change something (<code>HoldSeats</code>). A <em>query</em> asks for data and changes nothing (<code>GetVenue</code>). We handle them on separate paths: "CQRS-lite".</dd>
+  <dt>Repository</dt>
+  <dd>A driven port for loading and saving <em>whole aggregates</em>, one per aggregate root, not one per table. <a href="02-ddd-building-blocks.html#repository">More →</a></dd>
+  <dt>Factory / reconstitution</dt>
+  <dd><em>Creating</em> an aggregate (<code>RegisterVenue</code>: validates and records an event) is different from <em>rebuilding</em> one from the database (<code>RehydrateVenue</code>: no validation, no events). <a href="02-ddd-building-blocks.html#factory">More →</a></dd>
+  <dt>Read model / projection</dt>
+  <dd>Data shaped for reading, often built from events. Example: Show's local <code>VenueLayout</code> table.</dd>
+  <dt>Policy</dt>
+  <dd>"Whenever X happens, do Y." Example: whenever a venue retires, cancel its future shows.</dd>
+  <dt>Saga / process manager</dt>
+  <dd>A multi-step business process across aggregates or contexts, driven by events, with <em>compensating actions</em> if a later step fails. Example: checkout, which refunds if the seats couldn't be confirmed. <a href="02-ddd-building-blocks.html#policy">More →</a></dd>
+  <dt>Anemic domain model</dt>
+  <dd>The anti-pattern: entities that are bags of getters and setters, with all the rules in services. We avoid it.</dd>
+</dl>
+
+<h2 id="architecture">Architecture terms</h2>
+<dl class="terms">
+  <dt>Hexagonal architecture (ports &amp; adapters)</dt>
+  <dd>The business core in the middle, with every technology plugged in through ports and adapters. Onion and Clean Architecture are the same idea. <a href="03-hexagonal-architecture.html">More →</a></dd>
+  <dt>Dependency rule</dt>
+  <dd>Source-code dependencies point inward: adapters → application → domain. The domain imports nothing from the outer layers.</dd>
+  <dt><code>domain</code> layer</dt>
+  <dd>Business rules only: value objects, entities, aggregates, domain events, domain services. Pure Go, no I/O.</dd>
+  <dt><code>application</code> layer</dt>
+  <dd>Use cases plus the port definitions. It orchestrates, and owns transactions and authorisation.</dd>
+  <dt><code>adapters</code></dt>
+  <dd><code>adapters/driving/…</code> (HTTP, consumers, scheduler) and <code>adapters/driven/…</code> (Postgres, payment, memory fakes).</dd>
+  <dt><code>contracts</code></dt>
+  <dd>A context's public integration-event types (its Published Language). It's the only package another context may import.</dd>
+  <dt><code>platform</code></dt>
+  <dd>Technical plumbing shared by everyone: DB pool, Kafka client, outbox relay, HTTP helpers, config. No business logic.</dd>
+  <dt>Composition root</dt>
+  <dd><code>cmd/stagehand/main.go</code>, the only place that creates concrete types and wires them together.</dd>
+  <dt>Modular monolith</dt>
+  <dd>One deployable binary with strictly separated modules (our bounded contexts) that talk as if they were separate services.</dd>
+</dl>
+
+<h2 id="messaging">Messaging terms</h2>
+<dl class="terms">
+  <dt>Integration event</dt>
+  <dd>The public, versioned version of a domain event, meant for other contexts (<code>show.published.v1</code>). <a href="04-events-and-messaging.html">More →</a></dd>
+  <dt>Dual-write problem</dt>
+  <dd>Writing to the database and to Kafka can't be atomic, so one of the two can be lost.</dd>
+  <dt>Transactional outbox</dt>
+  <dd>The fix: write events to an <code>outbox</code> table in the same DB transaction as the aggregate. A <strong>relay</strong> then publishes them to Kafka.</dd>
+  <dt>At-least-once delivery</dt>
+  <dd>Every message arrives, maybe more than once.</dd>
+  <dt>Idempotent</dt>
+  <dd>Doing it twice has the same effect as doing it once. Consumers must be idempotent.</dd>
+  <dt>Inbox</dt>
+  <dd>A table recording processed message IDs so duplicates can be skipped.</dd>
+  <dt>Consumer group</dt>
+  <dd>Kafka's way of letting each context read every message independently.</dd>
+  <dt>DLQ (dead-letter queue)</dt>
+  <dd>Where messages that keep failing are parked, so they don't block everything else.</dd>
+  <dt>Eventual consistency</dt>
+  <dd>Other contexts catch up shortly after, not instantly. Example: the show becomes SoldOut a moment after the last ticket sells.</dd>
+</dl>
+
+<h2 id="testing">Testing terms</h2>
+<dl class="terms">
+  <dt>TDD (red → green → refactor)</dt>
+  <dd>Write a failing test, make it pass in the simplest way, then clean up. Repeat. <a href="05-testing-strategy.html">More →</a></dd>
+  <dt>Test pyramid</dt>
+  <dd>Many fast domain tests, fewer use-case tests, fewer adapter integration tests, and a handful of end-to-end tests.</dd>
+  <dt>Test doubles</dt>
+  <dd><strong>Fake</strong>: a working lightweight implementation, such as an in-memory repo. This is our default. <strong>Stub</strong>: returns canned answers. <strong>Spy</strong>: records calls. <strong>Mock</strong>: pre-programmed expectations, which we avoid.</dd>
+  <dt>Contract test</dt>
+  <dd>One test suite run against several implementations of a port (memory and Postgres), so the fake stays honest. Also, golden-file tests that freeze an integration event's JSON shape.</dd>
+  <dt>Testcontainers</dt>
+  <dd>A library that starts real Postgres or Kafka in Docker from inside a Go test.</dd>
+  <dt>Acceptance / end-to-end test</dt>
+  <dd>Tests a whole scenario from the outside, over HTTP, against the running stack.</dd>
+  <dt>Double-loop TDD (outside-in)</dt>
+  <dd>Start a feature with a failing acceptance test (outer loop), then drive the implementation with unit tests (inner loops) until it passes. We switch to it from Part 6.</dd>
+</dl>
+</main>
+<script src="assets/course.js"></script>
+</body>
+</html>

@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Part 3 · Persistence</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main class="content">
+<header>
+  <div class="kicker">Course · Part 3</div>
+  <h1>Persistence: Postgres, goose, sqlc, testcontainers</h1>
+  <p class="lead">Now the first piece of real infrastructure. We add a driven adapter that implements <code>VenueRepository</code> on Postgres, and the domain and application don't change at all. That's the payoff of the hexagon.</p>
+</header>
+
+<section class="lesson" id="l3-1">
+<h3><span class="lesson-id">3.1</span> Docker Compose with Postgres</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd><code>make infra</code> brings up Postgres 18, and you can connect to it.</dd>
+  <dt>Reference</dt><dd><a href="06-infrastructure.html">Chapter 6 → Docker Compose</a></dd>
+  <dt>Creates</dt><dd><code>docker-compose.yml</code> (postgres only), Makefile targets <code>infra</code>, <code>down</code>, <code>reset</code></dd>
+</dl>
+<div class="callout do"><span class="label">Your turn</span><p>Write the <code>postgres</code> service with a healthcheck. Run <code>make infra</code>, then <code>psql postgres://stagehand:stagehand@localhost:5432/stagehand -c 'select version()'</code>.</p></div>
+</section>
+
+<section class="lesson" id="l3-2">
+<h3><span class="lesson-id">3.2</span> Migrations with goose, embedded, and a <code>migrate</code> subcommand</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>A schema per context, the venue tables, and one way to apply migrations everywhere.</dd>
+  <dt>Creates</dt><dd><code>db/migrations/00001_create_schemas.sql</code>, <code>00002_venue_tables.sql</code>, <code>db/embed.go</code>, <code>cmd/stagehand/main.go</code> (only <code>migrate up|down|status</code> for now)</dd>
+</dl>
+<p>Tables: <code>venue.venues</code> (with <code>version</code>) and <code>venue.sections</code> (<code>venue_id</code>, <code>code</code>, <code>name</code>, <code>kind</code>, <code>capacity</code>, <code>rows JSONB</code>, PK <code>(venue_id, code)</code>).</p>
+<div class="callout discuss"><span class="label">Discuss</span><ul>
+  <li>Why store the rows as JSONB instead of a <code>venue.rows</code> table? (They're value objects with no identity, never queried on their own, and always loaded with their section.) When would you change your mind?</li>
+  <li>The persistence model (two tables plus JSONB) differs from the domain model (aggregate → entities → VOs). Who is responsible for the translation?</li>
+</ul></div>
+</section>
+
+<section class="lesson" id="l3-3">
+<h3><span class="lesson-id">3.3</span> sqlc: write SQL, get Go</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Typed query functions for the venue adapter.</dd>
+  <dt>Creates</dt><dd><code>sqlc.yaml</code>, <code>db/queries/venue/*.sql</code>, generated <code>internal/venue/adapters/driven/postgres/sqlcgen/</code>, the Makefile target <code>generate</code></dd>
+</dl>
+<p>Queries needed: <code>InsertVenue</code>, <code>UpdateVenue :execrows</code> (with the version check), <code>GetVenue</code>, <code>DeleteSections</code>, <code>InsertSection</code>, <code>ListSections</code>, plus the read-side queries for <code>VenueQueries</code>.</p>
+<div class="callout do"><span class="label">Your turn</span><p>Run <code>make generate</code> and <em>read</em> the generated code. Commit it, because generated code is reviewed like any other code. Add a CI check later (<code>sqlc diff</code>) to catch stale generation.</p></div>
+</section>
+
+<section class="lesson" id="l3-4">
+<h3><span class="lesson-id">3.4</span> testcontainers: a real Postgres per test package</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>A reusable helper that starts Postgres, applies the embedded migrations and returns a <code>*pgxpool.Pool</code>.</dd>
+  <dt>Concepts</dt><dd><a href="05-testing-strategy.html">Level 3: adapter integration tests</a></dd>
+  <dt>Creates</dt><dd><code>internal/platform/postgres/pool.go</code>, <code>internal/platform/postgres/pgtest/pgtest.go</code> (build tag <code>integration</code>), the Makefile target <code>test-integration</code></dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>An integration test: migrations go up, then down, then up again without error (this catches broken Down sections early).</li>
+  <li><code>pgtest.New(t)</code> returns a pool where <code>SELECT 1</code> works. The container is shared across the package via <code>TestMain</code>.</li>
+</ol></div>
+<div class="callout warn"><span class="label">Pitfall</span><p>Starting a container per test turns a 2-second suite into 2 minutes. Use one per package and isolate tests with random IDs.</p></div>
+</section>
+
+<section class="lesson" id="l3-5">
+<h3><span class="lesson-id">3.5</span> The Postgres <code>VenueRepository</code></h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Pass the <em>same</em> contract suite as the fake.</dd>
+  <dt>Creates</dt><dd><code>internal/venue/adapters/driven/postgres/venue_repository.go</code>, <code>mapping.go</code>, <code>venue_repository_test.go</code></dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>Wire <code>venuerepotest.Run(t, newPostgresRepo)</code>. Everything is red. Good.</li>
+  <li>Make "Get unknown → ErrVenueNotFound" pass (map <code>pgx.ErrNoRows</code>).</li>
+  <li>Make "Save new then Get" pass: one transaction that inserts the venue and its sections. Map rows → <code>domain.RehydrateVenue</code>.</li>
+  <li>Make "Save existing" pass: <code>UpdateVenue</code>, then replace the sections (delete + insert, which is fine because layouts only change in Draft).</li>
+  <li>Make "stale version → ErrConcurrentModification" pass: <code>UpdateVenue</code> affected 0 rows.</li>
+  <li>Make "Save drains events" pass. For now the events are drained and dropped. Part 5 writes them to the outbox.</li>
+</ol></div>
+<div class="callout why"><span class="label">Why this proves the architecture</span><p>Count the lines you changed in <code>domain</code> and <code>application</code> in this lesson. It should be zero. If you had to change them, something leaked, and we discuss what.</p></div>
+</section>
+
+<section class="lesson" id="l3-6">
+<h3><span class="lesson-id">3.6</span> Optimistic concurrency under real contention</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>See the version check work when two goroutines race.</dd>
+  <dt>Concepts</dt><dd>ADR-011</dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>Two goroutines load the same draft venue and each add a different section, then both save. Exactly one gets <code>ErrConcurrentModification</code>, and the stored venue has exactly one of the sections.</li>
+  <li>Add a <code>RetryOnConflict(ctx, attempts, fn)</code> helper to the <em>application</em> layer and use it in <code>AddSectionHandler</code>. Test it with the fake repo by injecting a conflict once.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>Why is retrying the whole load → decide → save cycle safe, but retrying only the save wrong?</p></div>
+</section>
+
+<section class="lesson" id="l3-7">
+<h3><span class="lesson-id">3.7</span> The query side in Postgres</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Implement <code>VenueQueries</code> with flat SQL, without going through the aggregate.</dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>Turn the 2.5 tests into a <code>venuequerytest</code> suite and run it against memory and Postgres.</li>
+  <li>Capacity is computed in SQL (<code>SUM(capacity)</code>), and the result matches the domain's <code>Capacity()</code> for the same venue.</li>
+</ol></div>
+<h4>Done when</h4>
+<ul><li><code>make test</code> is fast and green, and <code>make test-integration</code> is green with real Postgres.</li></ul>
+</section>
+</main>
+<script src="assets/course.js"></script>
+</body>
+</html>

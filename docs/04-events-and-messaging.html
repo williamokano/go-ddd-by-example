@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Events and Messaging</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main class="content">
+<header>
+  <div class="kicker">Reference · Chapter 4</div>
+  <h1>Events &amp; messaging</h1>
+  <p class="lead">How a fact recorded by an aggregate in one context reliably becomes a reaction in another: domain events, integration events, the transactional outbox, Kafka, idempotent consumers and sagas.</p>
+</header>
+
+<h2>Two kinds of events</h2>
+<div class="table-wrap"><table>
+  <tr><th></th><th>Domain event</th><th>Integration event</th></tr>
+  <tr><td>Purpose</td><td>Record a fact inside a context</td><td>Tell <em>other</em> contexts about a fact</td></tr>
+  <tr><td>Defined in</td><td><code>internal/&lt;ctx&gt;/domain</code></td><td><code>internal/&lt;ctx&gt;/contracts</code> (Published Language)</td></tr>
+  <tr><td>Types</td><td>Rich domain types (<code>VenueID</code>, <code>SectionCode</code>)</td><td>Primitives only (strings, ints, RFC3339 times), JSON-tagged</td></tr>
+  <tr><td>Can change freely?</td><td>Yes. It's internal.</td><td><strong>No.</strong> It's a public API. Versioned (<code>.v1</code>), additive changes only, a new version for breaking ones.</td></tr>
+  <tr><td>Granularity</td><td>Fine (<code>SectionAdded</code>)</td><td>Coarse, and only what consumers need (<code>venue.activated.v1</code> carries the whole layout)</td></tr>
+  <tr><td>Example</td><td><code>domain.VenueActivated{VenueID, Sections, OccurredAt}</code></td><td><code>contracts.VenueActivatedV1{VenueID string; Sections []SectionV1; ActivatedAt time.Time}</code></td></tr>
+</table></div>
+<div class="callout why"><span class="label">Why not publish domain events directly?</span><p>If other contexts decode your domain events, your internal model becomes their dependency. Renaming a field or splitting an aggregate would break consumers you don't control. The translation step (domain → integration) is a small Anti-Corruption Layer pointing <em>outward</em>, and it gives you the freedom to refactor inside.</p></div>
+
+<h2>The dual-write problem</h2>
+<p>A use case must (1) save the aggregate to Postgres and (2) publish an event to Kafka. These are two systems, so there's no shared transaction:</p>
+<ul>
+  <li>Save then publish: the process crashes between the two, the event is <strong>lost</strong>, and Ticketing never opens the inventory.</li>
+  <li>Publish then save: the save fails, and you've announced <strong>something that never happened</strong>.</li>
+</ul>
+<h3>Solution: the transactional outbox</h3>
+<p>Write the events into an <code>outbox</code> table <strong>in the same Postgres transaction</strong> as the aggregate. Either both are committed or neither is. A separate process, the <strong>relay</strong>, reads unpublished outbox rows, publishes them to Kafka, and marks them published.</p>
+<pre class="diagram"><code> use case                    Postgres (one transaction)                 relay (loop)                 Kafka
+ ────────                    ──────────────────────────                 ────────────                 ─────
+ venue.Activate(now)
+ repo.Save(venue) ────────▶  BEGIN
+                             UPDATE venue.venues … WHERE version = 4
+                             INSERT INTO venue.outbox (id, topic, key, type, payload)
+                             COMMIT
+                                                     ◀── SELECT … WHERE published_at IS NULL
+                                                         ORDER BY id LIMIT 100 FOR UPDATE SKIP LOCKED
+                                                         produce(topic, key, payload) ───────────▶  venue.events
+                                                         UPDATE … SET published_at = now()</code></pre>
+<p>The result is <strong>at-least-once delivery</strong>: if the relay crashes after producing but before marking the row, it publishes the row again on restart. <em>So every consumer must tolerate duplicates.</em></p>
+<pre><code>-- one outbox table per context schema, e.g. venue.outbox
+CREATE TABLE venue.outbox (
+    id           BIGSERIAL PRIMARY KEY,          -- relay order
+    event_id     UUID        NOT NULL UNIQUE,    -- dedup key for consumers
+    topic        TEXT        NOT NULL,
+    msg_key      TEXT        NOT NULL,           -- aggregate id ⇒ per-aggregate ordering in Kafka
+    event_type   TEXT        NOT NULL,           -- "venue.activated.v1"
+    payload      JSONB       NOT NULL,
+    occurred_at  TIMESTAMPTZ NOT NULL,
+    published_at TIMESTAMPTZ
+);
+CREATE INDEX ON venue.outbox (id) WHERE published_at IS NULL;</code></pre>
+<div class="callout discuss"><span class="label">Who writes the outbox? (decision)</span><p>The <strong>repository's <code>Save</code></strong> writes the outbox rows. It pulls the aggregate's pending events, translates them, and inserts them in the same transaction as the aggregate. One aggregate per transaction (Chapter 2) means <code>Save</code> <em>is</em> the transaction, so this is both simple and correct. The alternative (a Unit of Work port the application service drives) comes up in Part 8, when we need the inbox in the same transaction as a handler.</p></div>
+
+<h2>Kafka topology</h2>
+<div class="table-wrap"><table>
+  <tr><th>Topic</th><th>Producer</th><th>Event types</th><th>Consumers (group id)</th></tr>
+  <tr><td><code>venue.events</code></td><td>Venue</td><td><code>venue.activated.v1</code>, <code>venue.retired.v1</code></td><td><code>show</code></td></tr>
+  <tr><td><code>show.events</code></td><td>Show</td><td><code>show.published.v1</code>, <code>show.cancelled.v1</code></td><td><code>ticketing</code></td></tr>
+  <tr><td><code>ticketing.events</code></td><td>Ticketing</td><td><code>ticketing.inventory_sold_out.v1</code>, <code>ticketing.tickets_issued.v1</code>, <code>ticketing.order_refunded.v1</code></td><td><code>show</code>, <code>notifications</code></td></tr>
+  <tr><td><code>ticketing.internal</code></td><td>Ticketing</td><td>private domain-level events for the checkout saga (<code>OrderPaid</code>, <code>SeatsSold</code>, <code>HoldConfirmationFailed</code>)</td><td><code>ticketing-saga</code></td></tr>
+  <tr><td><code>&lt;topic&gt;.dlq</code></td><td>consumer runner</td><td>messages that failed after N retries</td><td>humans</td></tr>
+</table></div>
+<ul>
+  <li><strong>One topic per producing context</strong>, keyed by <strong>aggregate ID</strong>. Kafka only guarantees order within a partition, and the same key always goes to the same partition. So <code>venue.activated</code> is always seen before <code>venue.retired</code> for the same venue. Putting each event type in its own topic would lose that guarantee.</li>
+  <li><strong>Consumer group per consuming context</strong>, so Show and Notifications each get every message from <code>ticketing.events</code>, independently.</li>
+  <li><strong><code>ticketing.internal</code></strong> keeps the saga durable and retryable with the same machinery. It's private: no other context subscribes, and its payloads aren't a public contract.</li>
+</ul>
+
+<h3>The envelope</h3>
+<pre><code>{
+  "event_id":       "0192f1c4-…",                 // UUIDv7, unique per event; the dedup key
+  "event_type":     "show.published.v1",
+  "occurred_at":    "2026-11-02T19:00:00Z",
+  "aggregate_id":   "0192f1c2-…",
+  "correlation_id": "0192f1aa-…",                 // the request/saga this belongs to (Part 8)
+  "causation_id":   "0192f1b9-…",                 // the event_id that caused this one
+  "payload":        { … contracts.ShowPublishedV1 … }
+}</code></pre>
+<p>The envelope fields also go into Kafka headers, so a consumer can route on <code>event_type</code> without decoding the payload.</p>
+
+<h2>Consuming: the driving side</h2>
+<p>A Kafka consumer is a <strong>driving adapter</strong>, just like an HTTP handler. It decodes a message into a <code>contracts</code> type, translates it into a <em>command</em> in the receiving context's language (this is the ACL), and calls a use case.</p>
+<pre class="diagram"><code>ticketing.events ──▶ show/adapters/driving/consumer
+                       decode envelope; switch event_type
+                       "ticketing.inventory_sold_out.v1" → application.MarkShowSoldOut{ShowID: p.ShowID}
+                     ──▶ show/application MarkShowSoldOutHandler.Handle(...)
+                     ──▶ show/domain show.MarkSoldOut()   // no-op if already SoldOut (SHW-8)
+                     commit Kafka offset only after Handle returns nil</code></pre>
+<h3>Delivery guarantees and how we cope</h3>
+<div class="table-wrap"><table>
+  <tr><th>Reality</th><th>Our answer</th></tr>
+  <tr><td><strong>Duplicates</strong> (at-least-once)</td><td>1) <em>Natural idempotency in the domain</em>: <code>OpenInventory</code> for an existing show is a no-op, and <code>MarkSoldOut</code> on a SoldOut show is a no-op. Unit-tested. 2) An <em>inbox</em> table <code>(consumer, event_id)</code> as a safety net (Part 8).</td></tr>
+  <tr><td><strong>Reordering across topics</strong></td><td>Within one topic and key (one aggregate), order is preserved, so <code>show.published</code> always arrives before <code>show.cancelled</code>. Across topics there's no order: a <code>ticketing.inventory_sold_out</code> can reach Show after Show has cancelled that show. Handlers check state and treat "too late" facts as no-ops, not errors (SHW-8).</td></tr>
+  <tr><td><strong>Transient failure</strong> (DB down)</td><td>Retry with backoff. The offset isn't committed, so the message is redelivered.</td></tr>
+  <tr><td><strong>Poison message</strong> (can't decode, rule violation)</td><td>After N attempts, publish to <code>&lt;topic&gt;.dlq</code> with the error in a header, log it, commit, and move on. Never block a partition forever.</td></tr>
+  <tr><td><strong>Eventual consistency</strong></td><td>Accepted by design: a show becomes SoldOut a few hundred ms after the last ticket is sold. The business is fine with that, and the e2e tests poll with a timeout.</td></tr>
+</table></div>
+
+<h2>The checkout saga (choreography)</h2>
+<p>Paying and confirming seats touches two aggregates (<code>Order</code> and <code>ShowInventory</code>) <em>and</em> an external system. One aggregate per transaction, plus payment providers that can't join a transaction anyway, means a saga.</p>
+<pre class="diagram"><code>HTTP POST /orders ─▶ PlaceOrder:      inventory.Get (read-only check: hold valid, owned) → Order.Place → save   [tx1: Order]
+                     ChargeOrder:     PaymentGateway.Charge(order.Total)  (external, no tx)
+                                      ├─ ok   → order.MarkPaid(paymentRef)  → save → OrderPaid            [tx2: Order]
+                                      └─ fail → order.MarkPaymentFailed     → save → OrderPaymentFailed   [tx2: Order]
+
+ticketing.internal: OrderPaid ─▶ ConfirmHold:  inventory.ConfirmHold(holdID, orderID, now)                  [tx3: Inventory]
+                                      ├─ ok   → SeatsSold (+ InventorySoldOut if last seats)
+                                      └─ hold expired/released → HoldConfirmationFailed   (TKT-8)
+
+ticketing.internal: SeatsSold ─▶ IssueTickets: create N Ticket aggregates; order.MarkFulfilled              [tx4: new Tickets + Order]
+ticketing.internal: HoldConfirmationFailed ─▶ RefundOrder: PaymentGateway.Refund → order.MarkRefunded      [tx5: Order]   ← COMPENSATION</code></pre>
+<div class="callout discuss"><span class="label">Discuss in Part 7</span><ul>
+  <li>Why does <code>PlaceOrder</code> only <em>read</em> the inventory instead of modifying it?</li>
+  <li>tx4 creates several Ticket aggregates and updates the Order. Is that a violation of "one aggregate per transaction"? (Creating fresh aggregates nobody else can see yet causes no contention. Discuss whether that's a good enough reason.)</li>
+  <li>What if <code>Charge</code> succeeds but the process crashes before tx2? (Payment idempotency key = order ID, plus a reconciliation job. Real systems do both.)</li>
+</ul></div>
+
+<h2>Evolving contracts</h2>
+<ol>
+  <li><strong>Additive changes</strong> (a new optional field) go into the same version. Consumers ignore unknown fields (Go's <code>encoding/json</code> does by default).</li>
+  <li><strong>Breaking changes</strong> (rename, remove, change meaning) need a new type, <code>show.published.v2</code>. Publish v1 and v2 side by side until every consumer has migrated, then retire v1.</li>
+  <li>Contracts have <strong>golden-file tests</strong> (Chapter 5). A diff in the JSON shape fails CI, so a breaking change can't slip through unnoticed.</li>
+</ol>
+</main>
+<script src="assets/course.js"></script>
+</body>
+</html>

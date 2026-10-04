@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Part 8 · End-to-End</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main class="content">
+<header>
+  <div class="kicker">Course · Part 8</div>
+  <h1>End-to-end &amp; hardening</h1>
+  <p class="lead">All scenarios green, a generic subdomain done the simple way, traceability across events, exactly-once <em>effects</em> with an inbox, and failure drills. After this part the system behaves like a small production service.</p>
+</header>
+
+<section class="lesson" id="l8-1">
+<h3><span class="lesson-id">8.1</span> All acceptance scenarios</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Scenarios S1–S6 from Chapter 1 as e2e tests.</dd>
+</dl>
+<div class="callout tdd"><span class="label">Tests</span><ol class="tests">
+  <li>S2 and S3 with <code>HOLD_TTL=2s</code> and <code>PAYMENT_FAKE_MODE=delay:3s</code> for S3. Make the fake mode switchable per request through a test-only header, so scenarios don't need separate app instances.</li>
+  <li>S5, the full cascade: venue retired → show cancelled → tickets voided → order refunded. Assert each step through the public APIs, with <code>eventually</code>.</li>
+  <li>The whole e2e suite runs in under 2 minutes from <code>make test-e2e</code>.</li>
+</ol></div>
+</section>
+
+<section class="lesson" id="l8-2">
+<h3><span class="lesson-id">8.2</span> Notifications: when a transaction script is the right answer</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Show that not every context deserves aggregates.</dd>
+  <dt>Creates</dt><dd><code>internal/notifications/</code>: handlers for <code>tickets_issued</code> and <code>order_refunded</code>, an <code>EmailSender</code> port, a <code>logsender</code> adapter, a consumer</dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>The handler formats the expected email from a <code>TicketsIssuedV1</code> (golden text) and calls the sender.</li>
+  <li>A duplicate event doesn't send twice. This needs the inbox from 8.4: write the test now, see it fail, and come back.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>No domain package, no aggregates, no repository. Is that "bad DDD"? (No. Strategic DDD tells you <em>where not</em> to invest. Generic subdomain, simplest thing that works.)</p></div>
+</section>
+
+<section class="lesson" id="l8-3">
+<h3><span class="lesson-id">8.3</span> Correlation and causation IDs</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Follow one purchase across HTTP, the outbox, Kafka and three contexts in the logs.</dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>The HTTP middleware puts a correlation ID in the <code>context</code> (from the <code>X-Correlation-ID</code> header, or a new one).</li>
+  <li>The outbox writer copies it into the envelope. The consumer runner puts it back into the context, with <code>causation_id</code> set to the consumed event's ID.</li>
+  <li>A <code>slog.Handler</code> wrapper adds both IDs to every log line.</li>
+  <li>e2e: after S1, every log line and outbox row for that purchase share one correlation ID.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>The correlation ID travels in <code>context.Context</code>, and the domain doesn't take a context. How does the ID reach the outbox without touching the domain? (The repository adapter reads it from <code>ctx</code> in <code>Save</code>.)</p></div>
+</section>
+
+<section class="lesson" id="l8-4">
+<h3><span class="lesson-id">8.4</span> Inbox and a transaction manager</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Effectively-once processing for handlers that aren't naturally idempotent (sending emails, calling the payment provider).</dd>
+  <dt>Creates</dt><dd>A <code>&lt;schema&gt;.inbox (consumer, event_id)</code> table; a <code>TxManager</code> port (<code>WithinTx(ctx, fn)</code>) with a context-carried <code>pgx.Tx</code>; repositories join an ambient transaction when there is one</dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>The inbox insert and the handler's writes commit together, or roll back together.</li>
+  <li>A second delivery of the same <code>event_id</code> is skipped.</li>
+  <li>The 8.2 duplicate-email test now passes.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>We refactored "Save is the transaction" (ADR-004) into "the use case may open a transaction". Write ADR-012 recording this, and explain why we didn't start there.</p></div>
+</section>
+
+<section class="lesson" id="l8-5">
+<h3><span class="lesson-id">8.5</span> Failure drills</h3>
+<div class="callout do"><span class="label">Your turn: break it on purpose</span><ol>
+  <li>Stop Kafka in the middle of S1. Purchases still complete their HTTP part and the outbox grows. Restart Kafka, and everything converges.</li>
+  <li>Kill the app while the relay is publishing. On restart, duplicates are delivered and absorbed by idempotency.</li>
+  <li>Publish a malformed message to <code>show.events</code> by hand. It ends up in the DLQ, and consumption continues.</li>
+  <li>Stop Postgres: HTTP returns 500s and consumers back off without losing messages.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>For each drill, which pattern saved you (outbox, idempotency, offsets committed after handling, DLQ)?</p></div>
+</section>
+
+<section class="lesson" id="l8-6">
+<h3><span class="lesson-id">8.6</span> Retrospective</h3>
+<div class="callout do"><span class="label">Your turn</span><ol>
+  <li>Write the project <code>README.md</code>: what Stagehand is, how to run it, and a map from each DDD/hexagonal concept to a file in this repo.</li>
+  <li>Re-read Chapters 2 and 3. Mark anything you would now explain differently, and update the docs.</li>
+  <li>Pick the Part 9 stretch goals you want.</li>
+</ol></div>
+</section>
+</main>
+<script src="assets/course.js"></script>
+</body>
+</html>

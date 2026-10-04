@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Part 6 · Show Context</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main class="content">
+<header>
+  <div class="kicker">Course · Part 6</div>
+  <h1>The Show context</h1>
+  <p class="lead">The second context, built faster because you know the moves. The new ideas are a <strong>domain service</strong>, an <strong>anti-corruption layer</strong> that consumes another context's events into a local projection, a richer <strong>state machine</strong>, and <strong>policies</strong> reacting to other contexts. From here on we work <strong>outside-in</strong>.</p>
+</header>
+
+<div class="callout why"><span class="label">Change of rhythm: double-loop TDD</span><p>Each feature now starts with a failing acceptance test (the outer loop) that describes it from the outside. It stays red while you go inside-out with unit tests (the inner loops) until it turns green. You'll get less step-by-step guidance from here: I'll set the goal and the tests, you lead, and I review.</p></div>
+
+<section class="lesson" id="l6-1">
+<h3><span class="lesson-id">6.1</span> The outer loop: the acceptance test first</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>A red e2e test describing the whole Show feature.</dd>
+  <dt>Creates</dt><dd><code>test/e2e/show_test.go</code>, an <code>eventually</code> helper</dd>
+</dl>
+<div class="callout tdd"><span class="label">Outer-loop test</span><ol class="tests">
+  <li>Given an activated venue (through the Venue API), <em>eventually</em> a show can be drafted at it. (Show learns about the venue from Kafka.)</li>
+  <li>Price every section → publish → GET /shows/{id} shows <code>published</code>.</li>
+  <li>Drafting a second show overlapping the first → 409.</li>
+</ol></div>
+<p>It will stay red until 6.6. Run it at the end of each lesson anyway, to see how far along you are.</p>
+</section>
+
+<section class="lesson" id="l6-2">
+<h3><span class="lesson-id">6.2</span> Value objects: <code>ShowID</code>, <code>Schedule</code>, <code>Money</code>, <code>PriceList</code></h3>
+<dl class="meta">
+  <dt>Rules</dt><dd>SHW-2, SHW-4</dd>
+  <dt>Creates</dt><dd><code>internal/show/domain/{show_id,schedule,money,price_list}.go</code> + tests</dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li><code>NewSchedule(doors, start, end)</code>: table of valid and invalid orderings, durations over 12h, and the zero time.</li>
+  <li><code>schedule.Overlaps(other)</code>: touching edges don't overlap; containment does. Use a table.</li>
+  <li><code>Money</code> in <strong>minor units</strong> (<code>int64</code> cents) plus a <code>Currency</code>. <code>Add</code> fails on a currency mismatch, negative amounts are rejected, and <code>String()</code> gives <code>"EUR 15.00"</code>.</li>
+  <li><code>PriceList.CoversExactly(sectionCodes)</code>: missing, extra and exact cases. Mixed currencies → error.</li>
+</ol></div>
+<div class="callout warn"><span class="label">Pitfall</span><p>Never <code>float64</code> for money: <code>0.1 + 0.2 != 0.3</code>. Use integer minor units.</p></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>We just wrote <code>Money</code> inside <code>show/domain</code>. Ticketing will need it too. Why not put it in a shared package right away? (ADR-009, the rule of three, and the cost of a premature shared kernel.)</p></div>
+</section>
+
+<section class="lesson" id="l6-3">
+<h3><span class="lesson-id">6.3</span> The <code>Show</code> aggregate and its state machine</h3>
+<dl class="meta">
+  <dt>Rules</dt><dd>SHW-1, SHW-5, SHW-6, SHW-8</dd>
+  <dt>Creates</dt><dd><code>show.go</code>, <code>events.go</code>, <code>errors.go</code> + tests</dd>
+</dl>
+<p>Methods: <code>DraftShow(id, venueID, promoterID, title, schedule, now)</code>, <code>Price(list, venueSections, now)</code>, <code>Reschedule(schedule, now)</code>, <code>Publish(now)</code>, <code>Cancel(reason, now)</code>, <code>MarkSoldOut(now)</code>.</p>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>A drafted show records <code>ShowDrafted</code> and is Draft.</li>
+  <li>Drafting with a start in the past (relative to <code>now</code>) → error.</li>
+  <li>Publishing without a price list → <code>ErrShowNotPriced</code>. With a complete list → Published + <code>ShowPublished</code>.</li>
+  <li><strong>Transition table</strong>: for every (state × command) pair, the expected result is "ok → new state" or a specific error. One table-driven test covers the whole state diagram from Chapter 1.</li>
+  <li><code>MarkSoldOut</code> on a SoldOut show is a no-op and records no event (SHW-8, idempotency in the domain).</li>
+</ol></div>
+</section>
+
+<section class="lesson" id="l6-4">
+<h3><span class="lesson-id">6.4</span> Domain service: <code>SchedulingPolicy</code></h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>A rule that no single aggregate can enforce (SHW-3).</dd>
+  <dt>Concepts</dt><dd><a href="02-ddd-building-blocks.html#domain-service">Domain service</a></dd>
+  <dt>Creates</dt><dd><code>scheduling_policy.go</code> + tests</dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>No other shows → ok.</li>
+  <li>An overlapping, non-cancelled show at the same venue → <code>ErrScheduleConflict</code> that names the conflicting show.</li>
+  <li>An overlapping <em>cancelled</em> show → ok.</li>
+  <li>The show being rescheduled is excluded from the comparison with itself.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><ul>
+  <li>The policy takes <code>[]Show</code> (or <code>[]Schedule</code>). Who loads them, and with what query? (The application layer, through a repository finder <code>FindActiveAt(venueID, window)</code>.)</li>
+  <li>Two promoters draft overlapping shows at the same instant, and both checks pass. Is that a real risk? How would you close it? (A unique/exclusion constraint in Postgres as a backstop: <code>EXCLUDE USING gist</code>. The domain rule stays the primary statement of the rule.)</li>
+</ul></div>
+</section>
+
+<section class="lesson" id="l6-5">
+<h3><span class="lesson-id">6.5</span> Anti-corruption layer: the local <code>VenueLayout</code> projection</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Show learns about venues only through events, translated into its own model.</dd>
+  <dt>Concepts</dt><dd>ACL, projections, idempotent consumers, <a href="02-ddd-building-blocks.html#policy">policies</a></dd>
+  <dt>Creates</dt><dd><code>show/application/venue_events.go</code> (<code>OnVenueActivated</code>, <code>OnVenueRetired</code> handlers), a <code>VenueLayouts</code> port, <code>show/adapters/driving/consumer/venue_consumer.go</code>, the Postgres <code>show.venue_layouts</code> table</dd>
+</dl>
+<pre class="diagram"><code>venue.events ─▶ consumer (driving adapter)          ─▶ application                                  ─▶ domain
+                decode contracts.VenueActivatedV1      OnVenueActivated: upsert VenueLayout
+                translate → OnVenueActivated{…}         OnVenueRetired:  mark retired; for each future show:
+                                                                         show.Cancel("venue_retired")  (SHW-7)</code></pre>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>Application: <code>OnVenueActivated</code> stores a layout that <code>DraftShow</code> can then use.</li>
+  <li>Receiving the same event twice leaves the same state (an upsert).</li>
+  <li><code>OnVenueRetired</code> cancels only future, non-terminal shows at that venue, one aggregate save per show.</li>
+  <li>Consumer: a <code>venue.activated.v1</code> envelope is translated into the right command, and an unknown event type is ignored and logged (not an error).</li>
+</ol></div>
+<div class="callout why"><span class="label">Why a local copy instead of asking Venue?</span><p>Show can now draft shows while Venue is down, and Venue's model can change without breaking Show, because only the contract matters. The cost is that the data is eventually consistent, which is why the e2e test uses <code>eventually</code>.</p></div>
+</section>
+
+<section class="lesson" id="l6-6">
+<h3><span class="lesson-id">6.6</span> Use cases, adapters, contracts, and the outer loop goes green</h3>
+<dl class="meta">
+  <dt>Creates</dt><dd>DraftShow, PriceShow, PublishShow, CancelShow, MarkShowSoldOut handlers; Postgres repo (with a contract suite); HTTP adapter; <code>show/contracts</code> (<code>show.published.v1</code>, <code>show.cancelled.v1</code>) with golden tests; outbox translation; wiring in <code>main</code></dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script (highlights)</span><ol class="tests">
+  <li>DraftShow: the venue isn't in the projection → <code>ErrVenueUnknown</code>; venue retired → <code>ErrVenueNotActive</code>; overlap → <code>ErrScheduleConflict</code>.</li>
+  <li>Authorisation: only the promoter who drafted the show may price, publish or cancel it. This check lives in the <em>application</em> layer. Discuss why.</li>
+  <li>PublishShow writes a <code>show.published.v1</code> carrying the layout snapshot and prices (from the projection plus the price list).</li>
+  <li>The 6.1 acceptance test is green.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Retrospective</span><ul>
+  <li>Which parts of Venue did you copy almost verbatim? Which of them are worth extracting into <code>platform</code>, and which are domain code that only <em>looks</em> similar?</li>
+  <li>Is the authorisation rule "only the promoter may cancel" a domain rule or an application rule? Argue both sides.</li>
+</ul></div>
+</section>
+</main>
+<script src="assets/course.js"></script>
+</body>
+</html>

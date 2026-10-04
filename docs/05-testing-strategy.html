@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Testing Strategy</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main class="content">
+<header>
+  <div class="kicker">Reference · Chapter 5</div>
+  <h1>Testing strategy &amp; TDD</h1>
+  <p class="lead">What we test at each layer, with which tools, how fast it runs, and the TDD rhythm we follow. Hexagonal architecture is what makes this pyramid cheap: the core can be tested without any infrastructure.</p>
+</header>
+
+<h2>The TDD cycle</h2>
+<ol>
+  <li><strong>Red</strong>: write the smallest test that describes the next bit of behaviour. Run it. Watch it fail <em>for the right reason</em>: a compile error counts as red, but the real goal is an assertion failure that says what's missing.</li>
+  <li><strong>Green</strong>: write the simplest code that passes. Hard-coding is allowed. The next test will force you to generalise ("triangulation").</li>
+  <li><strong>Refactor</strong>: with the tests green, clean up names, duplication and structure, in both the code and the tests. This is where the design happens. Don't skip it.</li>
+</ol>
+<div class="callout tdd"><span class="label">House rules</span><ul>
+  <li>No production code without a failing test that demands it. (Wiring in <code>main.go</code> is the exception; e2e tests cover it.)</li>
+  <li>One reason to fail per test. Name it as a behaviour: <code>TestVenue_Activate_FailsWithoutSections</code>, or <code>t.Run("rejects activation without sections", ...)</code>.</li>
+  <li>Test through the <strong>public API</strong> of the package. Domain tests use <code>package domain_test</code> (black-box), so they can't touch unexported fields.</li>
+  <li>Structure every test as <strong>Given / When / Then</strong> (Arrange / Act / Assert), separated by blank lines.</li>
+  <li>Reference the rule ID (<code>VEN-4</code>) in the test name or a comment.</li>
+  <li>Commit at green. Small commits are your undo button.</li>
+</ul></div>
+
+<h3>Inside-out first, then outside-in</h3>
+<p><strong>Parts 1–5 (inside-out):</strong> start with domain unit tests, then use-case tests, then adapters. This is the best way to <em>learn</em> the building blocks one at a time.</p>
+<p><strong>Parts 6–8 (outside-in, "double loop"):</strong> write a failing <em>acceptance test</em> for the feature first (the outer loop, which stays red for a while). Then drive the inner loops with unit tests from the domain outward until the acceptance test goes green. This is the more professional rhythm: you never build something nobody asked for.</p>
+
+<h2>The test pyramid</h2>
+<pre class="diagram"><code>                         ▲  few, slow (seconds), most confidence in wiring
+                        ╱ ╲
+                       ╱E2E╲          test/e2e — full app + Postgres + Kafka; scenarios S1–S6     (~10)
+                      ╱─────╲
+                     ╱adapter╲        Postgres repos, outbox relay, Kafka consumer, HTTP          (~60)
+                    ╱integration╲     testcontainers, build tag "integration"
+                   ╱─────────────╲
+                  ╱  application  ╲   use cases with in-memory fakes; ms each                      (~100)
+                 ╱─────────────────╲
+                ╱      domain       ╲ aggregates, VOs, domain services; µs each; no doubles at all (~300)
+               ╱─────────────────────╲
+                         ▼  many, fast, pinpoint failures</code></pre>
+<div class="table-wrap"><table>
+  <tr><th>Level</th><th>What</th><th>Doubles</th><th>Tooling</th><th>Command</th></tr>
+  <tr><td>Domain</td><td>Invariants, state transitions, recorded events, domain services</td><td>None. Time and IDs are passed in as values.</td><td><code>testing</code>, <code>go-cmp</code></td><td><code>make test</code></td></tr>
+  <tr><td>Application</td><td>Use-case orchestration: loads, saves, error paths, idempotency, authorisation</td><td>Fakes: in-memory repository, fixed clock, sequential IDs, fake payment gateway</td><td><code>testing</code></td><td><code>make test</code></td></tr>
+  <tr><td>Driving adapter (HTTP)</td><td>JSON decoding, status codes, error mapping</td><td>A stub use case</td><td><code>net/http/httptest</code></td><td><code>make test</code></td></tr>
+  <tr><td>Driven adapter</td><td>SQL correctness, mapping, optimistic locking, outbox atomicity, Kafka produce/consume</td><td>None. Real Postgres and Kafka.</td><td><code>testcontainers-go</code></td><td><code>make test-integration</code></td></tr>
+  <tr><td>Contract</td><td>Integration event JSON shape is stable</td><td>None</td><td>Golden files in <code>testdata/</code></td><td><code>make test</code></td></tr>
+  <tr><td>Architecture</td><td>The dependency rule holds</td><td>None</td><td><code>go/packages</code> or <code>go list</code></td><td><code>make test</code></td></tr>
+  <tr><td>End-to-end</td><td>Scenarios S1–S6 across contexts, through HTTP and Kafka</td><td>Only the fake payment gateway (configured by env)</td><td>Docker Compose / testcontainers, polling helper</td><td><code>make test-e2e</code></td></tr>
+</table></div>
+
+<h2>Level 1 — domain tests</h2>
+<p>These are the heart of the course. They're plain Go with no setup, no mocks and no I/O. Example shape:</p>
+<pre><code>package domain_test
+
+func TestVenue_Activate(t *testing.T) {
+	t.Run("records VenueActivated when draft venue has sections (VEN-5)", func(t *testing.T) {
+		// Given
+		venue := newDraftVenue(t, withSection("ORCH", rows("A", 20)))
+		venue.PullEvents()                                   // discard creation events
+
+		// When
+		err := venue.Activate(fixedNow)
+
+		// Then
+		if err != nil {
+			t.Fatalf("Activate() error = %v", err)
+		}
+		want := []sharedkernel.DomainEvent{domain.VenueActivated{VenueID: venue.ID(), At: fixedNow /* … */}}
+		if diff := cmp.Diff(want, venue.PullEvents()); diff != "" {
+			t.Errorf("events mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("fails without sections (VEN-5)", func(t *testing.T) { … errors.Is(err, domain.ErrVenueHasNoSections) … })
+}</code></pre>
+<ul>
+  <li><strong>Test builders</strong> (<code>newDraftVenue(t, opts...)</code>) live in <code>helpers_test.go</code>. They hide irrelevant setup so each test only shows what matters to it.</li>
+  <li><strong>Fixed times</strong> (<code>fixedNow = time.Date(2026, 11, 1, 20, 0, 0, 0, time.UTC)</code>) make expiry tests (TKT-4) deterministic. You never sleep in a test.</li>
+  <li><strong>Assert on events and on public getters</strong>, not internals.</li>
+  <li><strong>Table-driven tests</strong> for validation of value objects (many inputs, one rule).</li>
+</ul>
+
+<h2>Level 2 — application tests with fakes</h2>
+<h3>Test doubles vocabulary</h3>
+<div class="table-wrap"><table>
+  <tr><th>Double</th><th>What</th><th>We use it for</th></tr>
+  <tr><td>Dummy</td><td>Passed but never used</td><td>Rarely</td></tr>
+  <tr><td>Stub</td><td>Returns canned answers</td><td>HTTP adapter tests (a stub use case)</td></tr>
+  <tr><td>Spy</td><td>Records calls for later assertions</td><td>Fake payment gateway ("was Refund called with order X?")</td></tr>
+  <tr><td>Mock</td><td>Pre-programmed expectations that fail on unexpected calls</td><td><strong>Avoided.</strong> Mocks couple tests to call order and implementation details.</td></tr>
+  <tr><td><strong>Fake</strong></td><td>A working, lightweight implementation</td><td><strong>Our default:</strong> an in-memory repository, a fixed clock, a sequential ID generator</td></tr>
+</table></div>
+<div class="callout why"><span class="label">Why fakes over mocks?</span><p>A mock test says "Save was called once with these arguments". That restates the implementation and breaks on every refactor. A fake test says "after RegisterVenue, the venue can be loaded and is Draft". That checks <em>behaviour</em> and survives refactoring. The risk of a fake is that it behaves differently from Postgres. The next section deals with that.</p></div>
+
+<h3>Repository contract tests: keeping fakes honest</h3>
+<p>We write <strong>one test suite</strong> describing what <em>any</em> <code>VenueRepository</code> must do (save then get round-trips, a missing ID gives <code>ErrVenueNotFound</code>, a stale version gives <code>ErrConcurrentModification</code>, events are drained) and run it against <strong>both</strong> the in-memory fake and the Postgres adapter.</p>
+<pre><code>// internal/venue/application/venuerepotest/suite.go  (exported test helper package)
+func Run(t *testing.T, newRepo func(t *testing.T) application.VenueRepository) { … }
+
+// memory adapter:   func TestMemoryRepo(t *testing.T)   { venuerepotest.Run(t, newMemoryRepo) }
+// postgres adapter: func TestPostgresRepo(t *testing.T) { venuerepotest.Run(t, newPostgresRepo) } // build tag integration</code></pre>
+<p>If both pass the same suite, the fast application tests that use the fake can be trusted.</p>
+
+<h2>Level 3 — adapter integration tests</h2>
+<ul>
+  <li><strong>Build tag</strong> <code>//go:build integration</code> keeps them out of the default <code>go test ./...</code> loop, which stays under a few seconds.</li>
+  <li><strong>One container per test package</strong>, started in <code>TestMain</code> via <code>testcontainers-go/modules/postgres</code>. Migrations are applied with goose (embedded FS). Starting containers per test is too slow.</li>
+  <li><strong>Isolation</strong> between tests: every test uses fresh random IDs, so tests don't collide and can run with <code>t.Parallel()</code>. Truncate only when a test needs an empty table (e.g. the outbox relay).</li>
+  <li><strong>Postgres snapshot/restore</strong> (testcontainers' <code>Snapshot</code>/<code>Restore</code>) is an option if the suite gets slow.</li>
+  <li><strong>Kafka tests</strong> use <code>testcontainers-go/modules/kafka</code> (KRaft). If startup is slow on your machine, the Redpanda module is a Kafka-API-compatible drop-in.</li>
+  <li>The <strong>concurrency test</strong> for S6 lives here: 50 goroutines race to hold the last seat against real Postgres, and exactly one may win.</li>
+</ul>
+
+<h2>Contract (golden-file) tests</h2>
+<p>For each integration event in <code>contracts</code>, a test marshals a known value and compares it with <code>testdata/&lt;event_type&gt;.golden.json</code>. Run with <code>-update</code> to rewrite the golden file <em>intentionally</em>, and the diff then shows up in code review. This is how we spot breaking changes to the Published Language.</p>
+
+<h2>Architecture tests</h2>
+<p>A test in <code>internal/archtest</code> lists every package with <code>golang.org/x/tools/go/packages</code> and asserts the import rules from Chapter 3. For example: no <code>…/domain</code> package imports anything outside stdlib, <code>sharedkernel</code> and <code>uuid</code>; no context imports another context except its <code>contracts</code>. The architecture then stays true as the code grows.</p>
+
+<h2>End-to-end tests</h2>
+<ul>
+  <li>Build tag <code>e2e</code>. They start the full stack (<code>docker compose up -d --wait</code> via the Makefile, or a testcontainers Compose stack) and talk only HTTP. They never touch the database directly.</li>
+  <li>Cross-context effects are eventually consistent, so they use an <code>eventually(t, 10*time.Second, func() bool {...})</code> polling helper. Never <code>time.Sleep(3*time.Second)</code>.</li>
+  <li>They cover the scenarios S1–S6 from Chapter 1. Keep them few: they're slow and tell you <em>that</em> something broke, not <em>where</em>.</li>
+  <li>Hold expiry (S2, S3) needs time control. In e2e the hold TTL is configurable through an env var (e.g. 2s), so we don't wait 10 minutes.</li>
+</ul>
+
+<h2>Make targets</h2>
+<pre><code>make test              # go test ./...            — domain, application, http, contract, arch  (seconds)
+make test-integration  # go test -tags=integration ./...   — + testcontainers                  (~1 min)
+make test-e2e          # docker compose up + go test -tags=e2e ./test/e2e/...                  (~2 min)
+make cover             # coverage report; we read it, we don't chase a number</code></pre>
+<div class="callout warn"><span class="label">Coverage</span><p>The domain will reach ~100% coverage naturally with TDD. Don't chase a percentage elsewhere. One good e2e test covers <code>main.go</code> wiring better than an artificial unit test would.</p></div>
+</main>
+<script src="assets/course.js"></script>
+</body>
+</html>

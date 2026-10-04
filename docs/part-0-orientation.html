@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Part 0 · Orientation</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main class="content">
+<header>
+  <div class="kicker">Course · Part 0</div>
+  <h1>Orientation &amp; setup</h1>
+  <p class="lead">Before writing any Go, we make sure we understand the business and that the toolchain works. A programmer on a new project does the same: talk to the domain experts first, then open the editor.</p>
+</header>
+
+<section class="lesson" id="l0-1">
+<h3><span class="lesson-id">0.1</span> Event storming on paper</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Discover the domain events, commands, actors and policies yourself before reading the answer.</dd>
+  <dt>Concepts</dt><dd><a href="02-ddd-building-blocks.html#ubiquitous-language">Ubiquitous language</a>, <a href="02-ddd-building-blocks.html#domain-event">domain events</a>, <a href="02-ddd-building-blocks.html#policy">policies</a>, bounded contexts</dd>
+  <dt>Creates</dt><dd><code>notes/event-storming.md</code></dd>
+</dl>
+<p>Read only the first two sections of <a href="01-the-domain.html">Chapter 1</a> ("The business in one paragraph" and "Actors"). Stop before the event-storming diagram.</p>
+<div class="callout do"><span class="label">Your turn</span><ol>
+  <li>List every <strong>domain event</strong> you can think of, in the past tense ("SeatsHeld"), in time order. Aim for 20.</li>
+  <li>For each event, write the <strong>command</strong> that causes it and the <strong>actor</strong> who issues it (person, external system, or time).</li>
+  <li>Find the <strong>policies</strong>: "whenever X, then Y". (Hint: what happens when a venue closes?)</li>
+  <li>Draw vertical lines where the <em>language changes</em>. Those are your candidate bounded contexts.</li>
+  <li><em>Only now</em> compare with Chapter 1. Write down every difference and whether you think yours or the doc's is better.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><ul>
+  <li>Which word means different things on either side of a line? (Look for "Seat" and "Event".)</li>
+  <li>Which event would hurt the business most if it were lost? That points to the core domain.</li>
+  <li>Is "PaymentCaptured" our event or the payment provider's? What does that tell us about where Payments sits?</li>
+</ul></div>
+<h4>Done when</h4>
+<ul><li>You can explain the three main contexts and the core domain in two minutes, without notes.</li></ul>
+</section>
+
+<section class="lesson" id="l0-2">
+<h3><span class="lesson-id">0.2</span> Read the reference chapters</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>A first skim of the vocabulary. You'll come back to each section as lessons reference it.</dd>
+  <dt>Read</dt><dd>Chapter 0 (Key terms) fully. Chapter 1 fully. Chapters 2 and 3 quickly. Chapters 4–6 only the headings.</dd>
+</dl>
+<div class="callout discuss"><span class="label">Discuss (answer out loud, then check the chapter)</span><ul>
+  <li>Why is the aggregate root the root? Give a Stagehand rule that only the root can enforce.</li>
+  <li>What's the difference between a domain service and an application service? Give one example of each.</li>
+  <li>Which side owns the interface of a driven port, the core or the adapter? Why?</li>
+  <li>Why does the domain layer not import <code>context</code>?</li>
+</ul></div>
+</section>
+
+<section class="lesson" id="l0-3">
+<h3><span class="lesson-id">0.3</span> Go module, Makefile, linter</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>A repo where <code>make test</code> and <code>make lint</code> work, so every later lesson starts green.</dd>
+  <dt>Creates</dt><dd><code>go.mod</code>, <code>Makefile</code>, <code>.golangci.yml</code>, <code>README.md</code></dd>
+</dl>
+<div class="callout do"><span class="label">Your turn</span><ol>
+  <li><code>go mod init github.com/williamokano/go-ddd-by-example</code>, and check the <code>go 1.27</code> line.</li>
+  <li>Install <code>golangci-lint</code> (<a href="06-infrastructure.html">Chapter 6 → Tools</a>).</li>
+  <li>The <code>Makefile</code> already exists with a <code>docs</code> target. Add <code>test</code> and <code>lint</code>. Other targets are added in the lesson that needs them.</li>
+  <li>Create <code>.golangci.yml</code> (v2 format) with the <code>standard</code> linters plus <code>errorlint</code>, <code>gocritic</code>, <code>revive</code>, <code>testpackage</code> and <code>wrapcheck</code> (with <code>wrapcheck</code> excluded for the domain).</li>
+  <li>Write a two-line <code>README.md</code> that points to <code>docs/index.html</code>.</li>
+</ol></div>
+<div class="callout why"><span class="label">Why <code>testpackage</code>?</span><p>It pushes tests into <code>package xxx_test</code>, so tests can only use the exported API, the same API other packages use. If you can't test something through the public API, either it isn't behaviour or your API is missing something.</p></div>
+<h4>Done when</h4>
+<ul><li><code>make test</code> prints "no packages to test" without error, and <code>make lint</code> passes.</li></ul>
+</section>
+
+<section class="lesson" id="l0-4">
+<h3><span class="lesson-id">0.4</span> Working agreement: branches, commits, CI</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>A rhythm for the rest of the course.</dd>
+  <dt>Creates</dt><dd>(optional) <code>.github/workflows/ci.yml</code></dd>
+</dl>
+<ul>
+  <li>One branch per Part (<code>part-1-venue-domain</code>), merged to <code>main</code> when the Part is done.</li>
+  <li>Commit at <strong>every green</strong>. Message style: <code>venue: reject duplicate section codes (VEN-2)</code>.</li>
+  <li>(Optional) A CI workflow running <code>make lint test</code> on push. Add <code>make test-integration</code> in Part 3 (GitHub runners have Docker).</li>
+</ul>
+<h4>Done when</h4>
+<ul><li>The first commit is on <code>main</code>, and you know which lesson comes next: 1.1.</li></ul>
+</section>
+</main>
+<script src="assets/course.js"></script>
+</body>
+</html>

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Part 9 · Stretch Goals</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main class="content">
+<header>
+  <div class="kicker">Course · Part 9</div>
+  <h1>Stretch goals</h1>
+  <p class="lead">Independent exercises. Do them in any order. Each one tests whether the architecture really makes change cheap.</p>
+</header>
+
+<section class="lesson" id="l9-1">
+<h3><span class="lesson-id">9.1</span> Re-cut the inventory aggregate per section</h3>
+<p>Supersede ADR-005: a <code>SectionInventory</code> per (show, section), with holds limited to one section. Re-run the 7.6 measurements and compare. Which tests had to change? (Ideally domain tests and the inventory repository. HTTP and e2e should barely change.)</p>
+</section>
+
+<section class="lesson" id="l9-2">
+<h3><span class="lesson-id">9.2</span> Ticket check-in at the gate</h3>
+<p>A new use case: <code>CheckIn(ticketCode, gateID, now)</code>. A ticket can only be checked in once, only if it isn't voided, and only on the day of the show. It touches only the <code>Ticket</code> aggregate. Notice how cheap that is, because Ticket was kept small.</p>
+</section>
+
+<section class="lesson" id="l9-3">
+<h3><span class="lesson-id">9.3</span> Contract evolution: <code>show.published.v2</code></h3>
+<p>Add per-seat accessibility flags, which requires restructuring the payload. Publish v1 and v2 side by side, migrate Ticketing to v2, then retire v1. Golden tests guide you through it.</p>
+</section>
+
+<section class="lesson" id="l9-4">
+<h3><span class="lesson-id">9.4</span> Orchestration instead of choreography</h3>
+<p>Re-implement checkout with an explicit <code>Checkout</code> process-manager aggregate (a state machine that issues commands). Compare readability, testability and failure handling with ADR-010.</p>
+</section>
+
+<section class="lesson" id="l9-5">
+<h3><span class="lesson-id">9.5</span> Show lifecycle completion and back-on-sale</h3>
+<p>A scheduler marks shows Completed after <code>endsAt</code>. When a refund frees seats on a SoldOut show, Ticketing publishes <code>inventory_available_again</code> and Show moves back to Published.</p>
+</section>
+
+<section class="lesson" id="l9-6">
+<h3><span class="lesson-id">9.6</span> Database-enforced boundaries</h3>
+<p>One Postgres role per context, with privileges only on its own schema, and each context's pool connects with its own role. Try a cross-schema query and watch the database refuse it.</p>
+</section>
+
+<section class="lesson" id="l9-7">
+<h3><span class="lesson-id">9.7</span> Distributed tracing with OpenTelemetry</h3>
+<p>Replace the hand-rolled correlation IDs with OTel spans propagated through Kafka headers. Add Jaeger to Compose. Which layers needed changes? (Only adapters and platform.)</p>
+</section>
+
+<section class="lesson" id="l9-8">
+<h3><span class="lesson-id">9.8</span> Fees and taxes as a domain service</h3>
+<p>The order total now includes a service fee (a percentage with a minimum) and VAT by venue country. Where does this logic go? Model it as a <code>PricingPolicy</code> domain service, with the specification pattern for fee rules.</p>
+</section>
+</main>
+<script src="assets/course.js"></script>
+</body>
+</html>

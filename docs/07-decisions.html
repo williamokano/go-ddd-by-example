@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Decision Log</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main class="content">
+<header>
+  <div class="kicker">Reference · Chapter 7</div>
+  <h1>Decision log (ADRs)</h1>
+  <p class="lead">Architecture Decision Records: short notes on <em>what</em> we decided, <em>why</em>, and <em>what it costs</em>. These are the decisions the course is built on. When you make a new one during the course (Part 7 includes one), add it here using the template at the bottom.</p>
+</header>
+
+<h2>ADR-001 — Modular monolith with one package tree per bounded context</h2>
+<p><strong>Status:</strong> accepted.</p>
+<p><strong>Context:</strong> We want real bounded contexts and asynchronous integration, but one developer, one repo, and simple local runs.</p>
+<p><strong>Decision:</strong> One Go module and one binary. Each context is a top-level tree under <code>internal/</code> with its own Postgres schema. Contexts talk only through Kafka integration events.</p>
+<p><strong>Consequences:</strong> (+) one <code>make up</code>, one debugger session, shared CI. (+) Extracting a context into its own service is a deployment change. (−) Discipline is needed so nobody "just imports" another context. The architecture test enforces it (ADR-002).</p>
+<p><strong>Alternatives:</strong> microservices (too much ops cost for learning); in-process event bus (simpler, but skips the reliability lessons).</p>
+
+<h2>ADR-002 — Hexagonal layering with a pure domain; all ports in <code>application</code></h2>
+<p><strong>Status:</strong> accepted.</p>
+<p><strong>Decision:</strong> Each context has <code>domain</code> (pure: stdlib + sharedkernel + uuid), <code>application</code> (use cases + <strong>all</strong> driven port interfaces, repositories included), <code>adapters/driving/*</code>, <code>adapters/driven/*</code> and <code>contracts</code>. The rules are enforced by <code>internal/archtest</code>.</p>
+<p><strong>Consequences:</strong> (+) Domain tests need zero doubles. (+) The domain can't do I/O by accident. (−) A domain service that needs data from storage gets it passed in by the application service, which is sometimes slightly more code.</p>
+<p><strong>Alternatives:</strong> repository interfaces in the domain (Evans' original). Equally valid, but it invites <code>context.Context</code> and I/O into the domain.</p>
+
+<h2>ADR-003 — "Driving / driven" naming for ports and adapters</h2>
+<p><strong>Status:</strong> accepted.</p>
+<p><strong>Decision:</strong> Use Cockburn's terms (<em>driving</em> = the outside calls us; <em>driven</em> = we call the outside) in folder names (<code>adapters/driving</code>, <code>adapters/driven</code>) and in conversation.</p>
+<p><strong>Consequences:</strong> The names describe <em>who initiates</em>, which is what decides who owns the interface. "Inbound/outbound" describe data direction, which is ambiguous for queries.</p>
+
+<h2>ADR-004 — Kafka integration via transactional outbox; <code>Save</code> writes the outbox</h2>
+<p><strong>Status:</strong> accepted.</p>
+<p><strong>Decision:</strong> Repositories persist the aggregate and insert its translated events into <code>&lt;schema&gt;.outbox</code> in one transaction. A relay publishes outbox rows to Kafka (one topic per producing context, keyed by aggregate ID). Consumers are idempotent.</p>
+<p><strong>Consequences:</strong> (+) No lost or phantom events. (+) Per-aggregate ordering. (−) At-least-once delivery means duplicates, so handlers must be idempotent. (−) Up to ~poll-interval latency.</p>
+<p><strong>Alternatives:</strong> CDC with Debezium (an extra moving part); publishing after commit (loses events on crash).</p>
+
+<h2>ADR-005 — <code>ShowInventory</code> is one aggregate per show</h2>
+<p><strong>Status:</strong> accepted, <em>to be revisited in Part 9</em>.</p>
+<p><strong>Context:</strong> TKT-5 (never double-sell) and TKT-2 (all-or-nothing multi-seat holds) must hold <em>immediately</em>, so they need a single consistency boundary.</p>
+<p><strong>Decision:</strong> One aggregate holds every seat state and active hold for a show, with an optimistic <code>version</code>.</p>
+<p><strong>Consequences:</strong> (+) The invariants are trivially correct in memory and easy to test. (−) Every hold on the same show serialises on one row's version. Under a hot on-sale, many requests get <code>ErrConcurrentModification</code>; the application service retries a few times. (−) Loading a 50k-seat inventory per request is heavy. The Part 7 load test makes this cost visible.</p>
+<p><strong>Alternatives:</strong> per-section aggregates (holds limited to one section, much less contention); per-seat rows with a DB unique constraint (scales, but moves the invariant into the database).</p>
+
+<h2>ADR-006 — sqlc + pgx instead of an ORM</h2>
+<p><strong>Status:</strong> accepted.</p>
+<p><strong>Decision:</strong> Hand-written SQL in <code>db/queries/&lt;ctx&gt;</code>, generated into a per-context <code>sqlcgen</code> package, used only by that context's driven Postgres adapter.</p>
+<p><strong>Consequences:</strong> (+) No hidden queries, compile-time-checked SQL, explicit mapping to aggregates (which is good practice for keeping persistence out of the domain). (−) More mapping code, written by hand.</p>
+
+<h2>ADR-007 — Fakes over mocks; testcontainers for adapters; build tags per level</h2>
+<p><strong>Status:</strong> accepted.</p>
+<p><strong>Decision:</strong> Application tests use hand-written in-memory fakes, verified by shared repository contract suites. Adapter tests use real Postgres and Kafka through testcontainers (<code>integration</code> tag). Full-stack tests use the <code>e2e</code> tag. No mocking library.</p>
+<p><strong>Consequences:</strong> (+) Tests check behaviour and survive refactors. (−) Fakes have to be maintained, which the contract suites keep honest.</p>
+
+<h2>ADR-008 — Time and identity are inputs to the domain</h2>
+<p><strong>Status:</strong> accepted.</p>
+<p><strong>Decision:</strong> Domain methods receive <code>now time.Time</code> and pre-generated IDs as parameters. The application layer gets them from the <code>Clock</code> and <code>IDGenerator</code> driven ports. IDs are UUIDv7.</p>
+<p><strong>Consequences:</strong> (+) Deterministic tests, no sleeping, and expiry logic (TKT-4) is easy to test. (−) Slightly longer method signatures.</p>
+
+<h2>ADR-009 — Shared kernel limited to Money and the domain-event building block</h2>
+<p><strong>Status:</strong> accepted (the extraction happens in Part 7).</p>
+<p><strong>Decision:</strong> <code>internal/sharedkernel</code> contains only <code>Money</code>, <code>Currency</code>, <code>DomainEvent</code> and the <code>Events</code> recorder. Show first implements Money locally. When Ticketing needs identical semantics, it's promoted.</p>
+<p><strong>Consequences:</strong> (+) The kernel is justified by real reuse. (−) Every change to it is a cross-context change, so it has to stay tiny.</p>
+
+<h2>ADR-010 — Checkout as a choreographed saga with compensation</h2>
+<p><strong>Status:</strong> accepted.</p>
+<p><strong>Decision:</strong> PlaceOrder → Charge → OrderPaid → ConfirmHold → SeatsSold → IssueTickets, with HoldConfirmationFailed → RefundOrder as compensation. Each step is its own transaction on one aggregate, linked by events on <code>ticketing.internal</code>.</p>
+<p><strong>Consequences:</strong> (+) Respects aggregate boundaries; each step is retryable. (−) The flow is spread across handlers. The Chapter 4 diagram and the e2e scenarios S1/S3 are its documentation.</p>
+<p><strong>Alternatives:</strong> an orchestrator (an explicit state machine aggregate <code>Checkout</code>). Worth comparing in Part 9.</p>
+
+<h2>ADR-011 — Optimistic concurrency with a version column</h2>
+<p><strong>Status:</strong> accepted.</p>
+<p><strong>Decision:</strong> Each aggregate root table has a <code>version</code>. <code>UPDATE … WHERE id=$1 AND version=$n</code> affecting 0 rows → <code>application.ErrConcurrentModification</code>. The application layer may retry the whole load-decide-save cycle (bounded, e.g. 3×).</p>
+<p><strong>Consequences:</strong> (+) No long-held locks, and conflicts are explicit. (−) Hot aggregates see retries (ADR-005).</p>
+
+<h2>Template for new ADRs</h2>
+<pre><code>&lt;h2&gt;ADR-0XX — Title in the imperative or as a statement&lt;/h2&gt;
+&lt;p&gt;&lt;strong&gt;Status:&lt;/strong&gt; proposed | accepted | superseded by ADR-0YY.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Context:&lt;/strong&gt; the forces at play; what problem; what constraints.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Decision:&lt;/strong&gt; what we will do.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Consequences:&lt;/strong&gt; (+) gains, (−) costs, what becomes easier/harder.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Alternatives:&lt;/strong&gt; what else we considered and why not.&lt;/p&gt;</code></pre>
+</main>
+<script src="assets/course.js"></script>
+</body>
+</html>

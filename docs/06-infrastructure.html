@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Infrastructure and Tooling</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main class="content">
+<header>
+  <div class="kicker">Reference · Chapter 6</div>
+  <h1>Infrastructure &amp; tooling</h1>
+  <p class="lead">Docker Compose, Postgres, goose, sqlc, Kafka, testcontainers and the Makefile. The snippets show the <em>target shape</em>. You build each piece in the lesson that first needs it.</p>
+</header>
+
+<h2>Libraries</h2>
+<div class="table-wrap"><table>
+  <tr><th>Purpose</th><th>Module</th><th>Used by</th></tr>
+  <tr><td>UUIDs (v7, time-ordered)</td><td><code>github.com/google/uuid</code></td><td>domain (typed IDs), platform/idgen</td></tr>
+  <tr><td>Postgres driver + pool</td><td><code>github.com/jackc/pgx/v5</code></td><td>driven/postgres adapters, platform/postgres</td></tr>
+  <tr><td>Migrations</td><td><code>github.com/pressly/goose/v3</code></td><td>migrate subcommand, integration tests</td></tr>
+  <tr><td>SQL → Go codegen</td><td><code>sqlc</code> (tool)</td><td>generates <code>sqlcgen</code> packages</td></tr>
+  <tr><td>Kafka client</td><td><code>github.com/twmb/franz-go</code></td><td>platform/kafka, outbox relay</td></tr>
+  <tr><td>Test diffs</td><td><code>github.com/google/go-cmp</code></td><td>tests</td></tr>
+  <tr><td>Containers in tests</td><td><code>github.com/testcontainers/testcontainers-go</code> + <code>modules/postgres</code>, <code>modules/kafka</code></td><td>integration tests</td></tr>
+  <tr><td>Arch test</td><td><code>golang.org/x/tools/go/packages</code></td><td>internal/archtest</td></tr>
+  <tr><td>Logging</td><td><code>log/slog</code> (stdlib)</td><td>everywhere outside the domain</td></tr>
+</table></div>
+<div class="callout why"><span class="label">Why so few dependencies?</span><p>Every framework is one more thing between you and the concept you're learning. <code>net/http</code>, <code>log/slog</code> and <code>testing</code> are enough. The only real dependencies are drivers (pgx, franz-go) and the two code tools (sqlc, goose).</p></div>
+
+<h3>Tools</h3>
+<pre><code># Go ≥ 1.24 can track tools in go.mod ("tool" directives) — versions pinned with the module:
+go get -tool github.com/sqlc-dev/sqlc/cmd/sqlc       # needs cgo (gcc). Fallback: docker run sqlc/sqlc
+go get -tool github.com/pressly/goose/v3/cmd/goose   # or use the goose already in ~/go/bin
+go tool sqlc version
+
+# golangci-lint: install the binary (its docs advise against go-installing it)
+curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b $(go env GOPATH)/bin</code></pre>
+
+<h2>Docker Compose (target shape)</h2>
+<pre><code>services:
+  postgres:
+    image: postgres:18
+    environment: { POSTGRES_USER: stagehand, POSTGRES_PASSWORD: stagehand, POSTGRES_DB: stagehand }
+    ports: ["5432:5432"]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U stagehand"], interval: 2s, retries: 30 }
+    volumes: [pgdata:/var/lib/postgresql]
+
+  kafka:
+    image: apache/kafka:4.1.0            # KRaft mode, no ZooKeeper (pin whatever is current)
+    ports: ["9092:9092"]
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:19092,CONTROLLER://:9093,EXTERNAL://:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:19092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"   # topics are declared explicitly (kafka-init)
+    healthcheck: { test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"], interval: 5s, retries: 30 }
+
+  kafka-init:                           # one-shot: creates topics, then exits
+    image: apache/kafka:4.1.0
+    depends_on: { kafka: { condition: service_healthy } }
+    entrypoint: ["/bin/sh", "-c", "for t in venue.events show.events ticketing.events ticketing.internal; do
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic $$t --partitions 3; done"]
+
+  kafka-ui:
+    image: kafbat/kafka-ui:latest
+    ports: ["8081:8080"]
+    environment: { KAFKA_CLUSTERS_0_NAME: local, KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:19092 }
+
+  migrate:                              # one-shot: same image as the app, different subcommand
+    build: .
+    command: ["migrate", "up"]
+    environment: { DATABASE_URL: postgres://stagehand:stagehand@postgres:5432/stagehand?sslmode=disable }
+    depends_on: { postgres: { condition: service_healthy } }
+
+  app:
+    build: .
+    command: ["serve"]
+    ports: ["8080:8080"]
+    environment:
+      DATABASE_URL: postgres://stagehand:stagehand@postgres:5432/stagehand?sslmode=disable
+      KAFKA_BROKERS: kafka:19092
+      HOLD_TTL: 10m
+    depends_on:
+      migrate:    { condition: service_completed_successfully }
+      kafka-init: { condition: service_completed_successfully }
+
+volumes: { pgdata: {} }</code></pre>
+<p><strong>The image is a multi-stage Dockerfile</strong>: <code>golang:1.27</code> builds a static binary (<code>CGO_ENABLED=0</code>), and <code>gcr.io/distroless/static</code> runs it. One binary, <code>stagehand</code>, with two subcommands: <code>serve</code> and <code>migrate</code>.</p>
+
+<h2>Postgres: one database, one schema per context</h2>
+<pre><code>db/migrations/
+  00001_create_schemas.sql            -- CREATE SCHEMA venue; CREATE SCHEMA show; CREATE SCHEMA ticketing; …
+  00002_venue_tables.sql              -- venue.venues, venue.sections, venue.outbox
+  00003_show_tables.sql               -- show.shows, show.venue_layouts (projection), show.outbox
+  00004_ticketing_tables.sql          -- ticketing.inventories, ticketing.seats, ticketing.holds, orders, tickets, outbox
+  …</code></pre>
+<div class="callout why"><span class="label">Why schemas and not separate databases?</span><p>Schemas give each context its own namespace and make ownership visible (<code>ticketing.orders</code>), while running one Postgres. The rule "no cross-schema joins or FKs" keeps contexts separable. A stretch exercise is to give each context its own DB role with privileges only on its schema, so the database enforces the boundary too.</p></div>
+<h3>goose migration format</h3>
+<pre><code>-- +goose Up
+CREATE TABLE venue.venues (
+    id         UUID PRIMARY KEY,
+    name       TEXT        NOT NULL,
+    street     TEXT        NOT NULL,
+    city       TEXT        NOT NULL,
+    country    CHAR(2)     NOT NULL,
+    status     TEXT        NOT NULL,
+    version    INT         NOT NULL,          -- optimistic concurrency
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL
+);
+
+-- +goose Down
+DROP TABLE venue.venues;</code></pre>
+<p>Migrations are embedded in the binary (<code>//go:embed</code> in package <code>db</code>), so the <code>migrate</code> subcommand, the integration tests and CI all run exactly the same files.</p>
+
+<h2>sqlc</h2>
+<pre><code># sqlc.yaml
+version: "2"
+sql:
+  - engine: postgresql
+    schema: db/migrations                 # sqlc understands goose's Up/Down annotations
+    queries: db/queries/venue
+    gen:
+      go:
+        package: sqlcgen
+        out: internal/venue/adapters/driven/postgres/sqlcgen
+        sql_package: pgx/v5
+        emit_pointers_for_null_types: true
+        overrides:
+          - db_type: uuid
+            go_type: github.com/google/uuid.UUID
+          - db_type: timestamptz
+            go_type: time.Time
+  # … one entry per context (show, ticketing): each context gets its OWN generated package</code></pre>
+<pre><code>-- db/queries/venue/venues.sql
+-- name: UpdateVenue :execrows
+UPDATE venue.venues
+SET name = $2, status = $3, version = version + 1, updated_at = $4
+WHERE id = $1 AND version = $5;          -- 0 rows ⇒ someone else saved first ⇒ ErrConcurrentModification</code></pre>
+<div class="callout warn"><span class="label">sqlc types stay in the adapter</span><p>Generated structs (<code>sqlcgen.VenueVenue</code>) are <strong>persistence models</strong>. They never leave <code>adapters/driven/postgres</code>. The repository maps rows ↔ aggregates (via <code>domain.RehydrateVenue</code>). If you catch a <code>sqlcgen</code> import in <code>application</code>, the hexagon has a leak.</p></div>
+
+<h2>Configuration</h2>
+<div class="table-wrap"><table>
+  <tr><th>Env var</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>HTTP_ADDR</code></td><td><code>:8080</code></td><td>API listen address</td></tr>
+  <tr><td><code>DATABASE_URL</code></td><td>—</td><td>Postgres DSN</td></tr>
+  <tr><td><code>KAFKA_BROKERS</code></td><td><code>localhost:9092</code></td><td>Comma-separated brokers</td></tr>
+  <tr><td><code>HOLD_TTL</code></td><td><code>10m</code></td><td>Hold expiry (TKT-4). Shorten it in e2e tests.</td></tr>
+  <tr><td><code>HOLD_SWEEP_INTERVAL</code></td><td><code>5s</code></td><td>How often the scheduler expires holds</td></tr>
+  <tr><td><code>OUTBOX_POLL_INTERVAL</code></td><td><code>200ms</code></td><td>Relay polling period</td></tr>
+  <tr><td><code>PAYMENT_FAKE_MODE</code></td><td><code>approve</code></td><td><code>approve</code> | <code>decline</code> | <code>delay:3s</code> (for S3)</td></tr>
+  <tr><td><code>LOG_LEVEL</code></td><td><code>info</code></td><td>slog level</td></tr>
+</table></div>
+<p>Config is parsed once in <code>platform/config</code> into a typed struct and passed down. Nothing below <code>main</code> reads env vars.</p>
+
+<h2>Makefile (target shape)</h2>
+<pre><code>up:               ## start postgres, kafka, kafka-ui, migrate, app
+	docker compose up -d --build --wait
+down:             ## stop everything (keep data)
+	docker compose down
+reset:            ## stop everything and wipe volumes
+	docker compose down -v
+infra:            ## only postgres + kafka (+ init), for running the app from your IDE
+	docker compose up -d --wait postgres kafka kafka-init kafka-ui
+migrate:          ## apply migrations against $DATABASE_URL
+	go run ./cmd/stagehand migrate up
+generate:         ## sqlc
+	go tool sqlc generate
+lint:
+	golangci-lint run
+test:             ## fast tests
+	go test ./...
+test-integration:
+	go test -tags=integration ./...
+test-e2e: up
+	go test -tags=e2e -count=1 ./test/e2e/...
+run:              ## app on the host against `make infra`
+	go run ./cmd/stagehand serve</code></pre>
+
+<h2>Local URLs</h2>
+<ul>
+  <li>API: <code>http://localhost:8080</code> (requests in <code>api/*.http</code>)</li>
+  <li>Kafka UI: <code>http://localhost:8081</code>, where you can watch the events flow</li>
+  <li>Postgres: <code>psql postgres://stagehand:stagehand@localhost:5432/stagehand</code></li>
+</ul>
+</main>
+<script src="assets/course.js"></script>
+</body>
+</html>

@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Part 1 · Venue Domain</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main class="content">
+<header>
+  <div class="kicker">Course · Part 1</div>
+  <h1>The Venue domain model</h1>
+  <p class="lead">Pure Go, no database, no HTTP. We build the Venue aggregate test-first: typed IDs, value objects, an entity, the aggregate root, its invariants and its domain events. By the end, <code>internal/venue/domain</code> can express every rule from VEN-1 to VEN-7.</p>
+</header>
+
+<div class="callout why"><span class="label">Why start with the domain, and why is it called "domain" and not "app"?</span>
+<p>The <strong>domain</strong> package holds what's true about the <em>business</em>, independent of any software: "a venue can't change its layout once it's active" was true when venues were managed on paper. The <strong>application</strong> package (Part 2) holds what's true about <em>this program</em>: "load the venue, call Activate, save it, in one transaction". If you put rules in the application layer, they get duplicated across use cases and drift apart. If you put orchestration in the domain, I/O leaks into your most important code.</p>
+<p>We start here because the domain depends on nothing. It's the only layer we can build and fully test with zero infrastructure, and everything else depends on it.</p></div>
+
+<section class="lesson" id="l1-1">
+<h3><span class="lesson-id">1.1</span> Create the domain package and a typed ID</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Your first red-green-refactor cycle, on the smallest useful value object: <code>VenueID</code>.</dd>
+  <dt>Concepts</dt><dd><a href="02-ddd-building-blocks.html#value-object">Value object</a>, typed IDs, <a href="02-ddd-building-blocks.html#go-idioms">Go idioms</a></dd>
+  <dt>Creates</dt><dd><code>internal/venue/domain/doc.go</code>, <code>venue_id.go</code>, <code>venue_id_test.go</code></dd>
+</dl>
+<div class="callout do"><span class="label">Your turn</span><ol>
+  <li>Create <code>internal/venue/domain/</code>. Why <code>internal/</code>? Go forbids importing it from outside this module, so it's our private code.</li>
+  <li>Write <code>doc.go</code> with a package comment explaining in one paragraph what this package is (the Venue Management domain model) and what it must never import.</li>
+  <li><code>go get github.com/google/uuid</code></li>
+</ol></div>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li><code>ParseVenueID</code> accepts a valid UUID string and <code>String()</code> round-trips it.</li>
+  <li><code>ParseVenueID</code> rejects garbage with <code>ErrInvalidVenueID</code> (check with <code>errors.Is</code>).</li>
+  <li><code>ParseVenueID</code> rejects the nil UUID <code>00000000-…</code>. An ID that identifies nothing isn't an ID.</li>
+  <li><code>NewVenueID(uuid.UUID)</code> builds from an already-generated UUID (the application's IDGenerator will call it).</li>
+  <li><code>VenueID{}.IsZero()</code> is true and a parsed ID's <code>IsZero()</code> is false.</li>
+</ol></div>
+<div class="callout warn"><span class="label">Pitfall</span><p>Don't call <code>uuid.New()</code> inside the domain. Who generates IDs is an application concern (ADR-008), and generating them in the domain makes tests non-deterministic.</p></div>
+<h4>Done when</h4>
+<ul><li>5 tests pass, written in <code>package domain_test</code>. You committed after each green.</li></ul>
+<div class="callout discuss"><span class="label">Discuss</span><ul>
+  <li>Why <code>type VenueID struct{ value uuid.UUID }</code> rather than <code>type VenueID = string</code>? What bug does it make impossible?</li>
+  <li>Did you hard-code anything to get the first test green? Which test forced you to remove it?</li>
+</ul></div>
+</section>
+
+<section class="lesson" id="l1-2">
+<h3><span class="lesson-id">1.2</span> Value object: <code>Address</code></h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>A multi-field, self-validating, immutable value object with table-driven tests.</dd>
+  <dt>Rules</dt><dd>VEN-1 (address part)</dd>
+  <dt>Creates</dt><dd><code>address.go</code>, <code>address_test.go</code>, <code>errors.go</code></dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li><code>NewAddress(street, city, country)</code> with valid input returns an address whose getters return the trimmed values.</li>
+  <li>Table-driven: blank street, blank city, country not two letters → <code>ErrInvalidAddress</code>, with a message that says which field.</li>
+  <li>The country code is normalised to upper case (<code>"pt"</code> → <code>"PT"</code>).</li>
+  <li>Two addresses built from the same input are <code>==</code> (value equality).</li>
+</ol></div>
+<p>Start <code>errors.go</code> now: one place listing every domain error of the context. Reading that file should feel like reading the rulebook.</p>
+<div class="callout discuss"><span class="label">Discuss</span><ul>
+  <li>Why does <code>Address</code> have no <code>SetCity</code>? How would a venue "move"? (It gets a <em>new</em> Address value.)</li>
+  <li>Is validating ISO-3166 properly (checking against the real list) a domain concern? What does it cost?</li>
+</ul></div>
+</section>
+
+<section class="lesson" id="l1-3">
+<h3><span class="lesson-id">1.3</span> Value objects: <code>SectionCode</code> and <code>Row</code></h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Practise the "parse, don't validate" habit. After this lesson, raw strings never travel inside the domain.</dd>
+  <dt>Rules</dt><dd>VEN-2 (format part), VEN-3 (row part)</dd>
+  <dt>Creates</dt><dd><code>section_code.go</code>, <code>row.go</code> + tests</dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>Table: <code>NewSectionCode</code> accepts <code>"ORCH"</code>, <code>"bal-l"</code> (→ <code>"BAL-L"</code>), <code>" A1 "</code> (trimmed).</li>
+  <li>Table: it rejects <code>""</code>, <code>"WAY-TOO-LONG-CODE"</code> (more than 10 chars), <code>"A B"</code> and <code>"ÖRCH"</code>.</li>
+  <li><code>NewRow(label, seats)</code> rejects a blank label and a seat count &lt; 1.</li>
+  <li><code>row.SeatNumbers()</code> returns <code>1..n</code>. (We'll need it to enumerate seats in Part 7, through the published layout.)</li>
+</ol></div>
+</section>
+
+<section class="lesson" id="l1-4">
+<h3><span class="lesson-id">1.4</span> Entity: <code>Section</code></h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Your first entity, with a local identity and two shapes (seated / GA).</dd>
+  <dt>Concepts</dt><dd><a href="02-ddd-building-blocks.html#entity">Entity</a> vs value object</dd>
+  <dt>Rules</dt><dd>VEN-3, VEN-7 (per section)</dd>
+  <dt>Creates</dt><dd><code>section.go</code> + tests</dd>
+</dl>
+<p>Two constructors make the two shapes explicit: <code>NewSeatedSection(code, name, rows []Row)</code> and <code>NewGeneralAdmissionSection(code, name, capacity int)</code>. Both return <code>(Section, error)</code>. The <code>Kind()</code> getter returns <code>Seated</code> or <code>GeneralAdmission</code>.</p>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>A seated section with rows A(10) and B(12) has <code>Capacity() == 22</code>.</li>
+  <li>A seated section with zero rows → <code>ErrInvalidSection</code>.</li>
+  <li>A seated section with duplicate row labels (<code>A</code>, <code>a</code>) → <code>ErrDuplicateRowLabel</code>.</li>
+  <li>A GA section with capacity 500 has <code>Capacity() == 500</code> and <code>Rows()</code> empty. Capacity 0 → error.</li>
+  <li><code>Rows()</code> returns a copy: appending to or modifying it doesn't change the section.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><ul>
+  <li>Section is an entity, but its identity (<code>SectionCode</code>) is only unique <em>within one venue</em>. Why is that enough? Could anything outside the Venue reference a section by code alone?</li>
+  <li>We used a <code>Kind</code> enum plus two constructors. What would an interface-based design (<code>type Section interface{ Capacity() int }</code>) gain or lose here?</li>
+</ul></div>
+</section>
+
+<section class="lesson" id="l1-5">
+<h3><span class="lesson-id">1.5</span> The aggregate root: registering a <code>Venue</code></h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Create the root and decide what is <em>inside</em> the aggregate.</dd>
+  <dt>Concepts</dt><dd><a href="02-ddd-building-blocks.html#aggregate">Aggregate &amp; root</a>, <a href="02-ddd-building-blocks.html#factory">creation vs reconstitution</a></dd>
+  <dt>Rules</dt><dd>VEN-1</dd>
+  <dt>Creates</dt><dd><code>venue.go</code>, <code>status.go</code>, <code>venue_test.go</code>, <code>helpers_test.go</code></dd>
+</dl>
+<p>The creation function is named after the business act: <code>RegisterVenue(id VenueID, name string, addr Address, now time.Time) (*Venue, error)</code>. It returns a pointer because the aggregate is a mutable entity with an identity. Copying it would create two "same" venues that drift apart.</p>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>Registering returns a venue with that ID, the trimmed name and the address, and a status of <code>Draft</code>.</li>
+  <li>A blank name, or a name longer than 120 characters → <code>ErrInvalidVenueName</code>.</li>
+  <li>A zero <code>VenueID</code> or a zero <code>Address</code> → error. (The defensive check against Go's zero values.)</li>
+  <li><code>Status.String()</code> returns <code>"draft"</code>, <code>"active"</code> and <code>"retired"</code>. We'll persist these strings.</li>
+</ol></div>
+<div class="callout do"><span class="label">Refactor step</span><p>Create <code>helpers_test.go</code> with a builder, <code>newDraftVenue(t, opts ...venueOption) *domain.Venue</code>, that hides the irrelevant parts of setup. From now on, each test shows only what it cares about.</p></div>
+</section>
+
+<section class="lesson" id="l1-6">
+<h3><span class="lesson-id">1.6</span> Behaviour through the root: <code>AddSection</code> and capacity</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Enforce invariants that need the whole cluster, and protect the internals.</dd>
+  <dt>Rules</dt><dd>VEN-2, VEN-4, VEN-7</dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>Adding a section to a draft venue makes it appear in <code>Sections()</code>.</li>
+  <li>Adding a second section with the same code → <code>ErrDuplicateSectionCode</code> (VEN-2), and the venue is unchanged.</li>
+  <li><code>Capacity()</code> sums the capacities of all sections (VEN-7).</li>
+  <li><code>Sections()</code> returns a copy: mutating the returned slice doesn't change the venue.</li>
+  <li>(Skip for now and come back in 1.7.) Adding a section to an active venue → <code>ErrVenueNotDraft</code> (VEN-4).</li>
+</ol></div>
+<div class="callout why"><span class="label">This is why the root is the root</span><p>Test 2 can't be written against <code>Section</code>. A section doesn't know its siblings, and only the Venue sees all of them. If <code>Sections()</code> returned the internal slice, a caller could append a duplicate and bypass VEN-2 without calling any method. Test 4 proves the door is locked.</p></div>
+</section>
+
+<section class="lesson" id="l1-7">
+<h3><span class="lesson-id">1.7</span> Lifecycle: <code>Activate</code> and <code>Retire</code></h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Model a state machine as behaviour methods, not a status setter.</dd>
+  <dt>Rules</dt><dd>VEN-4, VEN-5, VEN-6</dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li><code>Activate(now)</code> on a draft venue with ≥ 1 section → status Active.</li>
+  <li><code>Activate</code> without sections → <code>ErrVenueHasNoSections</code>.</li>
+  <li>Table of illegal transitions: Activate when Active, Activate when Retired, Retire when Draft, Retire when Retired → <code>ErrInvalidVenueTransition</code>.</li>
+  <li><code>Retire(now)</code> on an active venue → Retired.</li>
+  <li>Now go back to the skipped test from 1.6: AddSection on an active venue → <code>ErrVenueNotDraft</code>.</li>
+</ol></div>
+<div class="callout warn"><span class="label">Pitfall</span><p>Don't add <code>SetStatus(Status)</code> "for the repository". The repository uses reconstitution (1.9), never mutators. Every public mutator is a way around your invariants.</p></div>
+</section>
+
+<section class="lesson" id="l1-8">
+<h3><span class="lesson-id">1.8</span> Domain events</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>The aggregate records what happened. Tests assert on facts, not just on state.</dd>
+  <dt>Concepts</dt><dd><a href="02-ddd-building-blocks.html#domain-event">Domain event</a></dd>
+  <dt>Creates</dt><dd><code>events.go</code> (the <code>DomainEvent</code> interface, the <code>Events</code> recorder, and the four event types) + tests</dd>
+</dl>
+<p>For now the building block (<code>DomainEvent</code>, <code>Events</code>) lives in <code>venue/domain</code>. It moves to the shared kernel in Part 7, when a second context proves the need (ADR-009).</p>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li><code>RegisterVenue</code> records <code>VenueRegistered{VenueID, Name, At}</code>.</li>
+  <li><code>AddSection</code> records <code>SectionAdded{VenueID, Section, At}</code>. That means <code>AddSection</code> now needs <code>now</code>, so update the signature and the tests.</li>
+  <li><code>Activate</code> records <code>VenueActivated</code> carrying the <em>full layout</em>, because consumers will need it.</li>
+  <li><code>Retire</code> records <code>VenueRetired</code>.</li>
+  <li>A failed command records <strong>nothing</strong>.</li>
+  <li><code>PullEvents()</code> returns the events in order and empties the list (calling it twice returns nothing the second time).</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><ul>
+  <li>Why does the aggregate <em>record</em> events instead of publishing them?</li>
+  <li>Why must a failed command record nothing? Imagine an <code>ErrDuplicateSectionCode</code> that still emitted <code>SectionAdded</code>.</li>
+</ul></div>
+</section>
+
+<section class="lesson" id="l1-9">
+<h3><span class="lesson-id">1.9</span> Reconstitution and version</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Give repositories a way to rebuild a venue from storage without re-running business rules or emitting events.</dd>
+  <dt>Concepts</dt><dd><a href="02-ddd-building-blocks.html#factory">Creation vs reconstitution</a>, optimistic concurrency (ADR-011)</dd>
+</dl>
+<p>Add <code>RehydrateVenue(VenueState) *Venue</code>, where <code>VenueState</code> is an exported struct with every field (ID, name, address, status, sections, version). Add <code>Version() int</code> to the aggregate. The repository reads everything back through getters.</p>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>A rehydrated venue exposes exactly the given state through its getters.</li>
+  <li>A rehydrated venue has <strong>no</strong> pending events.</li>
+  <li>A rehydrated active venue still enforces VEN-4 (AddSection fails).</li>
+  <li>A newly registered venue has <code>Version() == 0</code>.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><ul>
+  <li><code>VenueState</code> is exported, so any package <em>could</em> call <code>RehydrateVenue</code> with invalid data. How do we keep this honest? (Convention plus the architecture test: only <code>adapters/driven</code> may call it. Add that rule in Part 4.)</li>
+  <li>Who increments the version: the domain or the repository? Why?</li>
+</ul></div>
+</section>
+
+<section class="lesson" id="l1-10">
+<h3><span class="lesson-id">1.10</span> Checkpoint: read your domain as a domain expert would</h3>
+<div class="callout do"><span class="label">Your turn</span><ol>
+  <li>Run <code>go doc -all ./internal/venue/domain</code>. Does it read like the Venue section of Chapter 1? Rename anything that doesn't.</li>
+  <li><code>go test -cover ./internal/venue/domain</code> should be at or near 100%. If something isn't covered, either a test is missing or the code isn't needed.</li>
+  <li>Check: no imports besides stdlib and uuid, no <code>context</code>, no <code>time.Now()</code>.</li>
+  <li>Merge the Part 1 branch.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><ul>
+  <li>Point to the line of code that enforces each of VEN-1…VEN-7.</li>
+  <li>Which of your types are entities and which are value objects? What's the aggregate boundary, and what's outside it?</li>
+</ul></div>
+</section>
+</main>
+<script src="assets/course.js"></script>
+</body>
+</html>

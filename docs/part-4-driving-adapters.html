@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Part 4 · HTTP and Wiring</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main class="content">
+<header>
+  <div class="kicker">Course · Part 4</div>
+  <h1>Driving adapters &amp; the composition root</h1>
+  <p class="lead">The first <em>driving</em> adapter (HTTP), the one place that wires everything together (<code>main.go</code>), the app running in Docker, the first end-to-end test, and a test that enforces the architecture.</p>
+</header>
+
+<section class="lesson" id="l4-1">
+<h3><span class="lesson-id">4.1</span> HTTP plumbing in <code>platform/httpx</code></h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Small, tested helpers so context adapters stay tiny: decode JSON strictly, write JSON, write errors as RFC 9457 <code>application/problem+json</code>.</dd>
+  <dt>Creates</dt><dd><code>internal/platform/httpx/json.go</code>, <code>problem.go</code>, <code>middleware.go</code> (request ID, recover, slog access log)</dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li><code>DecodeJSON</code> rejects unknown fields and bodies over 1 MiB with a 400 problem.</li>
+  <li><code>WriteProblem(w, status, title, detail)</code> sets the content type and body.</li>
+  <li>The recover middleware turns a panic into a 500 problem and logs it.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>Why does this live in <code>platform</code> and not the shared kernel? (It's technical, not domain. Chapter 2, Shared kernel.)</p></div>
+</section>
+
+<section class="lesson" id="l4-2">
+<h3><span class="lesson-id">4.2</span> The Venue HTTP adapter</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Translate HTTP ↔ use cases and nothing more. All decisions stay in the core.</dd>
+  <dt>Concepts</dt><dd><a href="03-hexagonal-architecture.html">Driving adapter, driving ports in Go</a></dd>
+  <dt>Creates</dt><dd><code>internal/venue/adapters/driving/httpapi/{routes,handlers,dto,errors}.go</code> + tests</dd>
+</dl>
+<div class="table-wrap"><table>
+  <tr><th>Route</th><th>Use case</th><th>Success</th></tr>
+  <tr><td><code>POST /venues</code></td><td>RegisterVenue</td><td>201 + <code>Location</code></td></tr>
+  <tr><td><code>POST /venues/{id}/sections</code></td><td>AddSection</td><td>204</td></tr>
+  <tr><td><code>POST /venues/{id}/activation</code></td><td>ActivateVenue</td><td>204</td></tr>
+  <tr><td><code>POST /venues/{id}/retirement</code></td><td>RetireVenue</td><td>204</td></tr>
+  <tr><td><code>GET /venues/{id}</code></td><td>VenueQueries.Get</td><td>200</td></tr>
+</table></div>
+<p>Error mapping (one table in <code>errors.go</code>): invalid input (<code>ErrInvalid*</code>) → 422; <code>ErrVenueNotFound</code> → 404; state or duplicate violations → 409; <code>ErrConcurrentModification</code> (after retries) → 409; anything else → 500, logged.</p>
+<div class="callout tdd"><span class="label">TDD script (httptest + stub use cases)</span><ol class="tests">
+  <li>POST /venues with valid JSON calls the use case with the mapped command, then returns 201 and a Location header.</li>
+  <li>Malformed JSON → 400, and the use case is not called.</li>
+  <li>Table: each domain/application error → the expected status and problem title.</li>
+  <li>GET /venues/{id} renders the <code>VenueView</code> as the response JSON (compare against a golden file).</li>
+</ol></div>
+<div class="callout warn"><span class="label">Pitfall</span><p>Using <code>domain.Venue</code> as the JSON response type ties your public API to your model, and every internal rename becomes a breaking API change. Keep separate DTOs.</p></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>Why <code>POST /venues/{id}/activation</code> rather than <code>PATCH /venues/{id} {"status":"active"}</code>? (Ubiquitous language and intention, from Chapter 2.)</p></div>
+</section>
+
+<section class="lesson" id="l4-3">
+<h3><span class="lesson-id">4.3</span> Composition root: <code>stagehand serve</code></h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>One readable function that builds the whole object graph and runs it with graceful shutdown.</dd>
+  <dt>Creates</dt><dd><code>internal/platform/config</code>; <code>cmd/stagehand/serve.go</code></dd>
+</dl>
+<div class="callout do"><span class="label">Your turn</span><ol>
+  <li>A typed <code>config.Load()</code> from env vars (Chapter 6 table), with a unit test for defaults and invalid values.</li>
+  <li><code>serve</code>: <code>signal.NotifyContext</code> → pool → repositories → handlers → routes → <code>http.Server</code> → <code>Shutdown</code> with a timeout on cancel.</li>
+  <li>A <code>slog</code> JSON handler at the configured level.</li>
+</ol></div>
+<div class="callout why"><span class="label">Why no DI framework?</span><p>The wiring is about 40 explicit lines. You can read in one screen what talks to what, and the compiler checks every dependency. A container would hide the architecture you're trying to learn.</p></div>
+</section>
+
+<section class="lesson" id="l4-4">
+<h3><span class="lesson-id">4.4</span> Dockerfile and the app in Compose</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd><code>make up</code> runs everything, migrations included.</dd>
+  <dt>Creates</dt><dd><code>Dockerfile</code> (multi-stage, distroless), the <code>migrate</code> and <code>app</code> services, <code>api/venue.http</code></dd>
+</dl>
+<h4>Done when</h4>
+<ul><li>From a clean checkout: <code>make up</code>, then the requests in <code>api/venue.http</code> register, lay out and activate a venue.</li></ul>
+</section>
+
+<section class="lesson" id="l4-5">
+<h3><span class="lesson-id">4.5</span> The first end-to-end test</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>One test proving the wiring: HTTP → use case → Postgres → HTTP.</dd>
+  <dt>Creates</dt><dd><code>test/e2e/venue_test.go</code> (tag <code>e2e</code>), <code>test/e2e/client_test.go</code> (a tiny typed HTTP client), the Makefile target <code>test-e2e</code></dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>Register → add 2 sections → activate → GET shows status <code>active</code> and the correct capacity.</li>
+  <li>Activating a venue without sections → 409 with the expected problem title.</li>
+</ol></div>
+</section>
+
+<section class="lesson" id="l4-6">
+<h3><span class="lesson-id">4.6</span> The architecture test</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Turn Chapter 3's import table into a failing test.</dd>
+  <dt>Creates</dt><dd><code>internal/archtest/archtest_test.go</code></dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>Load <code>./internal/...</code> with <code>go/packages</code> (non-test imports only). <code>*/domain</code> may import only stdlib, <code>sharedkernel</code> and <code>google/uuid</code>.</li>
+  <li><code>*/application</code> may not import <code>adapters</code>, <code>platform</code>, <code>pgx</code> or <code>franz-go</code>.</li>
+  <li>No package in context A imports context B, except <code>B/contracts</code>.</li>
+  <li><code>platform</code> imports no context.</li>
+  <li>Prove that it works: add a forbidden import, watch it fail, and remove it.</li>
+</ol></div>
+<h4>Done when</h4>
+<ul><li>The Venue context is complete end-to-end (minus events), and the architecture is enforced by CI.</li></ul>
+</section>
+</main>
+<script src="assets/course.js"></script>
+</body>
+</html>

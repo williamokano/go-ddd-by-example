@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Part 2 · Application Layer</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main class="content">
+<header>
+  <div class="kicker">Course · Part 2</div>
+  <h1>The application layer: use cases and ports</h1>
+  <p class="lead">We wrap the domain in use cases that a user (or a test, or a message) can drive. We declare what the core needs from the outside world as <strong>driven ports</strong>, and implement them first as in-memory fakes. There's still no database.</p>
+</header>
+
+<div class="callout why"><span class="label">What actually goes in the application layer</span>
+<ul>
+  <li><strong>Use cases</strong> (application services / command handlers): one per user intention. RegisterVenue, AddSection, ActivateVenue, RetireVenue.</li>
+  <li><strong>Commands and results</strong>: plain structs with primitive fields. They're the input language of the driving side.</li>
+  <li><strong>Driven port interfaces</strong>: <code>VenueRepository</code>, <code>Clock</code>, <code>IDGenerator</code>, query ports.</li>
+  <li><strong>Application errors</strong>: <code>ErrVenueNotFound</code> and <code>ErrConcurrentModification</code>. These are about storage outcomes, not business rules, so they don't belong in the domain.</li>
+</ul>
+<p>And what must <strong>not</strong> go there: <code>if venue.Status() == Active { return errors.New(...) }</code>. That's a business rule, and it belongs in the aggregate.</p></div>
+
+<section class="lesson" id="l2-1">
+<h3><span class="lesson-id">2.1</span> Create the application package and declare the driven ports</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Define, from the core's point of view, what it needs from the outside.</dd>
+  <dt>Concepts</dt><dd><a href="03-hexagonal-architecture.html">Driven ports</a>, <a href="02-ddd-building-blocks.html#repository">repository</a>, dependency inversion, ADR-002, ADR-008</dd>
+  <dt>Creates</dt><dd><code>internal/venue/application/doc.go</code>, <code>ports.go</code>, <code>errors.go</code></dd>
+</dl>
+<div class="callout do"><span class="label">Your turn</span><p>Declare <code>VenueRepository</code> (<code>Get</code>, <code>Save</code>), <code>Clock</code> (<code>Now() time.Time</code>) and <code>IDGenerator</code> (<code>NewVenueID() domain.VenueID</code>). Write a doc comment on each interface that states its <em>contract</em>, for example: "Save persists the aggregate and its pending events atomically; returns ErrConcurrentModification if the stored version differs from v.Version()".</p></div>
+<div class="callout discuss"><span class="label">Discuss</span><ul>
+  <li>Interfaces don't need tests, but contracts do. Where will the contract of <code>Save</code> be tested? (Lesson 2.6.)</li>
+  <li>Why is <code>IDGenerator</code> context-specific (<code>NewVenueID</code>) and not a generic <code>NewUUID()</code>?</li>
+</ul></div>
+</section>
+
+<section class="lesson" id="l2-2">
+<h3><span class="lesson-id">2.2</span> Your first driven adapters: in-memory fakes</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Real, working implementations of the ports, used by fast tests and usable for running the app without Postgres.</dd>
+  <dt>Concepts</dt><dd><a href="05-testing-strategy.html">Fakes over mocks</a> (ADR-007)</dd>
+  <dt>Creates</dt><dd><code>internal/venue/adapters/driven/memory/venue_repository.go</code>, <code>internal/platform/clock</code> (<code>Fixed</code>, <code>System</code>), <code>internal/platform/idgen</code></dd>
+</dl>
+<p>Notice where the fake lives: <code>adapters/driven/memory</code>. An in-memory repository is a legitimate driven adapter, just as Postgres is. Hexagonal architecture treats them the same.</p>
+<div class="callout warn"><span class="label">The classic fake bug</span><p>If the fake stores the <code>*Venue</code> pointer, a test that <strong>forgets to call Save</strong> still passes, because the stored pointer sees the mutation. The fake must store a <strong>copy</strong>: store the <code>VenueState</code> and <code>RehydrateVenue</code> on <code>Get</code>. Write a test that proves it: modify a loaded venue without saving, load again, and check it's unchanged.</p></div>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>Get of an unknown ID → <code>application.ErrVenueNotFound</code>.</li>
+  <li>Save then Get returns an equal venue.</li>
+  <li>Changes without Save aren't visible (the copy semantics above).</li>
+  <li>Save with a stale version → <code>ErrConcurrentModification</code>.</li>
+  <li>Save drains the aggregate's pending events and keeps them in a <code>Published()</code> slice the tests can inspect.</li>
+</ol></div>
+</section>
+
+<section class="lesson" id="l2-3">
+<h3><span class="lesson-id">2.3</span> Use case: <code>RegisterVenue</code></h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Learn the recipe every use case follows: parse → load/create → one domain call → save → return.</dd>
+  <dt>Concepts</dt><dd><a href="02-ddd-building-blocks.html#application-service">Application service</a></dd>
+  <dt>Creates</dt><dd><code>register_venue.go</code>, <code>register_venue_test.go</code></dd>
+</dl>
+<pre><code>type RegisterVenue struct{ Name, Street, City, Country string }
+type RegisterVenueHandler struct{ venues VenueRepository; ids IDGenerator; clock Clock }
+func (h *RegisterVenueHandler) Handle(ctx context.Context, cmd RegisterVenue) (domain.VenueID, error)</code></pre>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>A valid command returns the generated ID, and the venue can be loaded from the repo as Draft.</li>
+  <li>A <code>VenueRegistered</code> event reaches the repository, with the clock's time.</li>
+  <li>An invalid address → the domain error is returned unchanged (<code>errors.Is</code> works), and nothing is saved.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><ul>
+  <li>The handler has no <code>if</code> about business rules. Where did they all go?</li>
+  <li>Should the handler wrap domain errors (<code>fmt.Errorf("register venue: %w", err)</code>)? What does wrapping cost or gain at the HTTP adapter?</li>
+</ul></div>
+</section>
+
+<section class="lesson" id="l2-4">
+<h3><span class="lesson-id">2.4</span> Use cases: <code>AddSection</code>, <code>ActivateVenue</code>, <code>RetireVenue</code></h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Repeat the recipe until it's boring, and handle "not found" and invalid input.</dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script (per use case)</span><ol class="tests">
+  <li>Happy path: the state changed in the repo, and the expected event was saved.</li>
+  <li>Unknown venue ID → <code>ErrVenueNotFound</code>.</li>
+  <li>Malformed venue ID string → <code>domain.ErrInvalidVenueID</code>.</li>
+  <li>A rule violation (e.g. activating without sections) → the domain error, and nothing is saved.</li>
+</ol></div>
+<div class="callout do"><span class="label">Refactor step</span><p>Once all four handlers exist, look for duplication in the <em>tests</em> (setup of handler + fakes) and extract a small <code>newFixture(t)</code>. Don't extract a generic "base handler" in production code. Four explicit 15-line handlers are clearer than one clever abstraction.</p></div>
+</section>
+
+<section class="lesson" id="l2-5">
+<h3><span class="lesson-id">2.5</span> The query side: <code>GetVenue</code></h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Separate reads from writes (CQRS-lite). Screens don't need aggregates.</dd>
+  <dt>Concepts</dt><dd><a href="03-hexagonal-architecture.html">Commands vs queries</a></dd>
+  <dt>Creates</dt><dd><code>queries.go</code>: a <code>VenueQueries</code> port + <code>VenueView</code>/<code>SectionView</code> DTOs; the memory implementation</dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li><code>VenueQueries.Get</code> returns a flat <code>VenueView</code> (strings and ints, with capacity precomputed) for a saved venue.</li>
+  <li>Unknown ID → <code>ErrVenueNotFound</code>.</li>
+  <li><code>List(status)</code> filters by status.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>Why doesn't the query port return <code>*domain.Venue</code>? Think about what an HTTP adapter could do with an aggregate pointer, and what loading 1,000 aggregates costs just to show a list.</p></div>
+</section>
+
+<section class="lesson" id="l2-6">
+<h3><span class="lesson-id">2.6</span> Repository contract suite</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Write the <code>Save</code>/<code>Get</code> contract once, as tests, so Postgres in Part 3 must pass exactly what the fake passes.</dd>
+  <dt>Concepts</dt><dd><a href="05-testing-strategy.html">Repository contract tests</a></dd>
+  <dt>Creates</dt><dd><code>internal/venue/application/venuerepotest/suite.go</code></dd>
+</dl>
+<div class="callout do"><span class="label">Your turn</span><p>Move the repository tests from 2.2 into <code>venuerepotest.Run(t, factory)</code>. The memory adapter's test becomes a one-liner. Add cases: round-trip of an active venue with a GA and a seated section; two concurrent saves from the same loaded version (the second gets <code>ErrConcurrentModification</code>).</p></div>
+<h4>Done when</h4>
+<ul><li><code>make test</code> is green, and every Venue use case is covered without any infrastructure. The app "works" entirely in memory.</li></ul>
+</section>
+</main>
+<script src="assets/course.js"></script>
+</body>
+</html>

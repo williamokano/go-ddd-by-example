@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stagehand Course</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main class="content">
+<header>
+  <div class="kicker">Start here</div>
+  <h1>Learning DDD, Hexagonal Architecture and TDD by building a ticketing platform in Go</h1>
+  <p class="lead">This is the course map. You'll build <strong>Stagehand</strong> one piece at a time, the way a working programmer would. You'll read a little theory, write a failing test, make it pass, refactor, and then talk about <em>why</em> it went where it went.</p>
+</header>
+
+<h2>What we are building</h2>
+<p>Stagehand sells tickets for shows held at venues. It has three main business areas (<em>bounded contexts</em>) plus a small generic one:</p>
+<div class="cards">
+  <div class="card"><h4>Venue Management <span class="tag">supporting</span></h4><p>Venues, their sections and their seats. A venue manager registers a venue, lays out its sections, activates it, and eventually retires it.</p></div>
+  <div class="card"><h4>Show Scheduling <span class="tag">supporting</span></h4><p>A promoter drafts a show at an active venue, sets a price for each section, publishes it, and can cancel it. Shows can't overlap at the same venue.</p></div>
+  <div class="card"><h4>Ticketing <span class="tag core">core</span></h4><p>Customers hold seats for a few minutes, check out, pay, and get tickets. <strong>A seat is never sold twice.</strong> This is where the business makes its money, so it gets the richest model.</p></div>
+  <div class="card"><h4>Notifications <span class="tag">generic</span></h4><p>Reacts to events and "sends" emails (it logs them). It shows that not everything needs a rich domain model.</p></div>
+</div>
+<p>The contexts live in <strong>one Go module (a modular monolith)</strong>. Each owns its own Postgres schema, and they talk to each other <strong>only through integration events on Kafka</strong>. Each event is written with the <em>transactional outbox</em> pattern, so we never lose one. We get the discipline of microservices without the operational cost, and splitting a context out later would be a deployment change, not a rewrite.</p>
+
+<h2>Tech stack</h2>
+<div class="table-wrap"><table>
+  <tr><th>Concern</th><th>Choice</th><th>Why</th></tr>
+  <tr><td>Language</td><td>Go 1.27</td><td>Installed locally through mise. Small language and explicit code, so the architecture is easy to see.</td></tr>
+  <tr><td>Database</td><td>PostgreSQL 18</td><td>Transactions, row versioning, schemas per context.</td></tr>
+  <tr><td>SQL access</td><td><code>sqlc</code> + <code>pgx/v5</code></td><td>You write SQL and get type-safe Go. No ORM hides what the database does.</td></tr>
+  <tr><td>Migrations</td><td><code>goose</code></td><td>Plain SQL files. sqlc reads the same files as the schema. Already in <code>~/go/bin</code>.</td></tr>
+  <tr><td>Messaging</td><td>Apache Kafka (KRaft, no ZooKeeper) + <code>franz-go</code></td><td>The second piece of infrastructure, for domain/integration events between contexts.</td></tr>
+  <tr><td>HTTP</td><td><code>net/http</code> (Go 1.22+ routing patterns)</td><td>Zero framework. The driving adapter stays tiny and obvious.</td></tr>
+  <tr><td>Tests</td><td><code>testing</code> + <code>go-cmp</code> + <code>testcontainers-go</code></td><td>Real Postgres and Kafka in integration tests, and plain Go everywhere else.</td></tr>
+  <tr><td>Runtime</td><td>Docker Compose</td><td><code>make up</code> brings up Postgres, Kafka, Kafka UI and the app.</td></tr>
+</table></div>
+
+<h2>How the course works</h2>
+<p><strong>Read <a href="00-key-terms.html">Key terms in 10 minutes</a> first.</strong> It defines every word the course uses: driving/driven ports and adapters, value objects, aggregates and the rest. After that, there are two kinds of pages:</p>
+<ul>
+  <li><strong>Reference (chapters 1–7).</strong> The domain description, the concepts, the architecture rules, the testing strategy, the infrastructure and the decision log. Read chapter 1 before Part 0, then come back to the others when a lesson points you there.</li>
+  <li><strong>Course (Parts 0–9).</strong> Step-by-step lessons. Each lesson has a goal, the concepts it introduces, the files you'll create, a <em>TDD script</em> (the ordered list of tests to write), a "done when" checklist and discussion questions. Tick "done" on a lesson to track your progress. Progress is saved in this browser only.</li>
+</ul>
+
+<h3>The teaching protocol (what happens in a session)</h3>
+<ol>
+  <li>We open the next unfinished lesson. I explain the concept and the <em>why</em>, using our domain as the example.</li>
+  <li>I give you a concrete instruction, e.g. "create <code>internal/venue/domain/venue_id.go</code>".</li>
+  <li><strong>You write the failing test first.</strong> I review it: does it describe behaviour, is it named in the ubiquitous language?</li>
+  <li>You make it pass with the simplest code. Then we refactor together.</li>
+  <li>I don't write the production code for you unless you ask. I give hints, ask questions, and review your diffs.</li>
+  <li>At the end of each lesson we run the "done when" checks, answer the discussion questions, and commit.</li>
+</ol>
+
+<h3>Callout legend</h3>
+<div class="callout why"><span class="label">Why</span>The reasoning behind a decision. This is the most important part.</div>
+<div class="callout do"><span class="label">Your turn</span>Something you do: create a folder, write a file, run a command.</div>
+<div class="callout tdd"><span class="label">TDD</span>Tests to write <em>before</em> the code, in order.</div>
+<div class="callout warn"><span class="label">Pitfall</span>A common mistake, and how to recognise it.</div>
+<div class="callout discuss"><span class="label">Discuss</span>Questions to answer out loud before moving on. They check whether you've understood.</div>
+
+<h2>Roadmap</h2>
+<div class="table-wrap"><table>
+  <tr><th>Part</th><th>You build</th><th>You learn</th></tr>
+  <tr><td><a href="part-0-orientation.html">0 · Orientation</a></td><td>Event storming on paper, Go module, Makefile, linter, first test</td><td>Ubiquitous language, subdomains, the TDD rhythm</td></tr>
+  <tr><td><a href="part-1-venue-domain.html">1 · Venue domain</a></td><td><code>internal/venue/domain</code>: IDs, value objects, Section entity, Venue aggregate, domain events</td><td>Entity vs value object, aggregate &amp; root, invariants, encapsulation, reconstitution</td></tr>
+  <tr><td><a href="part-2-venue-application.html">2 · Application layer</a></td><td>Use cases, driven ports, in-memory fakes</td><td>Application service vs domain service, ports, the Clock/ID ports, CQRS-lite</td></tr>
+  <tr><td><a href="part-3-persistence.html">3 · Persistence</a></td><td>Docker Postgres, goose, sqlc, Postgres repository, outbox table</td><td>Driven adapters, mapping, optimistic concurrency, repository contract tests, testcontainers</td></tr>
+  <tr><td><a href="part-4-driving-adapters.html">4 · HTTP &amp; wiring</a></td><td>HTTP adapter, <code>cmd/stagehand</code>, Dockerfile, architecture test</td><td>Driving adapters, DTOs, error mapping, composition root, enforcing the dependency rule</td></tr>
+  <tr><td><a href="part-5-messaging.html">5 · Outbox &amp; Kafka</a></td><td>Kafka in Compose, contracts package, outbox relay, consumer runner</td><td>Domain vs integration events, published language, at-least-once delivery, idempotency</td></tr>
+  <tr><td><a href="part-6-show-context.html">6 · Show context</a></td><td>Show aggregate, scheduling policy, venue projection, publish/cancel</td><td>Domain service, anti-corruption layer, state machines, reacting to other contexts</td></tr>
+  <tr><td><a href="part-7-ticketing-core.html">7 · Ticketing</a></td><td>Shared kernel extraction, ShowInventory, Order, Tickets, payment port, checkout saga</td><td>Aggregate boundary design, one-aggregate-per-transaction, sagas &amp; compensation, concurrency</td></tr>
+  <tr><td><a href="part-8-end-to-end.html">8 · End-to-end</a></td><td>Full event-chain e2e test, notifications, tracing IDs, inbox</td><td>Acceptance tests, eventual consistency in tests, observability, transaction scripts</td></tr>
+  <tr><td><a href="part-9-stretch.html">9 · Stretch</a></td><td>Per-section inventory, check-in, event v2, projections</td><td>Refactoring aggregates, schema evolution</td></tr>
+</table></div>
+
+<div class="callout why"><span class="label">Why this order?</span>
+<p>We go <strong>inside-out</strong> first. We start at the domain (pure Go, no database, no HTTP) because that's what DDD is about, and because it's the easiest place to learn TDD: no mocks, no setup, instant tests. Only once the model works do we add the ring around it (use cases), then the adapters (Postgres, HTTP, Kafka).</p>
+<p>The <em>Venue</em> context goes first because it's the simplest and everything else depends on it. <em>Show</em> repeats the same pattern faster and adds cross-context events. <em>Ticketing</em>, the hard part, comes last, when you already know the moves. From Part 6 on we switch to <strong>outside-in (double-loop) TDD</strong>: an acceptance test first, then inside-out to make it pass.</p>
+</div>
+
+<h2>Prerequisites</h2>
+<ul>
+  <li>Go 1.27 (<code>go version</code>), Docker with the Compose plugin, <code>make</code>.</li>
+  <li>Installed during Part 0: <code>sqlc</code>, <code>golangci-lint</code> (<code>goose</code> is already installed).</li>
+  <li>Comfortable Go basics: structs, methods, interfaces, errors, <code>context</code>, table-driven tests.</li>
+</ul>
+
+<h2>Viewing these docs</h2>
+<p>Opening <code>docs/index.html</code> directly works. Serving the folder over HTTP is nicer, though: one stable URL, and lesson progress that survives across browsers on the same address.</p>
+<pre><code>make docs                                             # http://localhost:8000
+# or, without make:
+python3 -m http.server 8000 --bind 127.0.0.1 --directory docs</code></pre>
+<p>Use another port with <code>make docs DOCS_PORT=9000</code>. Lesson progress is stored per address, so <code>file://</code> and <code>http://localhost:8000</code> track it separately.</p>
+
+<h2>Resuming in a new session</h2>
+<p>The repo's <code>CLAUDE.md</code> tells Claude to act as your tutor for this course, and <code>tasks/todo.md</code> records the lesson we're on. Start a session with something like <em>"Let's continue the course"</em>. Claude reads both files, checks the code that exists, and picks up at the next unchecked lesson.</p>
+</main>
+<script src="assets/course.js"></script>
+</body>
+</html>

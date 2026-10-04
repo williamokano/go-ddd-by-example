@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hexagonal Architecture</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main class="content">
+<header>
+  <div class="kicker">Reference · Chapter 3</div>
+  <h1>Hexagonal architecture (ports &amp; adapters)</h1>
+  <p class="lead">How the code is organised, which way dependencies point, what a port is, and exactly which folder each kind of thing goes in.</p>
+</header>
+
+<h2>The idea in one sentence</h2>
+<p>Put the business logic in the centre, have it <strong>declare what it needs as interfaces (ports)</strong>, and plug the outside world (HTTP, Postgres, Kafka, clocks, payment providers) in through <strong>adapters</strong> that implement or call those interfaces. Alistair Cockburn described it in 2005 to make "the application equally driven by users, programs, automated tests or batch scripts, and developed and tested in isolation from its eventual run-time devices and databases."</p>
+<p><strong>Hexagonal, Onion and Clean Architecture are the same core idea</strong> with different diagrams. They all follow the <em>dependency rule</em>: source-code dependencies point <strong>inward</strong>, toward the domain. We use hexagonal vocabulary because it names the two sides of the application explicitly.</p>
+
+<figure>
+<svg viewBox="0 0 780 520" role="img" aria-label="Hexagon diagram: driving adapters on the left call driving ports; the application core with domain inside; driven ports on the right implemented by driven adapters">
+  <style>
+    .t{font:13px system-ui,sans-serif;fill:var(--text)}
+    .s{font:11px system-ui,sans-serif;fill:var(--muted)}
+    .b{font:600 13px system-ui,sans-serif;fill:var(--text)}
+    .hex{fill:var(--surface);stroke:var(--accent);stroke-width:2}
+    .core{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+    .box{fill:var(--surface-2);stroke:var(--border)}
+    .port{fill:var(--why-bg);stroke:var(--why);stroke-width:1.5}
+    .ln{stroke:var(--muted);stroke-width:1.5;fill:none;marker-end:url(#ar)}
+  </style>
+  <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="var(--muted)"/></marker></defs>
+  <polygon class="hex" points="250,40 510,40 630,260 510,480 250,480 130,260"/>
+  <text class="b" x="380" y="72" text-anchor="middle">Application (use cases, ports)</text>
+  <polygon class="core" points="310,150 450,150 515,260 450,370 310,370 245,260"/>
+  <text class="b" x="380" y="245" text-anchor="middle">Domain</text>
+  <text class="s" x="380" y="265" text-anchor="middle">aggregates · VOs · events</text>
+  <text class="s" x="380" y="281" text-anchor="middle">domain services · errors</text>
+  <!-- driving ports -->
+  <rect class="port" x="150" y="130" width="96" height="30" rx="6"/><text class="t" x="198" y="150" text-anchor="middle">use case API</text>
+  <rect class="port" x="150" y="360" width="96" height="30" rx="6"/><text class="t" x="198" y="380" text-anchor="middle">event handler</text>
+  <!-- driven ports -->
+  <rect class="port" x="514" y="120" width="104" height="30" rx="6"/><text class="t" x="566" y="140" text-anchor="middle">Repository</text>
+  <rect class="port" x="530" y="245" width="96" height="30" rx="6"/><text class="t" x="578" y="265" text-anchor="middle">Payment</text>
+  <rect class="port" x="514" y="370" width="104" height="30" rx="6"/><text class="t" x="566" y="390" text-anchor="middle">Clock · IDs</text>
+  <!-- driving adapters -->
+  <rect class="box" x="6" y="110" width="110" height="44" rx="8"/><text class="t" x="61" y="137" text-anchor="middle">HTTP handler</text>
+  <rect class="box" x="6" y="250" width="110" height="44" rx="8"/><text class="t" x="61" y="277" text-anchor="middle">Test / CLI</text>
+  <rect class="box" x="6" y="380" width="110" height="44" rx="8"/><text class="t" x="61" y="400" text-anchor="middle">Kafka consumer</text><text class="s" x="61" y="415" text-anchor="middle">scheduler</text>
+  <path class="ln" d="M116,132 L150,142"/><path class="ln" d="M116,272 L180,272 L196,162"/><path class="ln" d="M116,400 L150,378"/>
+  <!-- driven adapters -->
+  <rect class="box" x="650" y="105" width="104" height="44" rx="8"/><text class="t" x="702" y="125" text-anchor="middle">Postgres</text><text class="s" x="702" y="140" text-anchor="middle">+ outbox</text>
+  <rect class="box" x="650" y="240" width="104" height="44" rx="8"/><text class="t" x="702" y="267" text-anchor="middle">Fake gateway</text>
+  <rect class="box" x="650" y="365" width="104" height="44" rx="8"/><text class="t" x="702" y="392" text-anchor="middle">System clock</text>
+  <path class="ln" d="M650,127 L618,135"/><path class="ln" d="M650,262 L626,260"/><path class="ln" d="M650,387 L618,385"/>
+  <text class="b" x="61" y="40" text-anchor="middle">DRIVING side</text><text class="s" x="61" y="56" text-anchor="middle">(primary · inbound)</text>
+  <text class="b" x="702" y="40" text-anchor="middle">DRIVEN side</text><text class="s" x="702" y="56" text-anchor="middle">(secondary · outbound)</text>
+  <text class="s" x="380" y="508" text-anchor="middle">Every arrow is a source-code dependency. They all point INTO the hexagon. Driven adapters implement the core's interfaces.</text>
+</svg>
+<figcaption>Driving adapters call into the core; the core calls out through driven ports that adapters implement.</figcaption>
+</figure>
+
+<h2>Vocabulary: picking the names</h2>
+<p>A short version, with the "who calls first?" test and a car analogy, is in <a href="00-key-terms.html#driving-driven">Key terms</a>. Here is the full mapping.</p>
+<p>The same two ideas have several names in circulation. <strong>We use "driving" and "driven"</strong>, Cockburn's own terms and the most widely recognised in the hexagonal literature. The others are equivalent:</p>
+<div class="table-wrap"><table>
+  <tr><th>We say</th><th>Also called</th><th>Who starts the conversation?</th><th>Port shape</th><th>Stagehand examples</th></tr>
+  <tr><td><strong>Driving port</strong></td><td>primary, inbound, input port, "use case"</td><td>The outside world calls <em>us</em></td><td>The use cases the application offers (command/query + handler)</td><td><code>RegisterVenue</code>, <code>HoldSeats</code>, <code>HandleShowPublished</code></td></tr>
+  <tr><td><strong>Driving adapter</strong></td><td>primary/inbound adapter, controller</td><td></td><td>Translates an external protocol into a use-case call</td><td>HTTP handlers, Kafka consumers, the hold-expiry scheduler, tests</td></tr>
+  <tr><td><strong>Driven port</strong></td><td>secondary, outbound, output port, SPI</td><td><em>We</em> call the outside world</td><td>An interface the application declares and needs implemented</td><td><code>VenueRepository</code>, <code>PaymentGateway</code>, <code>Clock</code>, <code>IDGenerator</code></td></tr>
+  <tr><td><strong>Driven adapter</strong></td><td>secondary/outbound adapter, gateway</td><td></td><td>Implements a driven port using a technology</td><td>Postgres repository, fake payment gateway, system clock</td></tr>
+</table></div>
+<div class="callout why"><span class="label">Why "driving/driven" over "inbound/outbound"?</span><p>"Inbound/outbound" suggests data direction, and that's misleading. A query port is <em>driving</em> but data flows <em>out</em>. A repository <code>Get</code> is <em>driven</em> but data flows <em>in</em>. "Driving/driven" is about <strong>who initiates</strong>, and that's what decides which side owns the interface.</p></div>
+
+<h2>The dependency rule, concretely</h2>
+<pre class="diagram"><code>  adapters/driving ──▶ application ──▶ domain ──▶ sharedkernel
+  adapters/driven  ──▶ application ──┘           (stdlib only)
+  cmd (composition root) ──▶ everything (it's the only place that knows all the concrete types)</code></pre>
+<div class="table-wrap"><table>
+  <tr><th>Package</th><th>May import</th><th>Must NOT import</th></tr>
+  <tr><td><code>internal/&lt;ctx&gt;/domain</code></td><td>stdlib, <code>internal/sharedkernel</code>, <code>github.com/google/uuid</code></td><td>application, adapters, platform, pgx, kafka, net/http, <em>other contexts</em>, <code>context</code>*</td></tr>
+  <tr><td><code>internal/&lt;ctx&gt;/application</code></td><td>its own domain, sharedkernel, <em>other contexts' <code>contracts</code></em> (to read integration events)</td><td>adapters, platform, any driver or SDK</td></tr>
+  <tr><td><code>internal/&lt;ctx&gt;/adapters/...</code></td><td>its own application and domain, platform, drivers (pgx, franz-go), its own contracts</td><td>other contexts' domain/application/adapters</td></tr>
+  <tr><td><code>internal/&lt;ctx&gt;/contracts</code></td><td>stdlib only</td><td>everything else. It's a public, stable data definition.</td></tr>
+  <tr><td><code>internal/platform/...</code></td><td>stdlib, drivers</td><td>any context</td></tr>
+</table></div>
+<p class="lead" style="font-size:.9rem">* The domain doesn't need <code>context.Context</code>: it does no I/O and no cancellation. If you feel the urge to add it, something with I/O has crept into the domain.</p>
+<p>This isn't a matter of trust. In Part 4 you write an <strong>architecture test</strong> that fails the build when a forbidden import appears.</p>
+
+<h2>Folder layout</h2>
+<pre class="diagram"><code>go-ddd-by-example/
+├── cmd/
+│   └── stagehand/main.go              # composition root: config, wiring, run HTTP + consumers + relay + scheduler
+├── internal/
+│   ├── sharedkernel/                  # Shared Kernel (domain!): Money, Currency, DomainEvent, Events recorder
+│   ├── platform/                      # technical plumbing (NOT domain, NOT shared kernel)
+│   │   ├── config/                    #   env config
+│   │   ├── postgres/                  #   pool, tx helper, test helpers (testcontainers)
+│   │   ├── outbox/                    #   outbox writer + relay (Postgres → Kafka)
+│   │   ├── kafka/                     #   producer, consumer-group runner, envelope
+│   │   ├── httpx/                     #   JSON helpers, error responses, middleware
+│   │   └── clock/, idgen/             #   system implementations of the Clock and IDGenerator ports
+│   ├── venue/
+│   │   ├── domain/                    # pure model: venue.go, section.go, address.go, events.go, errors.go
+│   │   ├── application/               # ports.go, register_venue.go, add_section.go, ..., queries.go
+│   │   ├── contracts/                 # Published Language: venue.activated.v1 payload structs + topic names
+│   │   └── adapters/
+│   │       ├── driving/httpapi/       # handlers, DTOs, routes, error→status mapping
+│   │       └── driven/postgres/       # VenueRepository impl, mapping, sqlc output in ./sqlcgen
+│   ├── show/
+│   │   ├── domain/ application/ contracts/
+│   │   └── adapters/
+│   │       ├── driving/httpapi/ driving/consumer/      # consumes venue.* and ticketing.* events
+│   │       └── driven/postgres/
+│   ├── ticketing/
+│   │   ├── domain/ application/ contracts/
+│   │   └── adapters/
+│   │       ├── driving/httpapi/ driving/consumer/ driving/scheduler/   # hold-expiry ticker
+│   │       ├── driven/postgres/
+│   │       └── driven/payment/        # fakegateway implementing PaymentGateway
+│   └── notifications/                 # transaction script: handlers + EmailSender port + log adapter
+├── db/
+│   ├── migrations/                    # goose SQL migrations (one schema per context)
+│   └── queries/{venue,show,ticketing}/   # sqlc input queries
+├── test/e2e/                          # end-to-end acceptance tests (build tag e2e)
+├── api/                               # .http files to poke the running app
+├── docker-compose.yml  Dockerfile  Makefile  sqlc.yaml  .golangci.yml  go.mod</code></pre>
+<div class="callout do"><span class="label">Rule for creating folders</span><p>We never create empty folders "for later". A folder appears in the lesson where its first file (usually a test) is written. The layout above is where we <em>end up</em>, not a scaffold to generate on day one.</p></div>
+
+<h2>What goes where — the cheat sheet</h2>
+<div class="table-wrap"><table>
+  <tr><th>Thing</th><th>Folder</th><th>Example</th></tr>
+  <tr><td>Entity, value object, aggregate root</td><td><code>domain</code></td><td><code>Venue</code>, <code>Section</code>, <code>Address</code></td></tr>
+  <tr><td>Domain event</td><td><code>domain</code></td><td><code>VenueActivated</code></td></tr>
+  <tr><td>Domain error</td><td><code>domain</code></td><td><code>ErrVenueNotDraft</code></td></tr>
+  <tr><td>Domain service / policy logic</td><td><code>domain</code></td><td><code>SchedulingPolicy</code></td></tr>
+  <tr><td>Use case (application service), command, result</td><td><code>application</code></td><td><code>AddSectionHandler</code>, <code>AddSection</code> command</td></tr>
+  <tr><td>Driven port (interface)</td><td><code>application/ports.go</code></td><td><code>VenueRepository</code>, <code>Clock</code></td></tr>
+  <tr><td>Query service + read-model DTOs</td><td><code>application</code> (interface) + <code>adapters/driven/postgres</code> (impl)</td><td><code>VenueQueries.Get(id) (VenueView, error)</code></td></tr>
+  <tr><td>Event handler that reacts to another context</td><td><code>application</code> (logic) + <code>adapters/driving/consumer</code> (Kafka plumbing)</td><td><code>OnVenueRetired</code></td></tr>
+  <tr><td>Integration event schema</td><td><code>contracts</code></td><td><code>VenueActivatedV1</code></td></tr>
+  <tr><td>Domain → integration event translation</td><td><code>adapters/driven/postgres</code> (when writing the outbox)</td><td><code>toOutboxMessages(events)</code></td></tr>
+  <tr><td>HTTP DTOs (JSON shapes)</td><td><code>adapters/driving/httpapi</code></td><td><code>addSectionRequest</code></td></tr>
+  <tr><td>SQL, sqlc models, row ↔ aggregate mapping</td><td><code>adapters/driven/postgres</code></td><td><code>rowToVenue</code></td></tr>
+  <tr><td>In-memory fakes for tests</td><td><code>application/…_test.go</code> or <code>internal/&lt;ctx&gt;/adapters/driven/memory</code></td><td><code>memory.VenueRepository</code></td></tr>
+  <tr><td>Wiring</td><td><code>cmd/stagehand</code></td><td><code>main.go</code></td></tr>
+</table></div>
+
+<h2>Driving ports in Go: an honest note</h2>
+<p>Hexagonal texts draw driving ports as interfaces such as <code>RegisterVenueUseCase</code>. Go's idiom is <em>"accept interfaces, return structs; define interfaces where they are consumed"</em>. We reconcile the two like this:</p>
+<ul>
+  <li>The <strong>driving port is the use case's public contract</strong>: the command struct, the result type, the errors, and the <code>Handle</code> method. The application layer owns it and exports it as a concrete type, <code>application.RegisterVenueHandler</code>.</li>
+  <li>The <strong>HTTP adapter declares a one-method interface</strong> for what it consumes (<code>type registerVenue interface{ Handle(context.Context, application.RegisterVenue) (domain.VenueID, error) }</code>) so its own tests can pass a stub.</li>
+  <li><strong>Driven ports are always interfaces declared in <code>application</code></strong>. That's what makes the core swappable and testable.</li>
+</ul>
+<pre><code>// internal/venue/application/add_section.go
+type AddSection struct {          // the command: primitives only, comes from any driving adapter
+	VenueID  string
+	Code     string
+	Kind     string               // "seated" | "ga"
+	Rows     []RowSpec
+	Capacity int
+}
+
+type AddSectionHandler struct {
+	venues VenueRepository        // driven port
+}
+
+func NewAddSectionHandler(venues VenueRepository) *AddSectionHandler { ... }
+
+func (h *AddSectionHandler) Handle(ctx context.Context, cmd AddSection) error {
+	id, err := domain.ParseVenueID(cmd.VenueID)       // 1. parse into domain types
+	...
+	venue, err := h.venues.Get(ctx, id)               // 2. load
+	...
+	if err := venue.AddSection(section); err != nil { // 3. ONE behaviour call; rules live in the domain
+		return err
+	}
+	return h.venues.Save(ctx, venue)                  // 4. save (+ outbox, atomically)
+}</code></pre>
+
+<h2>Following one request through the hexagon</h2>
+<pre class="diagram"><code>POST /venues/0192…/sections  {"code":"orch","kind":"seated","rows":[{"label":"A","seats":20}]}
+│
+├─ adapters/driving/httpapi   decode JSON → application.AddSection{...}       (protocol → command)
+│                             call handler.Handle(ctx, cmd)
+├─ application                parse IDs/VOs, venues.Get(ctx, id)              (orchestration)
+│                             venue.AddSection(section)
+├─ domain                     check VEN-2, VEN-3, VEN-4; append; record SectionAdded   (rules)
+├─ application                venues.Save(ctx, venue)
+├─ adapters/driven/postgres   BEGIN; UPDATE venue … WHERE version=$n; upsert sections;
+│                             INSERT outbox (events → messages); COMMIT                 (technology)
+└─ adapters/driving/httpapi   201 Created  |  errors.Is(err, domain.ErrDuplicateSectionCode) → 409
+
+… later, asynchronously:  platform/outbox relay → Kafka topic → other contexts' consumers</code></pre>
+
+<h2>Composition root</h2>
+<p><code>cmd/stagehand/main.go</code> is the <strong>only</strong> place that knows every concrete type. It reads config, opens the pool, builds the adapters, injects them into use-case handlers through constructors, mounts the routes, starts the consumers, the outbox relay and the scheduler, and handles graceful shutdown. No DI container and no globals: plain constructor injection that you can read top to bottom.</p>
+
+<h2>Rules between bounded contexts</h2>
+<ol>
+  <li>A context <strong>never imports</strong> another context's <code>domain</code>, <code>application</code> or <code>adapters</code>.</li>
+  <li>A context may import another context's <code>contracts</code> package, and only to decode its integration events.</li>
+  <li>Each context owns a <strong>Postgres schema</strong> (<code>venue</code>, <code>show</code>, <code>ticketing</code>). No cross-schema joins and no foreign keys across schemas.</li>
+  <li>Contexts communicate <strong>asynchronously via Kafka</strong>. There are no in-process calls across contexts, even though it's one binary. That keeps a future split into services cheap.</li>
+</ol>
+
+<h2>Commands vs queries (CQRS-lite)</h2>
+<p>Writes go through aggregates, because that's where the rules are. <strong>Reads don't need aggregates</strong>: loading a full <code>ShowInventory</code> to show a list of shows wastes work and couples screens to the model. For queries, the application layer declares a query port that returns flat view DTOs, and the Postgres adapter implements it with straight SQL through sqlc. Same database, separate paths. We don't use separate read databases or event sourcing.</p>
+</main>
+<script src="assets/course.js"></script>
+</body>
+</html>
