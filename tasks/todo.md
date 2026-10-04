@@ -3,7 +3,7 @@
 Source of truth for *where we are* in the course. Lessons live in `docs/part-*.html`.
 Tick a lesson when its "Done when" checks pass; add a one-line note (date, anything notable).
 
-**Current lesson:** 3.1 — Docker Compose with Postgres
+**Current lesson:** 4.1 — HTTP plumbing in platform/httpx
 
 ## Part 0 — Orientation & setup (`docs/part-0-orientation.html`)
 - [x] 0.1 Event storming on paper
@@ -38,13 +38,14 @@ Tick a lesson when its "Done when" checks pass; add a one-line note (date, anyth
 - [x] 2.6 Repository contract suite
 
 ## Part 3 — Persistence: Postgres, goose, sqlc, testcontainers (`docs/part-3-persistence.html`)
-- [ ] 3.1 Docker Compose with Postgres
-- [ ] 3.2 Migrations with goose, embedded, and a migrate subcommand
-- [ ] 3.3 sqlc: write SQL, get Go
-- [ ] 3.4 testcontainers: a real Postgres per test package
-- [ ] 3.5 The Postgres VenueRepository
-- [ ] 3.6 Optimistic concurrency under real contention
-- [ ] 3.7 The query side in Postgres
+- [x] 3.1 Docker Compose with Postgres
+- [x] 3.2 Migrations with goose, embedded, and a migrate subcommand
+- [x] 3.3 sqlc: write SQL, get Go
+- [x] 3.4 testcontainers: a real Postgres per test package
+- [x] 3.5 The Postgres VenueRepository
+- [x] 3.6 Optimistic concurrency under real contention
+  - The race test needs a barrier: both writers load before either saves, or the second just loads the first one's result.
+- [x] 3.7 The query side in Postgres
 
 ## Part 4 — Driving adapters & the composition root (`docs/part-4-driving-adapters.html`)
 - [ ] 4.1 HTTP plumbing in platform/httpx
