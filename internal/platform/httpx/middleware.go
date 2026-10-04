@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/williamokano/go-ddd-by-example/internal/platform/trace"
 )
 
 // Middleware wraps a handler.
@@ -55,6 +57,21 @@ func RequestID(next http.Handler) http.Handler {
 func RequestIDFrom(ctx context.Context) string {
 	id, _ := ctx.Value(requestIDKey{}).(string)
 	return id
+}
+
+// Correlation propagates the caller's X-Correlation-ID, or starts a new flow,
+// and puts it in the context (platform/trace), where the outbox writer finds
+// it. Unlike the request ID, it outlives the request: it travels with every
+// event the request causes.
+func Correlation(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := r.Header.Get("X-Correlation-ID")
+		if id == "" {
+			id = uuid.NewString()
+		}
+		w.Header().Set("X-Correlation-ID", id)
+		next.ServeHTTP(w, r.WithContext(trace.WithCorrelationID(r.Context(), id)))
+	})
 }
 
 // AccessLog logs one line per request.

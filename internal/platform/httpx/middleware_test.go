@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/williamokano/go-ddd-by-example/internal/platform/httpx"
+	"github.com/williamokano/go-ddd-by-example/internal/platform/trace"
 )
 
 func TestRecover(t *testing.T) {
@@ -70,4 +71,33 @@ func TestAccessLog(t *testing.T) {
 			t.Errorf("access log %q lacks %q", logs.String(), want)
 		}
 	}
+}
+
+func TestCorrelation(t *testing.T) {
+	var seen string
+	h := httpx.Correlation(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		seen = trace.CorrelationID(r.Context())
+	}))
+
+	t.Run("keeps the caller's id", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.Header.Set("X-Correlation-ID", "purchase-42")
+
+		h.ServeHTTP(w, r)
+
+		if seen != "purchase-42" || w.Header().Get("X-Correlation-ID") != "purchase-42" {
+			t.Errorf("id = %q, header = %q; want purchase-42", seen, w.Header().Get("X-Correlation-ID"))
+		}
+	})
+
+	t.Run("starts a new flow when missing", func(t *testing.T) {
+		w := httptest.NewRecorder()
+
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+
+		if seen == "" || w.Header().Get("X-Correlation-ID") != seen {
+			t.Errorf("id = %q, header = %q; want the same generated id", seen, w.Header().Get("X-Correlation-ID"))
+		}
+	})
 }
