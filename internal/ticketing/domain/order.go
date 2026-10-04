@@ -44,6 +44,7 @@ type OrderLine struct {
 type HoldView struct {
 	HoldID    HoldID
 	ShowID    ShowID
+	Country   string // the venue's, for VAT (TKT-15)
 	Customer  CustomerID
 	ExpiresAt time.Time
 	Lines     []OrderLine
@@ -57,7 +58,7 @@ type Order struct {
 	customer   CustomerID
 	email      ContactEmail
 	lines      []OrderLine
-	total      sharedkernel.Money
+	pricing    PriceBreakdown
 	status     OrderStatus
 	paymentRef PaymentRef
 	version    int
@@ -65,9 +66,10 @@ type Order struct {
 	events sharedkernel.Events
 }
 
-// PlaceOrder starts a checkout for the customer's own, live hold (TKT-6). The
-// total is the sum of the lines, in one currency.
-func PlaceOrder(id OrderID, customer CustomerID, email ContactEmail, hold HoldView, now time.Time) (*Order, error) {
+// PlaceOrder starts a checkout for the customer's own, live hold (TKT-6),
+// priced by the PricingPolicy for the venue's country (TKT-15): the order
+// records the breakdown, the policy decides it.
+func PlaceOrder(id OrderID, customer CustomerID, email ContactEmail, hold HoldView, pricing PricingPolicy, now time.Time) (*Order, error) {
 	if id.IsZero() || customer.IsZero() {
 		return nil, fmt.Errorf("%w: zero order or customer id", ErrInvalidID)
 	}
@@ -83,18 +85,15 @@ func PlaceOrder(id OrderID, customer CustomerID, email ContactEmail, hold HoldVi
 	if len(hold.Lines) == 0 {
 		return nil, fmt.Errorf("%w: hold %s has no seats", ErrHoldNotFound, hold.HoldID)
 	}
-	total := hold.Lines[0].Price
-	for _, l := range hold.Lines[1:] {
-		var err error
-		if total, err = total.Add(l.Price); err != nil {
-			return nil, err
-		}
+	breakdown, err := pricing.Price(hold.Lines, hold.Country)
+	if err != nil {
+		return nil, err
 	}
 	o := &Order{
 		id: id, showID: hold.ShowID, holdID: hold.HoldID, customer: customer, email: email,
-		lines: slices.Clone(hold.Lines), total: total, status: Pending,
+		lines: slices.Clone(hold.Lines), pricing: breakdown, status: Pending,
 	}
-	o.events.Record(OrderPlaced{OrderID: id, ShowID: hold.ShowID, HoldID: hold.HoldID, CustomerID: customer, Total: total, At: now})
+	o.events.Record(OrderPlaced{OrderID: id, ShowID: hold.ShowID, HoldID: hold.HoldID, CustomerID: customer, Total: breakdown.Total, At: now})
 	return o, nil
 }
 
@@ -165,7 +164,7 @@ func (o *Order) MarkRefunded(now time.Time) error {
 		}
 		o.events.Record(OrderRefunded{
 			OrderID: o.id, ShowID: o.showID, Section: o.lines[0].Seat.Section(), Seats: seats,
-			CustomerID: o.customer, ContactEmail: o.email, Total: o.total, At: now,
+			CustomerID: o.customer, ContactEmail: o.email, Total: o.pricing.Total, At: now,
 		})
 		return nil
 	default:
@@ -211,8 +210,11 @@ func (o *Order) ContactEmail() ContactEmail { return o.email }
 // Lines returns a copy of the order's lines.
 func (o *Order) Lines() []OrderLine { return slices.Clone(o.lines) }
 
-// Total returns the sum of the lines.
-func (o *Order) Total() sharedkernel.Money { return o.total }
+// Total returns what the customer pays: lines, fee and VAT (TKT-15).
+func (o *Order) Total() sharedkernel.Money { return o.pricing.Total }
+
+// Pricing returns the breakdown of the total.
+func (o *Order) Pricing() PriceBreakdown { return o.pricing }
 
 // Status returns where the order is in its lifecycle.
 func (o *Order) Status() OrderStatus { return o.status }
@@ -234,7 +236,7 @@ type OrderState struct {
 	Customer   CustomerID
 	Email      ContactEmail
 	Lines      []OrderLine
-	Total      sharedkernel.Money
+	Pricing    PriceBreakdown
 	Status     OrderStatus
 	PaymentRef PaymentRef
 	Version    int
@@ -244,7 +246,7 @@ type OrderState struct {
 func OrderStateOf(o *Order) OrderState {
 	return OrderState{
 		ID: o.id, ShowID: o.showID, HoldID: o.holdID, Customer: o.customer, Email: o.email,
-		Lines: o.Lines(), Total: o.total, Status: o.status, PaymentRef: o.paymentRef, Version: o.version,
+		Lines: o.Lines(), Pricing: o.pricing, Status: o.status, PaymentRef: o.paymentRef, Version: o.version,
 	}
 }
 
@@ -252,6 +254,6 @@ func OrderStateOf(o *Order) OrderState {
 func RehydrateOrder(s OrderState) *Order {
 	return &Order{
 		id: s.ID, showID: s.ShowID, holdID: s.HoldID, customer: s.Customer, email: s.Email,
-		lines: slices.Clone(s.Lines), total: s.Total, status: s.Status, paymentRef: s.PaymentRef, version: s.Version,
+		lines: slices.Clone(s.Lines), pricing: s.Pricing, status: s.Status, paymentRef: s.PaymentRef, version: s.Version,
 	}
 }

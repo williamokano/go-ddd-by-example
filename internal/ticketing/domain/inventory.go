@@ -19,7 +19,8 @@ const maxSeatsPerHold = 8
 type SectionInventory struct {
 	showID   ShowID
 	section  string
-	position int // the section's place in the layout, for listings
+	position int    // the section's place in the layout, for listings
+	country  string // the venue's, for pricing (TKT-15)
 	startsAt time.Time
 	seats    map[SeatRef]*seat
 	order    []SeatRef // layout order, for stable listings
@@ -58,6 +59,9 @@ func OpenInventory(showID ShowID, layout InventoryLayout, startsAt time.Time, no
 		}
 		seen[code] = true
 		inv, err := openSection(showID, s, i, startsAt, now)
+		if err == nil {
+			inv.country = layout.Country
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -318,7 +322,7 @@ func (inv *SectionInventory) HoldView(id HoldID) (HoldView, error) {
 	if !ok {
 		return HoldView{}, fmt.Errorf("%w: %s", ErrHoldNotFound, id)
 	}
-	view := HoldView{HoldID: id, ShowID: inv.showID, Customer: h.customer, ExpiresAt: h.expiresAt}
+	view := HoldView{HoldID: id, ShowID: inv.showID, Country: inv.country, Customer: h.customer, ExpiresAt: h.expiresAt}
 	for _, ref := range h.seats {
 		view.Lines = append(view.Lines, OrderLine{Seat: ref, Price: inv.seats[ref].price})
 	}
@@ -330,6 +334,9 @@ func (inv *SectionInventory) ShowID() ShowID { return inv.showID }
 
 // Section returns the code of the section this inventory sells.
 func (inv *SectionInventory) Section() string { return inv.section }
+
+// Country returns the venue's country.
+func (inv *SectionInventory) Country() string { return inv.country }
 
 // Position returns the section's place in the published layout.
 func (inv *SectionInventory) Position() int { return inv.position }

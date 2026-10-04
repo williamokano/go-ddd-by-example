@@ -43,7 +43,7 @@ func heldView(t *testing.T) domain.HoldView {
 
 func placed(t *testing.T) *domain.Order {
 	t.Helper()
-	o, err := domain.PlaceOrder(newOrderID(), ana, email(t), heldView(t), now)
+	o, err := domain.PlaceOrder(newOrderID(), ana, email(t), heldView(t), noFees, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,11 +51,33 @@ func placed(t *testing.T) *domain.Order {
 	return o
 }
 
+// noFees prices at face value: the lifecycle tests are not about money.
+var noFees = domain.PricingPolicy{VAT: map[string]int64{"PT": 0}}
+
+// TKT-15: the order is priced by the PricingPolicy for the venue's country,
+// and keeps the breakdown.
+func TestPlaceOrder_RecordsThePricingBreakdown(t *testing.T) {
+	policy := domain.PricingPolicy{
+		Fees: []domain.FeeRule{{Name: "standard", When: domain.AnyOrder(), Percent: 1000, Minimum: eur(t, 150)}},
+		VAT:  map[string]int64{"PT": 600},
+	}
+
+	o, err := domain.PlaceOrder(newOrderID(), ana, email(t), heldView(t), policy, now) // 2 FLOOR places, Portugal
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := domain.PriceBreakdown{Subtotal: eur(t, 5000), Fee: eur(t, 500), VAT: eur(t, 330), Total: eur(t, 5830)}
+	if o.Pricing() != want || o.Total() != want.Total {
+		t.Errorf("pricing = %v, total %v; want %v", o.Pricing(), o.Total(), want)
+	}
+}
+
 func TestPlaceOrder(t *testing.T) {
 	t.Run("totals the lines and records OrderPlaced (TKT-6)", func(t *testing.T) {
 		id := newOrderID()
 
-		o, err := domain.PlaceOrder(id, ana, email(t), heldView(t), now)
+		o, err := domain.PlaceOrder(id, ana, email(t), heldView(t), noFees, now)
 
 		if err != nil {
 			t.Fatal(err)
@@ -69,13 +91,13 @@ func TestPlaceOrder(t *testing.T) {
 	})
 
 	t.Run("someone else's hold is refused (TKT-6)", func(t *testing.T) {
-		if _, err := domain.PlaceOrder(newOrderID(), bob, email(t), heldView(t), now); !errors.Is(err, domain.ErrNotHoldOwner) {
+		if _, err := domain.PlaceOrder(newOrderID(), bob, email(t), heldView(t), noFees, now); !errors.Is(err, domain.ErrNotHoldOwner) {
 			t.Errorf("error = %v, want %v", err, domain.ErrNotHoldOwner)
 		}
 	})
 
 	t.Run("an expired hold is refused (TKT-6)", func(t *testing.T) {
-		if _, err := domain.PlaceOrder(newOrderID(), ana, email(t), heldView(t), now.Add(ttl)); !errors.Is(err, domain.ErrHoldExpired) {
+		if _, err := domain.PlaceOrder(newOrderID(), ana, email(t), heldView(t), noFees, now.Add(ttl)); !errors.Is(err, domain.ErrHoldExpired) {
 			t.Errorf("error = %v, want %v", err, domain.ErrHoldExpired)
 		}
 	})
@@ -85,7 +107,7 @@ func TestPlaceOrder(t *testing.T) {
 		usd, _ := sharedkernel.NewCurrency("USD")
 		view.Lines[1].Price, _ = sharedkernel.NewMoney(100, usd)
 
-		if _, err := domain.PlaceOrder(newOrderID(), ana, email(t), view, now); !errors.Is(err, sharedkernel.ErrCurrencyMismatch) {
+		if _, err := domain.PlaceOrder(newOrderID(), ana, email(t), view, noFees, now); !errors.Is(err, sharedkernel.ErrCurrencyMismatch) {
 			t.Errorf("error = %v, want %v", err, sharedkernel.ErrCurrencyMismatch)
 		}
 	})

@@ -33,7 +33,7 @@ func eur(t *testing.T, minor int64) sharedkernel.Money {
 // EUR 45; FLOOR 3 GA places at EUR 25. Six sellable units.
 func layout(t *testing.T) domain.InventoryLayout {
 	t.Helper()
-	return domain.InventoryLayout{Sections: []domain.InventorySection{
+	return domain.InventoryLayout{Country: "PT", Sections: []domain.InventorySection{
 		{Code: "ORCH", Kind: domain.KindSeated, Rows: []domain.InventoryRow{{Label: "A", Seats: 2}, {Label: "B", Seats: 1}}, Price: eur(t, 4500)},
 		{Code: "FLOOR", Kind: domain.KindGA, Capacity: 3, Price: eur(t, 2500)},
 	}}

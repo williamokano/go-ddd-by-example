@@ -11,6 +11,7 @@ const (
 // InventoryLayout is the snapshot Show published with the show: what can be
 // sold, and at which price. Ticketing never asks Venue or Show anything else.
 type InventoryLayout struct {
+	Country  string // the venue's ISO country code: VAT depends on it (TKT-15)
 	Sections []InventorySection
 }
 
