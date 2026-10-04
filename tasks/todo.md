@@ -3,7 +3,7 @@
 Source of truth for *where we are* in the course. Lessons live in `docs/part-*.html`.
 Tick a lesson when its "Done when" checks pass; add a one-line note (date, anything notable).
 
-**Current lesson:** 9.7 — Distributed tracing with OpenTelemetry
+**Current lesson:** 9.8 — Fees and taxes as a domain service
 
 ## Part 0 — Orientation & setup (`docs/part-0-orientation.html`)
 - [x] 0.1 Event storming on paper
@@ -121,7 +121,8 @@ Tick a lesson when its "Done when" checks pass; add a one-line note (date, anyth
   - SHW-9 sweep (`SHOW_SWEEP_INTERVAL`); TKT-14 returns free seats; any section back on sale → inventory_available_again.v1 → SHW-10. No cross-section policy: it would race.
 - [x] 9.6 Database-enforced boundaries
   - Migration 14 creates `stagehand_<context>` roles; `<CONTEXT>_DATABASE_URL` per pool. `SELECT … FROM venue.venues` as Ticketing: permission denied for schema venue.
-- [ ] 9.7 Distributed tracing with OpenTelemetry
+- [x] 9.7 Distributed tracing with OpenTelemetry
+  - traceparent in HTTP, the outbox row and Kafka headers; correlation ID = trace ID. Only platform + composition root changed (`notes/opentelemetry.md`).
 - [ ] 9.8 Fees and taxes as a domain service
 
 ## Review notes
