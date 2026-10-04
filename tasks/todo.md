@@ -3,7 +3,7 @@
 Source of truth for *where we are* in the course. Lessons live in `docs/part-*.html`.
 Tick a lesson when its "Done when" checks pass; add a one-line note (date, anything notable).
 
-**Current lesson:** 2.1 — Create the application package and declare the driven ports
+**Current lesson:** 3.1 — Docker Compose with Postgres
 
 ## Part 0 — Orientation & setup (`docs/part-0-orientation.html`)
 - [x] 0.1 Event storming on paper
@@ -28,12 +28,14 @@ Tick a lesson when its "Done when" checks pass; add a one-line note (date, anyth
   - 100% coverage; imports: stdlib + uuid only.
 
 ## Part 2 — The application layer: use cases and ports (`docs/part-2-venue-application.html`)
-- [ ] 2.1 Create the application package and declare the driven ports
-- [ ] 2.2 Your first driven adapters: in-memory fakes
-- [ ] 2.3 Use case: RegisterVenue
-- [ ] 2.4 Use cases: AddSection, ActivateVenue, RetireVenue
-- [ ] 2.5 The query side: GetVenue
-- [ ] 2.6 Repository contract suite
+- [x] 2.1 Create the application package and declare the driven ports
+- [x] 2.2 Your first driven adapters: in-memory fakes
+  - platform/idgen returns plain UUIDs (platform imports no context); venue/adapters/driven/ids wraps them as VenueIDs.
+- [x] 2.3 Use case: RegisterVenue
+  - Handlers wrap errors (`register venue: %w`): wrapcheck wants it, errors.Is still works.
+- [x] 2.4 Use cases: AddSection, ActivateVenue, RetireVenue
+- [x] 2.5 The query side: GetVenue
+- [x] 2.6 Repository contract suite
 
 ## Part 3 — Persistence: Postgres, goose, sqlc, testcontainers (`docs/part-3-persistence.html`)
 - [ ] 3.1 Docker Compose with Postgres
