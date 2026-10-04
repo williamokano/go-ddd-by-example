@@ -178,3 +178,31 @@ func TestVenue_Retire(t *testing.T) {
 		}
 	})
 }
+
+func TestVenue_IllegalTransitions(t *testing.T) {
+	tests := []struct {
+		name       string
+		venue      func(t *testing.T) *domain.Venue
+		transition func(v *domain.Venue) error
+		wantStatus domain.Status
+	}{
+		{"activate when active (VEN-5)", newActiveVenue, (*domain.Venue).Activate, domain.Active},
+		{"activate when retired (VEN-6)", newRetiredVenue, (*domain.Venue).Activate, domain.Retired},
+		{"retire when draft (VEN-6)", newDraftVenueWithSection, (*domain.Venue).Retire, domain.Draft},
+		{"retire when retired (VEN-6)", newRetiredVenue, (*domain.Venue).Retire, domain.Retired},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			venue := tt.venue(t)
+
+			err := tt.transition(venue)
+
+			if !errors.Is(err, domain.ErrInvalidVenueTransition) {
+				t.Errorf("error = %v, want %v", err, domain.ErrInvalidVenueTransition)
+			}
+			if got := venue.Status(); got != tt.wantStatus {
+				t.Errorf("Status() = %v, want %v (unchanged)", got, tt.wantStatus)
+			}
+		})
+	}
+}

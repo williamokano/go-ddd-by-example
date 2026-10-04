@@ -77,8 +77,12 @@ func (v *Venue) Capacity() int {
 	return total
 }
 
-// Activate opens the venue for shows.
+// Activate opens the venue for shows. Only a draft venue with at least one
+// section can be activated (VEN-5).
 func (v *Venue) Activate() error {
+	if v.status != Draft {
+		return fmt.Errorf("%w: cannot activate a %s venue", ErrInvalidVenueTransition, v.status)
+	}
 	if len(v.sections) == 0 {
 		return ErrVenueHasNoSections
 	}
@@ -86,8 +90,12 @@ func (v *Venue) Activate() error {
 	return nil
 }
 
-// Retire closes the venue for good.
+// Retire closes the venue for good. Only an active venue can be retired, and
+// Retired is terminal (VEN-6).
 func (v *Venue) Retire() error {
+	if v.status != Active {
+		return fmt.Errorf("%w: cannot retire a %s venue", ErrInvalidVenueTransition, v.status)
+	}
 	v.status = Retired
 	return nil
 }
