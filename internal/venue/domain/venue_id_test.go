@@ -1,6 +1,7 @@
 package domain_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/williamokano/go-ddd-by-example/internal/venue/domain"
@@ -17,6 +18,14 @@ func TestParseVenueID(t *testing.T) {
 		}
 		if got := id.String(); got != raw {
 			t.Errorf("String() = %q, want %q", got, raw)
+		}
+	})
+
+	t.Run("rejects garbage", func(t *testing.T) {
+		_, err := domain.ParseVenueID("not-a-uuid")
+
+		if !errors.Is(err, domain.ErrInvalidVenueID) {
+			t.Errorf("ParseVenueID() error = %v, want %v", err, domain.ErrInvalidVenueID)
 		}
 	})
 }
