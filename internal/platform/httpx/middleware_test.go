@@ -8,6 +8,11 @@ import (
 	"strings"
 	"testing"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+
 	"github.com/williamokano/go-ddd-by-example/internal/platform/httpx"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/trace"
 )
@@ -100,4 +105,28 @@ func TestCorrelation(t *testing.T) {
 			t.Errorf("id = %q, header = %q; want the same generated id", seen, w.Header().Get("X-Correlation-ID"))
 		}
 	})
+}
+
+// 9.7: a request is a span, continuing the caller's trace when it sends a
+// traceparent; without an X-Correlation-ID, the trace ID is the correlation.
+func TestTracing(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	otel.SetTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder)))
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	var correlation string
+	h := httpx.Tracing(httpx.Correlation(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		correlation = trace.CorrelationID(r.Context())
+	})))
+	r := httptest.NewRequest(http.MethodPost, "/orders", nil)
+	r.Header.Set("traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+
+	h.ServeHTTP(httptest.NewRecorder(), r)
+
+	spans := recorder.Ended()
+	if len(spans) != 1 || spans[0].Name() != "POST" || spans[0].Parent().SpanID().String() != "00f067aa0ba902b7" {
+		t.Fatalf("spans = %v, want one POST span child of the caller's", spans)
+	}
+	if correlation != "4bf92f3577b34da6a3ce929d0e0e4736" {
+		t.Errorf("correlation = %q, want the trace ID", correlation)
+	}
 }

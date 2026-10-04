@@ -7,7 +7,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	oteltrace "go.opentelemetry.io/otel/trace"
 
+	"github.com/williamokano/go-ddd-by-example/internal/platform/telemetry"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/trace"
 )
 
@@ -59,13 +65,33 @@ func RequestIDFrom(ctx context.Context) string {
 	return id
 }
 
-// Correlation propagates the caller's X-Correlation-ID, or starts a new flow,
-// and puts it in the context (platform/trace), where the outbox writer finds
-// it. Unlike the request ID, it outlives the request: it travels with every
-// event the request causes.
+// Tracing makes each request an OpenTelemetry server span (9.7), the child
+// of the caller's span when it sends a W3C traceparent.
+func Tracing(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+		ctx, span := otel.Tracer(telemetry.TracerName).Start(ctx, r.Method, oteltrace.WithSpanKind(oteltrace.SpanKindServer))
+		defer span.End()
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rec, r.WithContext(ctx))
+		span.SetAttributes(attribute.String("url.path", r.URL.Path),
+			attribute.Int("http.response.status_code", rec.status))
+		if rec.status >= http.StatusInternalServerError {
+			span.SetStatus(codes.Error, http.StatusText(rec.status))
+		}
+	})
+}
+
+// Correlation propagates the caller's X-Correlation-ID, or starts a new flow
+// named after the request's trace (9.7), and puts it in the context
+// (platform/trace), where the outbox writer finds it. Unlike the request ID,
+// it outlives the request: it travels with every event the request causes.
 func Correlation(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := r.Header.Get("X-Correlation-ID")
+		if sc := oteltrace.SpanContextFromContext(r.Context()); id == "" && sc.HasTraceID() {
+			id = sc.TraceID().String()
+		}
 		if id == "" {
 			id = uuid.NewString()
 		}
