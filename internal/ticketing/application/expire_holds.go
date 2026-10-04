@@ -19,17 +19,17 @@ func NewExpireHoldsHandler(inventories InventoryRepository, expired ExpiredHolds
 	return &ExpireHoldsHandler{inventories: inventories, expired: expired, clock: clock}
 }
 
-// Handle sweeps every show with lapsed holds, one inventory transaction each.
+// Handle sweeps every section with lapsed holds, one transaction each.
 func (h *ExpireHoldsHandler) Handle(ctx context.Context) error {
 	now := h.clock.Now()
-	shows, err := h.expired.ShowsWithExpiredHolds(ctx, now)
+	sections, err := h.expired.SectionsWithExpiredHolds(ctx, now)
 	if err != nil {
 		return fmt.Errorf("expire holds: %w", err)
 	}
 	var errs []error
-	for _, showID := range shows {
+	for _, key := range sections {
 		err := RetryOnConflict(ctx, conflictAttempts, func(ctx context.Context) error {
-			inv, err := h.inventories.Get(ctx, showID)
+			inv, err := h.inventories.Get(ctx, key.ShowID, key.Section)
 			if err != nil {
 				return fmt.Errorf("load: %w", err)
 			}
@@ -40,7 +40,7 @@ func (h *ExpireHoldsHandler) Handle(ctx context.Context) error {
 			return nil
 		})
 		if err != nil {
-			errs = append(errs, fmt.Errorf("show %s: %w", showID, err))
+			errs = append(errs, fmt.Errorf("show %s section %s: %w", key.ShowID, key.Section, err))
 		}
 	}
 	if err := errors.Join(errs...); err != nil {

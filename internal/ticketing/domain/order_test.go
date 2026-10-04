@@ -29,11 +29,11 @@ func TestNewContactEmail(t *testing.T) {
 	}
 }
 
-// heldView holds ORCH/A/1 + FLOOR/GA/0001 for Ana and returns the hold view.
+// heldView holds FLOOR/GA/0001 + 0002 for Ana and returns the hold view.
 func heldView(t *testing.T) domain.HoldView {
 	t.Helper()
-	inv := openInventory(t)
-	id := held(t, inv, ana, "ORCH/A/1", "FLOOR/GA/0001")
+	inv := openSections(t)["FLOOR"]
+	id := held(t, inv, ana, "FLOOR/GA/0001", "FLOOR/GA/0002")
 	view, err := inv.HoldView(id)
 	if err != nil {
 		t.Fatal(err)
@@ -60,7 +60,7 @@ func TestPlaceOrder(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if o.Status() != domain.Pending || o.Total() != eur(t, 7000) || len(o.Lines()) != 2 {
+		if o.Status() != domain.Pending || o.Total() != eur(t, 5000) || len(o.Lines()) != 2 {
 			t.Errorf("order = %v total %v lines %d", o.Status(), o.Total(), len(o.Lines()))
 		}
 		if ev := o.PullEvents(); len(ev) != 1 || ev[0].EventName() != "ticketing.OrderPlaced" {
@@ -166,7 +166,21 @@ func TestOrder_RefundCarriesTheContactEmail(t *testing.T) {
 	_ = o.MarkRefunded(now)
 
 	refunded := o.PullEvents()[0].(domain.OrderRefunded)
-	if refunded.ContactEmail.String() != "ana@example.com" || refunded.Total != eur(t, 7000) {
+	if refunded.ContactEmail.String() != "ana@example.com" || refunded.Total != eur(t, 5000) {
 		t.Errorf("OrderRefunded = %+v", refunded)
+	}
+}
+
+// The saga confirms the hold in its section's inventory, and the hold may be
+// gone by then: the paid order says which section (ADR-013).
+func TestOrder_PaidCarriesTheSection(t *testing.T) {
+	o := placed(t)
+	ref, _ := domain.NewPaymentRef("pay_123")
+
+	_ = o.MarkPaid(ref, now)
+
+	paid, ok := o.PullEvents()[0].(domain.OrderPaid)
+	if !ok || paid.Section != "FLOOR" {
+		t.Errorf("OrderPaid = %+v, want section FLOOR", paid)
 	}
 }

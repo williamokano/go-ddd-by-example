@@ -105,7 +105,7 @@ func (o *Order) MarkPaid(ref PaymentRef, now time.Time) error {
 		return nil
 	case Pending:
 		o.status, o.paymentRef = Paid, ref
-		o.events.Record(OrderPaid{OrderID: o.id, ShowID: o.showID, HoldID: o.holdID, At: now})
+		o.events.Record(OrderPaid{OrderID: o.id, ShowID: o.showID, Section: o.lines[0].Seat.Section(), HoldID: o.holdID, At: now})
 		return nil
 	default:
 		return o.illegal("mark paid")

@@ -39,14 +39,25 @@ func layout(t *testing.T) domain.InventoryLayout {
 	}}
 }
 
-func openInventory(t *testing.T) *domain.ShowInventory {
+// openSections opens the layout: one inventory per section (ADR-013).
+func openSections(t *testing.T) map[string]*domain.SectionInventory {
 	t.Helper()
-	inv, err := domain.OpenInventory(showID, layout(t), startsAt, now)
+	sections, err := domain.OpenInventory(showID, layout(t), startsAt, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	inv.PullEvents()
-	return inv
+	out := map[string]*domain.SectionInventory{}
+	for _, inv := range sections {
+		inv.PullEvents()
+		out[inv.Section()] = inv
+	}
+	return out
+}
+
+// orch is the ORCH section: A/1, A/2, B/1 at EUR 45.
+func orch(t *testing.T) *domain.SectionInventory {
+	t.Helper()
+	return openSections(t)["ORCH"]
 }
 
 func refs(t *testing.T, raw ...string) []domain.SeatRef {
@@ -65,7 +76,7 @@ func refs(t *testing.T, raw ...string) []domain.SeatRef {
 func newHoldID() domain.HoldID { return domain.NewHoldID(uuid.New()) }
 
 // held holds seats for customer and returns the hold's id.
-func held(t *testing.T, inv *domain.ShowInventory, customer domain.CustomerID, seats ...string) domain.HoldID {
+func held(t *testing.T, inv *domain.SectionInventory, customer domain.CustomerID, seats ...string) domain.HoldID {
 	t.Helper()
 	id := newHoldID()
 	if err := inv.Hold(id, customer, refs(t, seats...), now, ttl); err != nil {
@@ -75,7 +86,7 @@ func held(t *testing.T, inv *domain.ShowInventory, customer domain.CustomerID, s
 }
 
 // states maps every seat to its state, for compact assertions.
-func states(inv *domain.ShowInventory) map[string]string {
+func states(inv *domain.SectionInventory) map[string]string {
 	out := map[string]string{}
 	for _, s := range inv.Seats() {
 		out[s.Ref.String()] = s.State.String()

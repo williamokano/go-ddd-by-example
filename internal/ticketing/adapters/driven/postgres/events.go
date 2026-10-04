@@ -32,7 +32,7 @@ func ToOutboxMessages(events []sharedkernel.DomainEvent, newID func() uuid.UUID)
 		switch e := ev.(type) {
 		case domain.OrderPaid:
 			err = add(sagamsg.Topic, e.OrderID.String(), sagamsg.TypeOrderPaid,
-				sagamsg.OrderPaid{OrderID: e.OrderID.String(), ShowID: e.ShowID.String(), HoldID: e.HoldID.String()}, ev)
+				sagamsg.OrderPaid{OrderID: e.OrderID.String(), ShowID: e.ShowID.String(), Section: e.Section, HoldID: e.HoldID.String()}, ev)
 		case domain.SeatsSold:
 			seats := make([]string, len(e.Seats))
 			for i, s := range e.Seats {
@@ -45,6 +45,9 @@ func ToOutboxMessages(events []sharedkernel.DomainEvent, newID func() uuid.UUID)
 				sagamsg.HoldConfirmationFailed{OrderID: e.OrderID.String(), ShowID: e.ShowID.String(), Reason: e.Reason}, ev)
 		case domain.InventoryClosed:
 			err = add(sagamsg.Topic, e.ShowID.String(), sagamsg.TypeInventoryClosed, sagamsg.InventoryClosed{ShowID: e.ShowID.String()}, ev)
+		case domain.SectionSoldOut:
+			err = add(sagamsg.Topic, e.ShowID.String(), sagamsg.TypeSectionSoldOut,
+				sagamsg.SectionSoldOut{ShowID: e.ShowID.String(), Section: e.Section}, ev)
 		case domain.InventorySoldOut:
 			err = add(contracts.Topic, e.ShowID.String(), contracts.TypeInventorySoldOutV1,
 				contracts.InventorySoldOutV1{ShowID: e.ShowID.String(), SoldOutAt: e.At}, ev)

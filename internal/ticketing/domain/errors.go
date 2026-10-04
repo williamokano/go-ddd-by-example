@@ -28,6 +28,9 @@ var (
 	// TKT-7: the order lifecycle.
 	ErrInvalidOrderTransition = errors.New("ticketing: invalid order transition")
 
+	// ADR-013: a hold is for seats of one section.
+	ErrHoldSpansSections = errors.New("ticketing: a hold is for one section")
+
 	// TKT-12: no new holds on a closed inventory or after the show's start.
 	ErrSalesClosed = errors.New("ticketing: sales are closed")
 )

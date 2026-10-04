@@ -8,9 +8,10 @@ import (
 
 // InventoryOpened records that a published show's inventory opened (TKT-1).
 type InventoryOpened struct {
-	ShowID ShowID
-	Seats  int
-	At     time.Time
+	ShowID  ShowID
+	Section string
+	Seats   int
+	At      time.Time
 }
 
 // SeatsHeld records a new hold (TKT-2).
@@ -78,7 +79,21 @@ func (SeatsSold) EventName() string { return "ticketing.SeatsSold" }
 // OccurredAt implements DomainEvent.
 func (e SeatsSold) OccurredAt() time.Time { return e.At }
 
-// InventorySoldOut records that every seat is sold (TKT-10).
+// SectionSoldOut records that every seat of a section is sold.
+type SectionSoldOut struct {
+	ShowID  ShowID
+	Section string
+	At      time.Time
+}
+
+// EventName implements DomainEvent.
+func (SectionSoldOut) EventName() string { return "ticketing.SectionSoldOut" }
+
+// OccurredAt implements DomainEvent.
+func (e SectionSoldOut) OccurredAt() time.Time { return e.At }
+
+// InventorySoldOut records that every seat of the show is sold (TKT-10).
+// ShowSoldOut decides it, across the show's sections.
 type InventorySoldOut struct {
 	ShowID ShowID
 	At     time.Time
@@ -93,6 +108,7 @@ func (e InventorySoldOut) OccurredAt() time.Time { return e.At }
 // InventoryClosed records that sales stopped for good (TKT-11).
 type InventoryClosed struct {
 	ShowID        ShowID
+	Section       string
 	ReleasedSeats []SeatRef // the seats of the holds it released
 	At            time.Time
 }
@@ -123,6 +139,7 @@ func (e OrderPlaced) OccurredAt() time.Time { return e.At }
 type OrderPaid struct {
 	OrderID OrderID
 	ShowID  ShowID
+	Section string // where the hold is: one section per hold (ADR-013)
 	HoldID  HoldID
 	At      time.Time
 }

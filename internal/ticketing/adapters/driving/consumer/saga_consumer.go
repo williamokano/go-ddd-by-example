@@ -24,6 +24,9 @@ type (
 	onInventoryClosed interface {
 		Handle(context.Context, application.OnInventoryClosed) error
 	}
+	onSectionSoldOut interface {
+		Handle(context.Context, application.OnSectionSoldOut) error
+	}
 )
 
 // SagaSteps are the use cases the checkout saga's messages drive.
@@ -32,11 +35,13 @@ type SagaSteps struct {
 	Issue   issueTickets
 	Refund  refundOrder
 	Closed  onInventoryClosed
+	SoldOut onSectionSoldOut
 }
 
 // SagaConsumer consumes ticketing.internal (group "ticketing-saga"):
 // choreography, each step reacting to the previous one's fact (ADR-010),
-// plus the cancellation cascade (TKT-11).
+// plus the cancellation cascade (TKT-11) and the show-wide sold-out check
+// (TKT-10).
 type SagaConsumer struct {
 	steps  SagaSteps
 	logger *slog.Logger
@@ -54,7 +59,7 @@ func (c *SagaConsumer) Handle(ctx context.Context, env kafka.Envelope) error {
 	case sagamsg.TypeOrderPaid:
 		var m sagamsg.OrderPaid
 		if err = decode(env, &m); err == nil {
-			err = c.steps.Confirm.Handle(ctx, application.ConfirmHold{ShowID: m.ShowID, HoldID: m.HoldID, OrderID: m.OrderID})
+			err = c.steps.Confirm.Handle(ctx, application.ConfirmHold{ShowID: m.ShowID, Section: m.Section, HoldID: m.HoldID, OrderID: m.OrderID})
 		}
 	case sagamsg.TypeSeatsSold:
 		var m sagamsg.SeatsSold
@@ -65,6 +70,11 @@ func (c *SagaConsumer) Handle(ctx context.Context, env kafka.Envelope) error {
 		var m sagamsg.HoldConfirmationFailed
 		if err = decode(env, &m); err == nil {
 			err = c.steps.Refund.Handle(ctx, application.RefundOrder{OrderID: m.OrderID})
+		}
+	case sagamsg.TypeSectionSoldOut:
+		var m sagamsg.SectionSoldOut
+		if err = decode(env, &m); err == nil {
+			err = c.steps.SoldOut.Handle(ctx, application.OnSectionSoldOut{ShowID: m.ShowID})
 		}
 	case sagamsg.TypeInventoryClosed:
 		var m sagamsg.InventoryClosed

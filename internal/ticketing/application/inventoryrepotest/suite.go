@@ -4,6 +4,7 @@ package inventoryrepotest
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -22,51 +23,78 @@ func Run(t *testing.T, newRepo func(t *testing.T) application.InventoryRepositor
 	t.Helper()
 	ctx := context.Background()
 
-	t.Run("get of an unknown show is ErrInventoryNotFound", func(t *testing.T) {
-		_, err := newRepo(t).Get(ctx, domain.NewShowID(uuid.New()))
+	t.Run("get of an unknown section is ErrInventoryNotFound", func(t *testing.T) {
+		_, err := newRepo(t).Get(ctx, domain.NewShowID(uuid.New()), "ORCH")
 
 		if !errors.Is(err, application.ErrInventoryNotFound) {
 			t.Errorf("error = %v, want %v", err, application.ErrInventoryNotFound)
 		}
 	})
 
-	t.Run("an opened inventory round-trips", func(t *testing.T) {
-		repo := newRepo(t)
-		inv := Open(t)
+	t.Run("an unknown show lists no sections", func(t *testing.T) {
+		got, err := newRepo(t).ListByShow(ctx, domain.NewShowID(uuid.New()))
 
-		save(t, repo, inv)
-
-		assertSame(t, inv, get(t, repo, inv.ShowID()))
+		if err != nil || len(got) != 0 {
+			t.Errorf("ListByShow() = %v, %v; want none", got, err)
+		}
 	})
 
-	t.Run("holds, sales and closing round-trip", func(t *testing.T) {
+	t.Run("opened sections round-trip, one by one and per show", func(t *testing.T) {
 		repo := newRepo(t)
-		inv := Open(t)
-		save(t, repo, inv)
-		loaded := get(t, repo, inv.ShowID())
-		hold(t, loaded, "ORCH/A/1")
-		sold := hold(t, loaded, "FLOOR/GA/0002")
+		orch, floor := Open(t)
+		save(t, repo, orch)
+		save(t, repo, floor)
+
+		assertSame(t, orch, get(t, repo, orch.ShowID(), "ORCH"))
+		all, err := repo.ListByShow(ctx, orch.ShowID())
+		if err != nil {
+			t.Fatal(err)
+		}
+		var codes []string
+		for _, inv := range all {
+			codes = append(codes, inv.Section())
+		}
+		slices.Sort(codes)
+		if diff := cmp.Diff([]string{"FLOOR", "ORCH"}, codes); diff != "" {
+			t.Errorf("sections mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("holds, sales, sold out and closing round-trip", func(t *testing.T) {
+		repo := newRepo(t)
+		orch, _ := Open(t)
+		save(t, repo, orch)
+		loaded := get(t, repo, orch.ShowID(), "ORCH")
+		held := hold(t, loaded, "ORCH/A/1")
+		sold := hold(t, loaded, "ORCH/A/2")
 		if err := loaded.ConfirmHold(sold, domain.NewOrderID(uuid.New()), now); err != nil {
 			t.Fatal(err)
 		}
 		save(t, repo, loaded)
-		again := get(t, repo, inv.ShowID())
+		again := get(t, repo, orch.ShowID(), "ORCH")
 		assertSame(t, loaded, again)
 
+		if err := again.ConfirmHold(held, domain.NewOrderID(uuid.New()), now); err != nil {
+			t.Fatal(err)
+		}
 		again.Close(now)
 		save(t, repo, again)
 
-		assertSame(t, again, get(t, repo, inv.ShowID()))
+		final := get(t, repo, orch.ShowID(), "ORCH")
+		assertSame(t, again, final)
+		if !final.IsSoldOut() || !final.IsClosed() {
+			t.Errorf("sold out %v, closed %v; want both", final.IsSoldOut(), final.IsClosed())
+		}
 	})
 
-	t.Run("get by hold finds the inventory; an unknown hold is ErrHoldNotFound", func(t *testing.T) {
+	t.Run("get by hold finds the section; an unknown hold is ErrHoldNotFound", func(t *testing.T) {
 		repo := newRepo(t)
-		inv := Open(t)
-		id := hold(t, inv, "ORCH/A/2")
-		save(t, repo, inv)
+		_, floor := Open(t)
+		id := hold(t, floor, "FLOOR/GA/0002")
+		save(t, repo, floor)
 
 		got, err := repo.GetByHold(ctx, id)
-		if err != nil || got.ShowID() != inv.ShowID() {
+		if err != nil || got.ShowID() != floor.ShowID() || got.Section() != "FLOOR" {
 			t.Errorf("GetByHold() = %v, %v", got, err)
 		}
 		if _, err := repo.GetByHold(ctx, domain.NewHoldID(uuid.New())); !errors.Is(err, application.ErrHoldNotFound) {
@@ -74,25 +102,25 @@ func Run(t *testing.T, newRepo func(t *testing.T) application.InventoryRepositor
 		}
 	})
 
-	t.Run("opening the same show twice is ErrConcurrentModification (TKT-1)", func(t *testing.T) {
+	t.Run("opening the same section twice is ErrConcurrentModification (TKT-1)", func(t *testing.T) {
 		repo := newRepo(t)
-		inv := Open(t)
-		save(t, repo, inv)
-		twin, err := domain.OpenInventory(inv.ShowID(), Layout(t), inv.StartsAt(), now)
+		orch, _ := Open(t)
+		save(t, repo, orch)
+		twins, err := domain.OpenInventory(orch.ShowID(), Layout(t), orch.StartsAt(), now)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		if err := repo.Save(ctx, twin); !errors.Is(err, application.ErrConcurrentModification) {
+		if err := repo.Save(ctx, twins[0]); !errors.Is(err, application.ErrConcurrentModification) {
 			t.Errorf("error = %v, want %v", err, application.ErrConcurrentModification)
 		}
 	})
 
 	t.Run("a stale save is ErrConcurrentModification", func(t *testing.T) {
 		repo := newRepo(t)
-		inv := Open(t)
-		save(t, repo, inv)
-		first, second := get(t, repo, inv.ShowID()), get(t, repo, inv.ShowID())
+		orch, _ := Open(t)
+		save(t, repo, orch)
+		first, second := get(t, repo, orch.ShowID(), "ORCH"), get(t, repo, orch.ShowID(), "ORCH")
 		hold(t, first, "ORCH/A/1")
 		save(t, repo, first)
 		hold(t, second, "ORCH/A/2")
@@ -102,13 +130,26 @@ func Run(t *testing.T, newRepo func(t *testing.T) application.InventoryRepositor
 		}
 	})
 
+	t.Run("two sections of one show never conflict (ADR-013)", func(t *testing.T) {
+		repo := newRepo(t)
+		orch, floor := Open(t)
+		save(t, repo, orch)
+		save(t, repo, floor)
+		o, f := get(t, repo, orch.ShowID(), "ORCH"), get(t, repo, orch.ShowID(), "FLOOR")
+		hold(t, o, "ORCH/A/1")
+		hold(t, f, "FLOOR/GA/0001")
+
+		save(t, repo, o)
+		save(t, repo, f)
+	})
+
 	t.Run("save drains the events", func(t *testing.T) {
 		repo := newRepo(t)
-		inv := Open(t)
+		orch, _ := Open(t)
 
-		save(t, repo, inv)
+		save(t, repo, orch)
 
-		if left := inv.PullEvents(); len(left) != 0 {
+		if left := orch.PullEvents(); len(left) != 0 {
 			t.Errorf("%d events left", len(left))
 		}
 	})
@@ -126,17 +167,17 @@ func Layout(t *testing.T) domain.InventoryLayout {
 	}}
 }
 
-// Open opens a fresh inventory for a new show, starting in a month.
-func Open(t *testing.T) *domain.ShowInventory {
+// Open opens a fresh show's sections, starting in a month: ORCH and FLOOR.
+func Open(t *testing.T) (orch, floor *domain.SectionInventory) {
 	t.Helper()
-	inv, err := domain.OpenInventory(domain.NewShowID(uuid.New()), Layout(t), now.Add(30*24*time.Hour), now)
+	sections, err := domain.OpenInventory(domain.NewShowID(uuid.New()), Layout(t), now.Add(30*24*time.Hour), now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return inv
+	return sections[0], sections[1]
 }
 
-func hold(t *testing.T, inv *domain.ShowInventory, seat string) domain.HoldID {
+func hold(t *testing.T, inv *domain.SectionInventory, seat string) domain.HoldID {
 	t.Helper()
 	ref, _ := domain.ParseSeatRef(seat)
 	id := domain.NewHoldID(uuid.New())
@@ -146,23 +187,23 @@ func hold(t *testing.T, inv *domain.ShowInventory, seat string) domain.HoldID {
 	return id
 }
 
-func save(t *testing.T, repo application.InventoryRepository, inv *domain.ShowInventory) {
+func save(t *testing.T, repo application.InventoryRepository, inv *domain.SectionInventory) {
 	t.Helper()
 	if err := repo.Save(context.Background(), inv); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
 }
 
-func get(t *testing.T, repo application.InventoryRepository, id domain.ShowID) *domain.ShowInventory {
+func get(t *testing.T, repo application.InventoryRepository, id domain.ShowID, section string) *domain.SectionInventory {
 	t.Helper()
-	inv, err := repo.Get(context.Background(), id)
+	inv, err := repo.Get(context.Background(), id, section)
 	if err != nil {
 		t.Fatalf("Get() error = %v", err)
 	}
 	return inv
 }
 
-func assertSame(t *testing.T, want, got *domain.ShowInventory) {
+func assertSame(t *testing.T, want, got *domain.SectionInventory) {
 	t.Helper()
 	w, g := domain.StateOf(want), domain.StateOf(got)
 	w.Version, g.Version = 0, 0

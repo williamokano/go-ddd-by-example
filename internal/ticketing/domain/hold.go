@@ -6,7 +6,7 @@ import (
 )
 
 // Hold is a temporary, exclusive claim by a customer on some seats (an entity
-// inside the ShowInventory, identified by its HoldID).
+// inside the SectionInventory, identified by its HoldID).
 type Hold struct {
 	id        HoldID
 	customer  CustomerID

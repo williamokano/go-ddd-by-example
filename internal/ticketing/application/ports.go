@@ -8,19 +8,30 @@ import (
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/domain"
 )
 
-// InventoryRepository loads and saves ShowInventory aggregates.
+// InventoryRepository loads and saves SectionInventory aggregates, one per
+// section of a show (ADR-013).
 type InventoryRepository interface {
-	// Get loads a show's inventory, or returns ErrInventoryNotFound.
-	Get(ctx context.Context, showID domain.ShowID) (*domain.ShowInventory, error)
+	// Get loads one section's inventory, or returns ErrInventoryNotFound.
+	Get(ctx context.Context, showID domain.ShowID, section string) (*domain.SectionInventory, error)
 
-	// GetByHold loads the inventory holding an active hold, or returns
+	// ListByShow loads every section of a show; none if it was never opened.
+	ListByShow(ctx context.Context, showID domain.ShowID) ([]*domain.SectionInventory, error)
+
+	// GetByHold loads the section holding an active hold, or returns
 	// ErrHoldNotFound.
-	GetByHold(ctx context.Context, holdID domain.HoldID) (*domain.ShowInventory, error)
+	GetByHold(ctx context.Context, holdID domain.HoldID) (*domain.SectionInventory, error)
 
-	// Save persists the inventory and its events atomically. Opening an
-	// inventory that already exists, or saving a stale version, is
+	// Save persists the section and its events atomically. Opening a section
+	// that already exists, or saving a stale version, is
 	// ErrConcurrentModification.
-	Save(ctx context.Context, inv *domain.ShowInventory) error
+	Save(ctx context.Context, inv *domain.SectionInventory) error
+}
+
+// EventPublisher announces an event that no aggregate recorded: a domain
+// service's decision, such as InventorySoldOut (ADR-013). The adapter writes
+// it to the outbox, like a repository's Save does.
+type EventPublisher interface {
+	Publish(ctx context.Context, events ...sharedkernel.DomainEvent) error
 }
 
 // PaymentGateway charges and refunds money through an external provider.
@@ -37,9 +48,15 @@ type PaymentGateway interface {
 	Refund(ctx context.Context, ref domain.PaymentRef, amount sharedkernel.Money) error
 }
 
-// ExpiredHolds finds the shows that have holds lapsed at now (TKT-4).
+// ExpiredHolds finds the sections that have holds lapsed at now (TKT-4).
 type ExpiredHolds interface {
-	ShowsWithExpiredHolds(ctx context.Context, now time.Time) ([]domain.ShowID, error)
+	SectionsWithExpiredHolds(ctx context.Context, now time.Time) ([]SectionKey, error)
+}
+
+// SectionKey identifies one SectionInventory.
+type SectionKey struct {
+	ShowID  domain.ShowID
+	Section string
 }
 
 // Clock tells the time (ADR-008).

@@ -39,7 +39,7 @@ func TestCloseInventory(t *testing.T) {
 func TestOnInventoryClosed_VoidsTicketsAndRefundsOrders(t *testing.T) {
 	f := newSaga(t, fakegateway.Mode{})
 	show, hold, order := f.paidOrder(t)
-	if err := f.confirm.Handle(f.ctx, application.ConfirmHold{ShowID: show, HoldID: hold.String(), OrderID: order.String()}); err != nil {
+	if err := f.confirm.Handle(f.ctx, application.ConfirmHold{ShowID: show, Section: "ORCH", HoldID: hold.String(), OrderID: order.String()}); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.issue.Handle(f.ctx, application.IssueTickets{ShowID: show, OrderID: order.String(), Seats: []string{"ORCH/A/1", "ORCH/A/2"}}); err != nil {

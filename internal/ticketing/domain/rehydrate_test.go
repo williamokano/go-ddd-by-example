@@ -9,9 +9,9 @@ import (
 )
 
 func TestRehydrateInventory_RoundTripsThroughItsState(t *testing.T) {
-	inv := openInventory(t)
+	inv := orch(t)
 	held(t, inv, ana, "ORCH/A/1")
-	sold := held(t, inv, bob, "FLOOR/GA/0001")
+	sold := held(t, inv, bob, "ORCH/B/1")
 	_ = inv.ConfirmHold(sold, newOrderID(), now)
 	state := domain.StateOf(inv)
 	state.Version = 4
@@ -28,7 +28,7 @@ func TestRehydrateInventory_RoundTripsThroughItsState(t *testing.T) {
 }
 
 func TestInventoryClosed_ListsTheReleasedSeats(t *testing.T) {
-	inv := openInventory(t)
+	inv := orch(t)
 	held(t, inv, ana, "ORCH/A/1", "ORCH/A/2")
 	inv.PullEvents()
 

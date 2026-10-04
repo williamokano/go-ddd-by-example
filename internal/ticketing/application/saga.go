@@ -11,6 +11,7 @@ import (
 // ConfirmHold is the saga step driven by OrderPaid.
 type ConfirmHold struct {
 	ShowID  string
+	Section string // the order's section: the hold may be gone (ADR-013)
 	HoldID  string
 	OrderID string
 }
@@ -43,7 +44,7 @@ func (h *ConfirmHoldHandler) Handle(ctx context.Context, cmd ConfirmHold) error 
 		return fmt.Errorf("confirm hold: %w", err)
 	}
 	err = RetryOnConflict(ctx, conflictAttempts, func(ctx context.Context) error {
-		inv, err := h.inventories.Get(ctx, showID)
+		inv, err := h.inventories.Get(ctx, showID, cmd.Section)
 		if err != nil {
 			return fmt.Errorf("load: %w", err)
 		}
@@ -178,6 +179,45 @@ func (h *RefundOrderHandler) Handle(ctx context.Context, cmd RefundOrder) error 
 	})
 	if err != nil {
 		return fmt.Errorf("refund order: %w", err)
+	}
+	return nil
+}
+
+// OnSectionSoldOut is the policy step driven by SectionSoldOut.
+type OnSectionSoldOut struct{ ShowID string }
+
+// OnSectionSoldOutHandler announces InventorySoldOut once every section of
+// the show is sold out (TKT-10). It reads the committed sections after each
+// SectionSoldOut, so when the last two sections sell out at once, at least
+// one of the two checks sees both: a duplicate announcement is possible (Show
+// ignores it), a missing one is not.
+type OnSectionSoldOutHandler struct {
+	inventories InventoryRepository
+	events      EventPublisher
+	clock       Clock
+}
+
+// NewOnSectionSoldOutHandler wires the policy.
+func NewOnSectionSoldOutHandler(inventories InventoryRepository, events EventPublisher, clock Clock) *OnSectionSoldOutHandler {
+	return &OnSectionSoldOutHandler{inventories: inventories, events: events, clock: clock}
+}
+
+// Handle asks the ShowSoldOut domain service, and publishes its decision.
+func (h *OnSectionSoldOutHandler) Handle(ctx context.Context, cmd OnSectionSoldOut) error {
+	showID, err := domain.ParseShowID(cmd.ShowID)
+	if err != nil {
+		return fmt.Errorf("on section sold out: %w", err)
+	}
+	sections, err := h.inventories.ListByShow(ctx, showID)
+	if err != nil {
+		return fmt.Errorf("on section sold out: %w", err)
+	}
+	ev, soldOut := domain.ShowSoldOut(sections, h.clock.Now())
+	if !soldOut {
+		return nil
+	}
+	if err := h.events.Publish(ctx, ev); err != nil {
+		return fmt.Errorf("on section sold out: %w", err)
 	}
 	return nil
 }

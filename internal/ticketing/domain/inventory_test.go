@@ -11,29 +11,38 @@ import (
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/domain"
 )
 
-func TestOpenInventory(t *testing.T) {
-	inv, err := domain.OpenInventory(showID, layout(t), startsAt, now)
+// One inventory per section (ADR-013): a hold in ORCH never contends with a
+// hold on the FLOOR.
+func TestOpenInventory_OpensOneInventoryPerSection(t *testing.T) {
+	sections, err := domain.OpenInventory(showID, layout(t), startsAt, now)
 
 	if err != nil {
 		t.Fatal(err)
 	}
-	var got []string
-	for _, s := range inv.Seats() {
-		if s.State != domain.Available {
-			t.Errorf("%s is %v, want available", s.Ref, s.State)
+	got := map[string][]string{}
+	for _, inv := range sections {
+		for _, s := range inv.Seats() {
+			if s.State != domain.Available {
+				t.Errorf("%s is %v, want available", s.Ref, s.State)
+			}
+			got[inv.Section()] = append(got[inv.Section()], s.Ref.String()+" "+s.Price.String())
 		}
-		got = append(got, s.Ref.String()+" "+s.Price.String())
+		events := inv.PullEvents()
+		want := domain.InventoryOpened{ShowID: showID, Section: inv.Section(), Seats: 3, At: now}
+		if len(events) != 1 || events[0] != sharedkernel.DomainEvent(want) {
+			t.Errorf("%s events = %v, want %v", inv.Section(), events, want)
+		}
 	}
-	want := []string{
-		"ORCH/A/1 EUR 45.00", "ORCH/A/2 EUR 45.00", "ORCH/B/1 EUR 45.00",
-		"FLOOR/GA/0001 EUR 25.00", "FLOOR/GA/0002 EUR 25.00", "FLOOR/GA/0003 EUR 25.00",
+	if sections[0].Section() != "ORCH" || sections[0].Position() != 0 || sections[1].Position() != 1 {
+		t.Errorf("sections out of layout order: %s@%d, %s@%d",
+			sections[0].Section(), sections[0].Position(), sections[1].Section(), sections[1].Position())
+	}
+	want := map[string][]string{
+		"ORCH":  {"ORCH/A/1 EUR 45.00", "ORCH/A/2 EUR 45.00", "ORCH/B/1 EUR 45.00"},
+		"FLOOR": {"FLOOR/GA/0001 EUR 25.00", "FLOOR/GA/0002 EUR 25.00", "FLOOR/GA/0003 EUR 25.00"},
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("seats mismatch (-want +got):\n%s", diff)
-	}
-	events := inv.PullEvents()
-	if len(events) != 1 || events[0] != sharedkernel.DomainEvent(domain.InventoryOpened{ShowID: showID, Seats: 6, At: now}) {
-		t.Errorf("events = %v, want InventoryOpened{6 seats}", events)
 	}
 }
 
@@ -43,21 +52,29 @@ func TestOpenInventory_RejectsAnEmptyLayout(t *testing.T) {
 	}
 }
 
-func TestShowInventory_Hold(t *testing.T) {
+func TestOpenInventory_RejectsTheSameSectionTwice(t *testing.T) {
+	l := layout(t)
+	l.Sections = append(l.Sections, l.Sections[0])
+	if _, err := domain.OpenInventory(showID, l, startsAt, now); !errors.Is(err, domain.ErrInvalidLayout) {
+		t.Errorf("error = %v, want %v: two inventories would sell the same seats", err, domain.ErrInvalidLayout)
+	}
+}
+
+func TestSectionInventory_Hold(t *testing.T) {
 	t.Run("holds the seats and records SeatsHeld (TKT-2, TKT-4)", func(t *testing.T) {
-		inv := openInventory(t)
+		inv := orch(t)
 		id := newHoldID()
 
-		err := inv.Hold(id, ana, refs(t, "ORCH/A/1", "FLOOR/GA/0002"), now, ttl)
+		err := inv.Hold(id, ana, refs(t, "ORCH/A/1", "ORCH/B/1"), now, ttl)
 
 		if err != nil {
 			t.Fatal(err)
 		}
-		if s := states(inv); s["ORCH/A/1"] != "held" || s["FLOOR/GA/0002"] != "held" || s["ORCH/A/2"] != "available" {
+		if s := states(inv); s["ORCH/A/1"] != "held" || s["ORCH/B/1"] != "held" || s["ORCH/A/2"] != "available" {
 			t.Errorf("states = %v", s)
 		}
 		want := []sharedkernel.DomainEvent{domain.SeatsHeld{
-			ShowID: showID, HoldID: id, CustomerID: ana, Seats: refs(t, "ORCH/A/1", "FLOOR/GA/0002"),
+			ShowID: showID, HoldID: id, CustomerID: ana, Seats: refs(t, "ORCH/A/1", "ORCH/B/1"),
 			ExpiresAt: now.Add(ttl), At: now,
 		}}
 		if diff := cmp.Diff(want, inv.PullEvents(), cmp.AllowUnexported(domain.ShowID{}, domain.HoldID{}, domain.CustomerID{}, domain.SeatRef{})); diff != "" {
@@ -66,7 +83,7 @@ func TestShowInventory_Hold(t *testing.T) {
 	})
 
 	t.Run("a seat already held makes the whole hold fail; nothing changes (TKT-2, TKT-5)", func(t *testing.T) {
-		inv := openInventory(t)
+		inv := orch(t)
 		held(t, inv, bob, "ORCH/A/2")
 		before := states(inv)
 		inv.PullEvents()
@@ -91,10 +108,11 @@ func TestShowInventory_Hold(t *testing.T) {
 		{"more than 8 seats (TKT-2)", tooMany, domain.ErrInvalidHoldSize},
 		{"the same seat twice", []string{"ORCH/A/1", "orch/a/1"}, domain.ErrDuplicateSeat},
 		{"a seat that does not exist", []string{"ORCH/Z/9"}, domain.ErrUnknownSeat},
+		{"seats of another section (ADR-013)", []string{"ORCH/A/1", "FLOOR/GA/0001"}, domain.ErrHoldSpansSections},
 	}
 	for _, tt := range tests {
 		t.Run("rejects "+tt.name, func(t *testing.T) {
-			err := openInventory(t).Hold(newHoldID(), ana, refs(t, tt.seats...), now, ttl)
+			err := orch(t).Hold(newHoldID(), ana, refs(t, tt.seats...), now, ttl)
 
 			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("error = %v, want %v", err, tt.wantErr)
@@ -102,8 +120,8 @@ func TestShowInventory_Hold(t *testing.T) {
 		})
 	}
 
-	t.Run("a second active hold by the same customer is rejected (TKT-3)", func(t *testing.T) {
-		inv := openInventory(t)
+	t.Run("a second active hold by the same customer in the section is rejected (TKT-3, per section since ADR-013)", func(t *testing.T) {
+		inv := orch(t)
 		held(t, inv, ana, "ORCH/A/1")
 
 		err := inv.Hold(newHoldID(), ana, refs(t, "ORCH/A/2"), now, ttl)
@@ -114,7 +132,7 @@ func TestShowInventory_Hold(t *testing.T) {
 	})
 
 	t.Run("no holds once the show has started (TKT-12)", func(t *testing.T) {
-		err := openInventory(t).Hold(newHoldID(), ana, refs(t, "ORCH/A/1"), startsAt, ttl)
+		err := orch(t).Hold(newHoldID(), ana, refs(t, "ORCH/A/1"), startsAt, ttl)
 
 		if !errors.Is(err, domain.ErrSalesClosed) {
 			t.Errorf("error = %v, want %v", err, domain.ErrSalesClosed)
@@ -122,7 +140,7 @@ func TestShowInventory_Hold(t *testing.T) {
 	})
 
 	t.Run("seats of an expired, unswept hold can be held again (TKT-4)", func(t *testing.T) {
-		inv := openInventory(t)
+		inv := orch(t)
 		held(t, inv, bob, "ORCH/A/1")
 		later := now.Add(ttl + time.Second)
 

@@ -21,14 +21,17 @@ func Run(t *testing.T, newQueries func(t *testing.T) (application.InventoryRepos
 
 	t.Run("lists every seat with its state and price, in layout order", func(t *testing.T) {
 		repo, queries := newQueries(t)
-		inv := inventoryrepotest.Open(t)
+		inv, floor := inventoryrepotest.Open(t)
 		ref, _ := domain.ParseSeatRef("ORCH/A/2")
 		at := time.Date(2026, 11, 1, 20, 0, 0, 0, time.UTC)
 		if err := inv.Hold(domain.NewHoldID(uuid.New()), domain.NewCustomerID(uuid.New()), []domain.SeatRef{ref}, at, time.Minute); err != nil {
 			t.Fatal(err)
 		}
-		if err := repo.Save(ctx, inv); err != nil {
-			t.Fatal(err)
+		// Saved FLOOR first: the listing follows the layout, not the saves.
+		for _, s := range []*domain.SectionInventory{floor, inv} {
+			if err := repo.Save(ctx, s); err != nil {
+				t.Fatal(err)
+			}
 		}
 
 		rows, err := queries.ListSeats(ctx, inv.ShowID())

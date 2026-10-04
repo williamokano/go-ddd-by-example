@@ -76,13 +76,15 @@ func (f *fixture) holdSeats(t *testing.T, showID, customer string, seats ...stri
 func (f *fixture) seatStates(t *testing.T, showID string) map[string]string {
 	t.Helper()
 	id, _ := domain.ParseShowID(showID)
-	inv, err := f.inventories.Get(f.ctx, id)
-	if err != nil {
-		t.Fatal(err)
+	sections, err := f.inventories.ListByShow(f.ctx, id)
+	if err != nil || len(sections) == 0 {
+		t.Fatalf("ListByShow() = %d sections, %v", len(sections), err)
 	}
 	out := map[string]string{}
-	for _, s := range inv.Seats() {
-		out[s.Ref.String()] = s.State.String()
+	for _, inv := range sections {
+		for _, s := range inv.Seats() {
+			out[s.Ref.String()] = s.State.String()
+		}
 	}
 	return out
 }

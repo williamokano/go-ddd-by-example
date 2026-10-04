@@ -34,7 +34,8 @@ type RowSpec struct {
 	Seats int
 }
 
-// OpenInventoryHandler is the TKT-1 policy: one inventory per published show.
+// OpenInventoryHandler is the TKT-1 policy: one inventory per section of a
+// published show (ADR-013).
 type OpenInventoryHandler struct {
 	inventories InventoryRepository
 	clock       Clock
@@ -45,31 +46,37 @@ func NewOpenInventoryHandler(inventories InventoryRepository, clock Clock) *Open
 	return &OpenInventoryHandler{inventories: inventories, clock: clock}
 }
 
-// Handle opens the inventory once: a redelivered show.published.v1 finds it
-// open and does nothing (idempotent, TKT-1).
+// Handle opens every section once, each in its own transaction. A
+// redelivered show.published.v1 opens only the sections a crash left
+// unopened, and otherwise does nothing (idempotent, TKT-1).
 func (h *OpenInventoryHandler) Handle(ctx context.Context, cmd OpenInventory) error {
 	showID, err := domain.ParseShowID(cmd.ShowID)
 	if err != nil {
 		return fmt.Errorf("open inventory: %w", err)
 	}
-	if _, err := h.inventories.Get(ctx, showID); err == nil {
-		return nil
-	} else if !errors.Is(err, ErrInventoryNotFound) {
+	existing, err := h.inventories.ListByShow(ctx, showID)
+	if err != nil {
 		return fmt.Errorf("open inventory: %w", err)
+	}
+	opened := map[string]bool{}
+	for _, inv := range existing {
+		opened[inv.Section()] = true
 	}
 	layout, err := newLayout(cmd.Sections)
 	if err != nil {
 		return fmt.Errorf("open inventory: %w", err)
 	}
-	inv, err := domain.OpenInventory(showID, layout, cmd.StartsAt, h.clock.Now())
+	sections, err := domain.OpenInventory(showID, layout, cmd.StartsAt, h.clock.Now())
 	if err != nil {
 		return fmt.Errorf("open inventory: %w", err)
 	}
-	if err := h.inventories.Save(ctx, inv); err != nil {
-		if errors.Is(err, ErrConcurrentModification) {
-			return nil // a duplicate delivery opened it first
+	for _, inv := range sections {
+		if opened[inv.Section()] {
+			continue
 		}
-		return fmt.Errorf("open inventory: %w", err)
+		if err := h.inventories.Save(ctx, inv); err != nil && !errors.Is(err, ErrConcurrentModification) {
+			return fmt.Errorf("open inventory: section %s: %w", inv.Section(), err)
+		} // a conflict means a duplicate delivery opened it first
 	}
 	return nil
 }
@@ -120,9 +127,9 @@ func NewHoldSeatsHandler(inventories InventoryRepository, ids IDGenerator, clock
 	return &HoldSeatsHandler{inventories: inventories, ids: ids, clock: clock, ttl: ttl}
 }
 
-// Handle holds the seats. On a hot show every hold races for the same
-// inventory version, so a lost race is retried a few times before the
-// customer gets a conflict.
+// Handle holds the seats in their section's inventory. Holds race only with
+// holds in the same section (ADR-013); a lost race is retried a few times
+// before the customer gets a conflict.
 func (h *HoldSeatsHandler) Handle(ctx context.Context, cmd HoldSeats) (HoldResult, error) {
 	showID, err := domain.ParseShowID(cmd.ShowID)
 	if err != nil {
@@ -140,10 +147,14 @@ func (h *HoldSeatsHandler) Handle(ctx context.Context, cmd HoldSeats) (HoldResul
 		}
 		seats = append(seats, ref)
 	}
+	if len(seats) == 0 {
+		return HoldResult{}, fmt.Errorf("hold seats: %w: no seats", domain.ErrInvalidHoldSize)
+	}
+	section := seats[0].Section() // the section checks the others
 	id := h.ids.NewHoldID()
 	var result HoldResult
 	err = RetryOnConflict(ctx, conflictAttempts, func(ctx context.Context) error {
-		inv, err := h.inventories.Get(ctx, showID)
+		inv, err := h.inventories.Get(ctx, showID, section)
 		if err != nil {
 			return fmt.Errorf("load: %w", err)
 		}

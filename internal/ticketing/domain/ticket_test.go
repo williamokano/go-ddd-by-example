@@ -53,8 +53,8 @@ func TestTicket_Void(t *testing.T) {
 	}
 }
 
-func TestShowInventory_RejectConfirmation(t *testing.T) {
-	inv := openInventory(t)
+func TestSectionInventory_RejectConfirmation(t *testing.T) {
+	inv := orch(t)
 	hold := held(t, inv, ana, "ORCH/A/1")
 	inv.PullEvents()
 	order := newOrderID()

@@ -123,7 +123,7 @@ func TestConfirmHold(t *testing.T) {
 	t.Run("sells the seats; a redelivery is a no-op (TKT-8)", func(t *testing.T) {
 		f := newSaga(t, fakegateway.Mode{})
 		show, hold, order := f.paidOrder(t)
-		cmd := application.ConfirmHold{ShowID: show, HoldID: hold.String(), OrderID: order.String()}
+		cmd := application.ConfirmHold{ShowID: show, Section: "ORCH", HoldID: hold.String(), OrderID: order.String()}
 
 		if err := f.confirm.Handle(f.ctx, cmd); err != nil {
 			t.Fatal(err)
@@ -145,7 +145,7 @@ func TestConfirmHold(t *testing.T) {
 		show, hold, order := f.paidOrder(t)
 		f.clock.Advance(holdTTL + time.Second)
 
-		err := f.confirm.Handle(f.ctx, application.ConfirmHold{ShowID: show, HoldID: hold.String(), OrderID: order.String()})
+		err := f.confirm.Handle(f.ctx, application.ConfirmHold{ShowID: show, Section: "ORCH", HoldID: hold.String(), OrderID: order.String()})
 
 		if err != nil {
 			t.Fatal(err)
@@ -190,5 +190,42 @@ func TestRefundOrder(t *testing.T) {
 
 	if f.order(t, order).Status() != domain.Refunded || len(f.gateway.Refunds()) != 1 {
 		t.Errorf("status %v, %d refunds; want refunded once (the compensation)", f.order(t, order).Status(), len(f.gateway.Refunds()))
+	}
+}
+
+// TKT-10 across sections (ADR-013): the show is announced sold out only once
+// the last section sells out.
+func TestOnSectionSoldOut(t *testing.T) {
+	f := newSaga(t, fakegateway.Mode{})
+	policy := application.NewOnSectionSoldOutHandler(f.inventories, f.inventories, f.clock)
+	show := f.openShow(t)
+	sell := func(section string, seats ...string) {
+		t.Helper()
+		customer := uuid.NewString()
+		hold := f.holdSeats(t, show, customer, seats...)
+		res, err := f.checkout.Handle(f.ctx, application.Checkout{HoldID: hold.String(), CustomerID: customer, ContactEmail: "ana@example.com"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		cmd := application.ConfirmHold{ShowID: show, Section: section, HoldID: hold.String(), OrderID: res.OrderID.String()}
+		if err := f.confirm.Handle(f.ctx, cmd); err != nil {
+			t.Fatal(err)
+		}
+		if err := policy.Handle(f.ctx, application.OnSectionSoldOut{ShowID: show}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	sell("ORCH", "ORCH/A/1", "ORCH/A/2")
+	if published[domain.InventorySoldOut](f.inventories.Published()) {
+		t.Fatal("InventorySoldOut with the FLOOR still on sale")
+	}
+
+	sell("FLOOR", "FLOOR/GA/0001", "FLOOR/GA/0002", "FLOOR/GA/0003")
+	if n := count[domain.InventorySoldOut](f.inventories.Published()); n != 1 {
+		t.Errorf("InventorySoldOut published %d times, want 1", n)
+	}
+	if n := count[domain.SectionSoldOut](f.inventories.Published()); n != 2 {
+		t.Errorf("SectionSoldOut recorded %d times, want 2", n)
 	}
 }

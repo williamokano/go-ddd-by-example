@@ -12,17 +12,20 @@ import (
 // maxSeatsPerHold is TKT-2's limit.
 const maxSeatsPerHold = 8
 
-// ShowInventory is the aggregate root that protects "a seat is never sold
-// twice" (TKT-5): every seat of one show and every active hold, in one
-// consistency boundary (ADR-005).
-type ShowInventory struct {
+// SectionInventory is the aggregate root that protects "a seat is never sold
+// twice" (TKT-5): every seat of one section of a show, and the section's
+// active holds, in one consistency boundary (ADR-013, superseding ADR-005's
+// one inventory per show). Holds in different sections never contend.
+type SectionInventory struct {
 	showID   ShowID
+	section  string
+	position int // the section's place in the layout, for listings
 	startsAt time.Time
 	seats    map[SeatRef]*seat
 	order    []SeatRef // layout order, for stable listings
 	holds    map[HoldID]Hold
 	closed   bool
-	soldOut  bool // InventorySoldOut already recorded (TKT-10)
+	soldOut  bool // SectionSoldOut already recorded
 	version  int
 
 	events sharedkernel.Events
@@ -36,43 +39,64 @@ type seat struct {
 }
 
 // OpenInventory opens the inventory of a published show from its layout
-// snapshot: every seat and GA place, priced, Available (TKT-1).
-func OpenInventory(showID ShowID, layout InventoryLayout, startsAt time.Time, now time.Time) (*ShowInventory, error) {
+// snapshot: one SectionInventory per section, every seat and GA place
+// priced and Available (TKT-1).
+func OpenInventory(showID ShowID, layout InventoryLayout, startsAt time.Time, now time.Time) ([]*SectionInventory, error) {
 	if showID.IsZero() {
 		return nil, fmt.Errorf("%w: zero show id", ErrInvalidID)
 	}
-	inv := &ShowInventory{showID: showID, startsAt: startsAt, seats: map[SeatRef]*seat{}, holds: map[HoldID]Hold{}}
-	for _, s := range layout.Sections {
-		if !s.Price.IsPositive() {
-			return nil, fmt.Errorf("%w: section %s has no price", ErrInvalidLayout, s.Code)
+	if len(layout.Sections) == 0 {
+		return nil, fmt.Errorf("%w: nothing to sell", ErrInvalidLayout)
+	}
+	sections := make([]*SectionInventory, 0, len(layout.Sections))
+	seen := map[string]bool{}
+	for i, s := range layout.Sections {
+		code := strings.ToUpper(strings.TrimSpace(s.Code))
+		if seen[code] {
+			return nil, fmt.Errorf("%w: section %s twice", ErrInvalidLayout, code)
 		}
-		switch s.Kind {
-		case KindSeated:
-			for _, row := range s.Rows {
-				for n := 1; n <= row.Seats; n++ {
-					if err := inv.addSeat(s.Code, row.Label, n, s.Price); err != nil {
-						return nil, err
-					}
-				}
-			}
-		case KindGA:
-			for n := 1; n <= s.Capacity; n++ {
-				if err := inv.addSeat(s.Code, gaRow, n, s.Price); err != nil {
+		seen[code] = true
+		inv, err := openSection(showID, s, i, startsAt, now)
+		if err != nil {
+			return nil, err
+		}
+		sections = append(sections, inv)
+	}
+	return sections, nil
+}
+
+func openSection(showID ShowID, s InventorySection, position int, startsAt, now time.Time) (*SectionInventory, error) {
+	if !s.Price.IsPositive() {
+		return nil, fmt.Errorf("%w: section %s has no price", ErrInvalidLayout, s.Code)
+	}
+	inv := &SectionInventory{showID: showID, position: position, startsAt: startsAt, seats: map[SeatRef]*seat{}, holds: map[HoldID]Hold{}}
+	switch s.Kind {
+	case KindSeated:
+		for _, row := range s.Rows {
+			for n := 1; n <= row.Seats; n++ {
+				if err := inv.addSeat(s.Code, row.Label, n, s.Price); err != nil {
 					return nil, err
 				}
 			}
-		default:
-			return nil, fmt.Errorf("%w: section %s has kind %q", ErrInvalidLayout, s.Code, s.Kind)
 		}
+	case KindGA:
+		for n := 1; n <= s.Capacity; n++ {
+			if err := inv.addSeat(s.Code, gaRow, n, s.Price); err != nil {
+				return nil, err
+			}
+		}
+	default:
+		return nil, fmt.Errorf("%w: section %s has kind %q", ErrInvalidLayout, s.Code, s.Kind)
 	}
 	if len(inv.order) == 0 {
-		return nil, fmt.Errorf("%w: nothing to sell", ErrInvalidLayout)
+		return nil, fmt.Errorf("%w: section %s has nothing to sell", ErrInvalidLayout, s.Code)
 	}
-	inv.events.Record(InventoryOpened{ShowID: showID, Seats: len(inv.order), At: now})
+	inv.section = inv.order[0].Section()
+	inv.events.Record(InventoryOpened{ShowID: showID, Section: inv.section, Seats: len(inv.order), At: now})
 	return inv, nil
 }
 
-func (inv *ShowInventory) addSeat(section, row string, n int, price sharedkernel.Money) error {
+func (inv *SectionInventory) addSeat(section, row string, n int, price sharedkernel.Money) error {
 	ref, err := NewSeatRef(section, row, n)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidLayout, err)
@@ -85,11 +109,12 @@ func (inv *ShowInventory) addSeat(section, row string, n int, price sharedkernel
 	return nil
 }
 
-// Hold claims 1–8 available seats for a customer until now+ttl (TKT-2, TKT-4),
-// all or nothing. A customer has at most one active hold (TKT-3); no holds
-// once the show has started (TKT-12). Holds that lapsed but weren't swept yet
+// Hold claims 1–8 available seats of this section for a customer until
+// now+ttl (TKT-2, TKT-4), all or nothing. A customer has at most one active
+// hold in the section (TKT-3, per section since ADR-013); no holds once the
+// show has started (TKT-12). Holds that lapsed but weren't swept yet
 // are expired first, so their seats are free again.
-func (inv *ShowInventory) Hold(id HoldID, customer CustomerID, seats []SeatRef, now time.Time, ttl time.Duration) error {
+func (inv *SectionInventory) Hold(id HoldID, customer CustomerID, seats []SeatRef, now time.Time, ttl time.Duration) error {
 	if id.IsZero() || customer.IsZero() {
 		return fmt.Errorf("%w: zero hold or customer id", ErrInvalidID)
 	}
@@ -108,6 +133,9 @@ func (inv *ShowInventory) Hold(id HoldID, customer CustomerID, seats []SeatRef, 
 			return fmt.Errorf("%w: %s", ErrDuplicateSeat, ref)
 		}
 		seen[ref] = true
+		if ref.Section() != inv.section {
+			return fmt.Errorf("%w: %s is not in section %s", ErrHoldSpansSections, ref, inv.section)
+		}
 		if _, ok := inv.seats[ref]; !ok {
 			return fmt.Errorf("%w: %s", ErrUnknownSeat, ref)
 		}
@@ -137,7 +165,7 @@ func (inv *ShowInventory) Hold(id HoldID, customer CustomerID, seats []SeatRef, 
 }
 
 // ReleaseHold gives a customer's held seats back.
-func (inv *ShowInventory) ReleaseHold(id HoldID, customer CustomerID, now time.Time) error {
+func (inv *SectionInventory) ReleaseHold(id HoldID, customer CustomerID, now time.Time) error {
 	h, ok := inv.holds[id]
 	if !ok {
 		return fmt.Errorf("%w: %s", ErrHoldNotFound, id)
@@ -154,9 +182,10 @@ func (inv *ShowInventory) ReleaseHold(id HoldID, customer CustomerID, now time.T
 // ConfirmHold sells the seats of a paid order's hold (TKT-8). A hold that
 // lapsed, even if not swept yet, or that was released, can't be confirmed:
 // the order must be refunded (the saga's compensation). Confirming the same
-// order again is a no-op, because the saga may redeliver. Selling the last
-// available seat records InventorySoldOut, exactly once (TKT-10).
-func (inv *ShowInventory) ConfirmHold(id HoldID, order OrderID, now time.Time) error {
+// order again is a no-op, because the saga may redeliver. Selling the
+// section's last available seat records SectionSoldOut, exactly once; whether
+// the whole show sold out is ShowSoldOut's question (TKT-10).
+func (inv *SectionInventory) ConfirmHold(id HoldID, order OrderID, now time.Time) error {
 	if inv.isSoldTo(order) {
 		return nil
 	}
@@ -175,7 +204,7 @@ func (inv *ShowInventory) ConfirmHold(id HoldID, order OrderID, now time.Time) e
 	inv.events.Record(SeatsSold{ShowID: inv.showID, HoldID: id, OrderID: order, Seats: h.Seats(), At: now})
 	if !inv.soldOut && inv.allSold() {
 		inv.soldOut = true
-		inv.events.Record(InventorySoldOut{ShowID: inv.showID, At: now})
+		inv.events.Record(SectionSoldOut{ShowID: inv.showID, Section: inv.section, At: now})
 	}
 	return nil
 }
@@ -183,13 +212,13 @@ func (inv *ShowInventory) ConfirmHold(id HoldID, order OrderID, now time.Time) e
 // RejectConfirmation records why a paid order's hold could not be confirmed
 // (expired, released, inventory closed). The saga answers with a refund: the
 // compensation (TKT-8). Nothing else changes.
-func (inv *ShowInventory) RejectConfirmation(id HoldID, order OrderID, reason error, now time.Time) {
+func (inv *SectionInventory) RejectConfirmation(id HoldID, order OrderID, reason error, now time.Time) {
 	inv.events.Record(HoldConfirmationFailed{ShowID: inv.showID, HoldID: id, OrderID: order, Reason: reason.Error(), At: now})
 }
 
 // Close stops all sales: active holds are released and no new hold is
 // accepted (TKT-11, TKT-12). Closing twice is a no-op.
-func (inv *ShowInventory) Close(now time.Time) {
+func (inv *SectionInventory) Close(now time.Time) {
 	if inv.closed {
 		return
 	}
@@ -201,10 +230,10 @@ func (inv *ShowInventory) Close(now time.Time) {
 		delete(inv.holds, id)
 	}
 	inv.closed = true
-	inv.events.Record(InventoryClosed{ShowID: inv.showID, ReleasedSeats: released, At: now})
+	inv.events.Record(InventoryClosed{ShowID: inv.showID, Section: inv.section, ReleasedSeats: released, At: now})
 }
 
-func (inv *ShowInventory) isSoldTo(order OrderID) bool {
+func (inv *SectionInventory) isSoldTo(order OrderID) bool {
 	for _, s := range inv.seats {
 		if s.state == Sold && s.orderID == order {
 			return true
@@ -213,7 +242,7 @@ func (inv *ShowInventory) isSoldTo(order OrderID) bool {
 	return false
 }
 
-func (inv *ShowInventory) allSold() bool {
+func (inv *SectionInventory) allSold() bool {
 	for _, s := range inv.seats {
 		if s.state != Sold {
 			return false
@@ -224,7 +253,7 @@ func (inv *ShowInventory) allSold() bool {
 
 // ExpireHolds frees the seats of every hold that has lapsed at now (TKT-4)
 // and records HoldExpired for each. Time is passed in; nothing here sleeps.
-func (inv *ShowInventory) ExpireHolds(now time.Time) {
+func (inv *SectionInventory) ExpireHolds(now time.Time) {
 	for _, id := range inv.holdIDs() {
 		if h := inv.holds[id]; h.IsExpired(now) {
 			inv.freeSeats(h)
@@ -236,7 +265,7 @@ func (inv *ShowInventory) ExpireHolds(now time.Time) {
 
 // holdIDs lists the active holds in a stable order, so events are recorded
 // deterministically.
-func (inv *ShowInventory) holdIDs() []HoldID {
+func (inv *SectionInventory) holdIDs() []HoldID {
 	ids := make([]HoldID, 0, len(inv.holds))
 	for id := range inv.holds {
 		ids = append(ids, id)
@@ -245,7 +274,7 @@ func (inv *ShowInventory) holdIDs() []HoldID {
 	return ids
 }
 
-func (inv *ShowInventory) freeSeats(h Hold) {
+func (inv *SectionInventory) freeSeats(h Hold) {
 	for _, ref := range h.seats {
 		if s := inv.seats[ref]; s.state == Held && s.holdID == h.id {
 			s.state, s.holdID = Available, HoldID{}
@@ -255,7 +284,7 @@ func (inv *ShowInventory) freeSeats(h Hold) {
 
 // HoldView returns a read-only copy of an active hold with its seats'
 // prices, for placing an order.
-func (inv *ShowInventory) HoldView(id HoldID) (HoldView, error) {
+func (inv *SectionInventory) HoldView(id HoldID) (HoldView, error) {
 	h, ok := inv.holds[id]
 	if !ok {
 		return HoldView{}, fmt.Errorf("%w: %s", ErrHoldNotFound, id)
@@ -268,22 +297,28 @@ func (inv *ShowInventory) HoldView(id HoldID) (HoldView, error) {
 }
 
 // ShowID returns the show this inventory sells.
-func (inv *ShowInventory) ShowID() ShowID { return inv.showID }
+func (inv *SectionInventory) ShowID() ShowID { return inv.showID }
+
+// Section returns the code of the section this inventory sells.
+func (inv *SectionInventory) Section() string { return inv.section }
+
+// Position returns the section's place in the published layout.
+func (inv *SectionInventory) Position() int { return inv.position }
 
 // StartsAt returns when the show starts: no holds after that (TKT-12).
-func (inv *ShowInventory) StartsAt() time.Time { return inv.startsAt }
+func (inv *SectionInventory) StartsAt() time.Time { return inv.startsAt }
 
 // IsClosed reports whether sales are closed for good (TKT-11).
-func (inv *ShowInventory) IsClosed() bool { return inv.closed }
+func (inv *SectionInventory) IsClosed() bool { return inv.closed }
 
-// IsSoldOut reports whether InventorySoldOut was recorded.
-func (inv *ShowInventory) IsSoldOut() bool { return inv.soldOut }
+// IsSoldOut reports whether every seat of the section is sold.
+func (inv *SectionInventory) IsSoldOut() bool { return inv.soldOut }
 
 // Version is the version the inventory was loaded at (ADR-011).
-func (inv *ShowInventory) Version() int { return inv.version }
+func (inv *SectionInventory) Version() int { return inv.version }
 
 // Seats returns a copy of every seat, in layout order.
-func (inv *ShowInventory) Seats() []SeatView {
+func (inv *SectionInventory) Seats() []SeatView {
 	out := make([]SeatView, 0, len(inv.order))
 	for _, ref := range inv.order {
 		s := inv.seats[ref]
@@ -293,7 +328,7 @@ func (inv *ShowInventory) Seats() []SeatView {
 }
 
 // Holds returns the active holds.
-func (inv *ShowInventory) Holds() []Hold {
+func (inv *SectionInventory) Holds() []Hold {
 	out := make([]Hold, 0, len(inv.holds))
 	for _, id := range inv.holdIDs() {
 		out = append(out, inv.holds[id])
@@ -302,4 +337,4 @@ func (inv *ShowInventory) Holds() []Hold {
 }
 
 // PullEvents returns the recorded events and forgets them.
-func (inv *ShowInventory) PullEvents() []sharedkernel.DomainEvent { return inv.events.PullEvents() }
+func (inv *SectionInventory) PullEvents() []sharedkernel.DomainEvent { return inv.events.PullEvents() }

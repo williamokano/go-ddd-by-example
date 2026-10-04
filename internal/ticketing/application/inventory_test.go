@@ -125,10 +125,30 @@ type conflicting struct {
 	times, saves int
 }
 
-func (c *conflicting) Save(ctx context.Context, inv *domain.ShowInventory) error {
+func (c *conflicting) Save(ctx context.Context, inv *domain.SectionInventory) error {
 	c.saves++
 	if c.saves <= c.times {
 		return application.ErrConcurrentModification
 	}
 	return c.InventoryRepository.Save(ctx, inv)
+}
+
+func TestHoldSeats_IsForOneSection(t *testing.T) {
+	f := newFixture(t)
+	show := f.openShow(t)
+
+	_, err := f.hold.Handle(f.ctx, application.HoldSeats{ShowID: show, CustomerID: uuid.NewString(), Seats: []string{"ORCH/A/1", "FLOOR/GA/0001"}})
+
+	if !errors.Is(err, domain.ErrHoldSpansSections) {
+		t.Errorf("error = %v, want %v (ADR-013)", err, domain.ErrHoldSpansSections)
+	}
+}
+
+// One customer, one hold per section: TKT-3 per section since ADR-013.
+func TestHoldSeats_OneCustomerCanHoldInTwoSections(t *testing.T) {
+	f := newFixture(t)
+	show, customer := f.openShow(t), uuid.NewString()
+
+	f.holdSeats(t, show, customer, "ORCH/A/1")
+	f.holdSeats(t, show, customer, "FLOOR/GA/0001")
 }

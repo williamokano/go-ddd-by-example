@@ -24,29 +24,34 @@ func NewCloseInventoryHandler(inventories InventoryRepository, clock Clock) *Clo
 	return &CloseInventoryHandler{inventories: inventories, clock: clock}
 }
 
-// Handle closes the inventory. A show cancelled while still a draft was
-// never published, so it has no inventory: that's a no-op, not an error.
+// Handle closes every section, one transaction each. A show cancelled while
+// still a draft was never published, so it has no sections: that's a no-op,
+// not an error. A redelivery closes what a crash left open.
 func (h *CloseInventoryHandler) Handle(ctx context.Context, cmd CloseInventory) error {
 	showID, err := domain.ParseShowID(cmd.ShowID)
 	if err != nil {
 		return fmt.Errorf("close inventory: %w", err)
 	}
-	err = RetryOnConflict(ctx, conflictAttempts, func(ctx context.Context) error {
-		inv, err := h.inventories.Get(ctx, showID)
-		if errors.Is(err, ErrInventoryNotFound) {
-			return nil
-		}
-		if err != nil {
-			return fmt.Errorf("load: %w", err)
-		}
-		inv.Close(h.clock.Now())
-		if err := h.inventories.Save(ctx, inv); err != nil {
-			return fmt.Errorf("save: %w", err)
-		}
-		return nil
-	})
+	sections, err := h.inventories.ListByShow(ctx, showID)
 	if err != nil {
 		return fmt.Errorf("close inventory: %w", err)
+	}
+	for _, s := range sections {
+		section := s.Section()
+		err = RetryOnConflict(ctx, conflictAttempts, func(ctx context.Context) error {
+			inv, err := h.inventories.Get(ctx, showID, section)
+			if err != nil {
+				return fmt.Errorf("load: %w", err)
+			}
+			inv.Close(h.clock.Now())
+			if err := h.inventories.Save(ctx, inv); err != nil {
+				return fmt.Errorf("save: %w", err)
+			}
+			return nil
+		})
+		if err != nil {
+			return fmt.Errorf("close inventory: section %s: %w", section, err)
+		}
 	}
 	return nil
 }

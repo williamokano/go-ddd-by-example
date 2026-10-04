@@ -5,6 +5,8 @@ import "time"
 // InventoryState is everything a repository stores about an inventory.
 type InventoryState struct {
 	ShowID   ShowID
+	Section  string
+	Position int
 	StartsAt time.Time
 	Seats    []SeatView
 	Holds    []HoldState
@@ -22,9 +24,9 @@ type HoldState struct {
 }
 
 // StateOf reads an inventory out for storage.
-func StateOf(inv *ShowInventory) InventoryState {
+func StateOf(inv *SectionInventory) InventoryState {
 	state := InventoryState{
-		ShowID: inv.showID, StartsAt: inv.startsAt, Seats: inv.Seats(),
+		ShowID: inv.showID, Section: inv.section, Position: inv.position, StartsAt: inv.startsAt, Seats: inv.Seats(),
 		Closed: inv.closed, SoldOut: inv.soldOut, Version: inv.version,
 	}
 	for _, h := range inv.Holds() {
@@ -35,9 +37,9 @@ func StateOf(inv *ShowInventory) InventoryState {
 
 // RehydrateInventory rebuilds an inventory from storage: no rules, no events.
 // Only driven adapters may call it.
-func RehydrateInventory(s InventoryState) *ShowInventory {
-	inv := &ShowInventory{
-		showID: s.ShowID, startsAt: s.StartsAt, seats: make(map[SeatRef]*seat, len(s.Seats)),
+func RehydrateInventory(s InventoryState) *SectionInventory {
+	inv := &SectionInventory{
+		showID: s.ShowID, section: s.Section, position: s.Position, startsAt: s.StartsAt, seats: make(map[SeatRef]*seat, len(s.Seats)),
 		holds: make(map[HoldID]Hold, len(s.Holds)), closed: s.Closed, soldOut: s.SoldOut, version: s.Version,
 	}
 	for _, v := range s.Seats {

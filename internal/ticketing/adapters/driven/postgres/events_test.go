@@ -21,7 +21,7 @@ func TestToOutboxMessages_SagaSteps(t *testing.T) {
 
 	msgs, err := postgres.ToOutboxMessages([]sharedkernel.DomainEvent{
 		domain.SeatsHeld{ShowID: show, At: at}, // internal fact: not a message
-		domain.OrderPaid{OrderID: order, ShowID: show, HoldID: hold, At: at},
+		domain.OrderPaid{OrderID: order, ShowID: show, Section: "ORCH", HoldID: hold, At: at},
 		domain.SeatsSold{ShowID: show, HoldID: hold, OrderID: order, Seats: []domain.SeatRef{seat}, At: at},
 		domain.HoldConfirmationFailed{ShowID: show, HoldID: hold, OrderID: order, Reason: "expired", At: at},
 	}, uuid.New)
@@ -33,6 +33,10 @@ func TestToOutboxMessages_SagaSteps(t *testing.T) {
 		if msgs[i].Type != want || msgs[i].Topic != sagamsg.Topic || msgs[i].Key != order.String() {
 			t.Errorf("message %d = %s on %s keyed %s; want %s on %s keyed by the order", i, msgs[i].Type, msgs[i].Topic, msgs[i].Key, want, sagamsg.Topic)
 		}
+	}
+	var paid sagamsg.OrderPaid
+	if err := json.Unmarshal(msgs[0].Payload, &paid); err != nil || paid.Section != "ORCH" {
+		t.Errorf("order paid payload = %+v, %v; want the section", paid, err)
 	}
 	var sold sagamsg.SeatsSold
 	if err := json.Unmarshal(msgs[1].Payload, &sold); err != nil || len(sold.Seats) != 1 || sold.Seats[0] != "ORCH/A/1" {
@@ -54,9 +58,10 @@ func TestToOutboxMessages_PublishedLanguage(t *testing.T) {
 			Tickets: []domain.IssuedTicket{{Seat: seat, Code: domain.TicketCodeFor(domain.NewTicketID(uuid.New()))}}, At: at},
 		domain.OrderRefunded{OrderID: order, ShowID: show, ContactEmail: email, Total: total, At: at},
 		domain.InventoryClosed{ShowID: show, At: at},
+		domain.SectionSoldOut{ShowID: show, Section: "ORCH", At: at},
 	}, uuid.New)
 
-	if err != nil || len(msgs) != 4 {
+	if err != nil || len(msgs) != 5 {
 		t.Fatalf("got %d messages, %v", len(msgs), err)
 	}
 	want := []struct{ topic, typ, key string }{
@@ -64,6 +69,7 @@ func TestToOutboxMessages_PublishedLanguage(t *testing.T) {
 		{contracts.Topic, contracts.TypeTicketsIssuedV1, order.String()},
 		{contracts.Topic, contracts.TypeOrderRefundedV1, order.String()},
 		{sagamsg.Topic, sagamsg.TypeInventoryClosed, show.String()},
+		{sagamsg.Topic, sagamsg.TypeSectionSoldOut, show.String()},
 	}
 	for i, w := range want {
 		if msgs[i].Topic != w.topic || msgs[i].Type != w.typ || msgs[i].Key != w.key {

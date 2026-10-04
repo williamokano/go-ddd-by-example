@@ -10,7 +10,7 @@ import (
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/domain"
 )
 
-func eventNames(inv *domain.ShowInventory) []string {
+func eventNames(inv *domain.SectionInventory) []string {
 	var out []string
 	for _, ev := range inv.PullEvents() {
 		out = append(out, ev.EventName())
@@ -20,9 +20,9 @@ func eventNames(inv *domain.ShowInventory) []string {
 
 func newOrderID() domain.OrderID { return domain.NewOrderID(uuid.New()) }
 
-func TestShowInventory_ReleaseHold(t *testing.T) {
+func TestSectionInventory_ReleaseHold(t *testing.T) {
 	t.Run("the owner frees the seats", func(t *testing.T) {
-		inv := openInventory(t)
+		inv := orch(t)
 		id := held(t, inv, ana, "ORCH/A/1")
 		inv.PullEvents()
 
@@ -37,7 +37,7 @@ func TestShowInventory_ReleaseHold(t *testing.T) {
 	})
 
 	t.Run("someone else's hold cannot be released", func(t *testing.T) {
-		inv := openInventory(t)
+		inv := orch(t)
 		id := held(t, inv, ana, "ORCH/A/1")
 
 		if err := inv.ReleaseHold(id, bob, now); !errors.Is(err, domain.ErrNotHoldOwner) {
@@ -46,14 +46,14 @@ func TestShowInventory_ReleaseHold(t *testing.T) {
 	})
 
 	t.Run("an unknown hold is ErrHoldNotFound", func(t *testing.T) {
-		if err := openInventory(t).ReleaseHold(newHoldID(), ana, now); !errors.Is(err, domain.ErrHoldNotFound) {
+		if err := orch(t).ReleaseHold(newHoldID(), ana, now); !errors.Is(err, domain.ErrHoldNotFound) {
 			t.Errorf("error = %v, want %v", err, domain.ErrHoldNotFound)
 		}
 	})
 }
 
-func TestShowInventory_ExpireHolds(t *testing.T) {
-	inv := openInventory(t)
+func TestSectionInventory_ExpireHolds(t *testing.T) {
+	inv := orch(t)
 	held(t, inv, ana, "ORCH/A/1")
 	if err := inv.Hold(newHoldID(), bob, refs(t, "ORCH/A/2"), now.Add(5*time.Minute), ttl); err != nil {
 		t.Fatal(err)
@@ -70,9 +70,9 @@ func TestShowInventory_ExpireHolds(t *testing.T) {
 	}
 }
 
-func TestShowInventory_ConfirmHold(t *testing.T) {
+func TestSectionInventory_ConfirmHold(t *testing.T) {
 	t.Run("sells the held seats and records SeatsSold (TKT-8)", func(t *testing.T) {
-		inv := openInventory(t)
+		inv := orch(t)
 		id := held(t, inv, ana, "ORCH/A/1", "ORCH/A/2")
 		inv.PullEvents()
 		order := newOrderID()
@@ -93,7 +93,7 @@ func TestShowInventory_ConfirmHold(t *testing.T) {
 	})
 
 	t.Run("an expired hold, even unswept, cannot be confirmed (TKT-8)", func(t *testing.T) {
-		inv := openInventory(t)
+		inv := orch(t)
 		id := held(t, inv, ana, "ORCH/A/1")
 		inv.PullEvents()
 
@@ -108,7 +108,7 @@ func TestShowInventory_ConfirmHold(t *testing.T) {
 	})
 
 	t.Run("a released hold cannot be confirmed", func(t *testing.T) {
-		inv := openInventory(t)
+		inv := orch(t)
 		id := held(t, inv, ana, "ORCH/A/1")
 		_ = inv.ReleaseHold(id, ana, now)
 
@@ -118,7 +118,7 @@ func TestShowInventory_ConfirmHold(t *testing.T) {
 	})
 
 	t.Run("confirming the same order twice is a no-op (redelivery)", func(t *testing.T) {
-		inv := openInventory(t)
+		inv := orch(t)
 		id := held(t, inv, ana, "ORCH/A/1")
 		order := newOrderID()
 		_ = inv.ConfirmHold(id, order, now)
@@ -132,10 +132,10 @@ func TestShowInventory_ConfirmHold(t *testing.T) {
 	})
 }
 
-func TestShowInventory_SoldOutExactlyOnce(t *testing.T) {
-	inv := openInventory(t)
-	first := held(t, inv, ana, "ORCH/A/1", "ORCH/A/2", "ORCH/B/1")
-	second := held(t, inv, bob, "FLOOR/GA/0001", "FLOOR/GA/0002", "FLOOR/GA/0003")
+func TestSectionInventory_SoldOutExactlyOnce(t *testing.T) {
+	inv := orch(t)
+	first := held(t, inv, ana, "ORCH/A/1", "ORCH/A/2")
+	second := held(t, inv, bob, "ORCH/B/1")
 	order1, order2 := newOrderID(), newOrderID()
 	_ = inv.ConfirmHold(first, order1, now)
 	inv.PullEvents()
@@ -144,13 +144,43 @@ func TestShowInventory_SoldOutExactlyOnce(t *testing.T) {
 	_ = inv.ConfirmHold(second, order2, now) // redelivered
 
 	names := eventNames(inv)
-	if len(names) != 2 || names[0] != "ticketing.SeatsSold" || names[1] != "ticketing.InventorySoldOut" {
-		t.Errorf("events = %v, want SeatsSold then InventorySoldOut once (TKT-10)", names)
+	if len(names) != 2 || names[0] != "ticketing.SeatsSold" || names[1] != "ticketing.SectionSoldOut" {
+		t.Errorf("events = %v, want SeatsSold then SectionSoldOut once", names)
 	}
 }
 
-func TestShowInventory_Close(t *testing.T) {
-	inv := openInventory(t)
+// TKT-10 spans sections now, so it is a domain service over all of them.
+func TestShowSoldOut(t *testing.T) {
+	sellOut := func(t *testing.T, inv *domain.SectionInventory) {
+		t.Helper()
+		var seats []string
+		for _, s := range inv.Seats() {
+			seats = append(seats, s.Ref.String())
+		}
+		if err := inv.ConfirmHold(held(t, inv, ana, seats...), newOrderID(), now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sections := openSections(t)
+	all := []*domain.SectionInventory{sections["ORCH"], sections["FLOOR"]}
+
+	sellOut(t, sections["ORCH"])
+	if _, soldOut := domain.ShowSoldOut(all, now); soldOut {
+		t.Error("sold out with the FLOOR still on sale")
+	}
+
+	sellOut(t, sections["FLOOR"])
+	ev, soldOut := domain.ShowSoldOut(all, now)
+	if !soldOut || ev != (domain.InventorySoldOut{ShowID: showID, At: now}) {
+		t.Errorf("ShowSoldOut = %v, %v; want InventorySoldOut for the show (TKT-10)", ev, soldOut)
+	}
+	if _, soldOut := domain.ShowSoldOut(nil, now); soldOut {
+		t.Error("a show with no sections is not sold out")
+	}
+}
+
+func TestSectionInventory_Close(t *testing.T) {
+	inv := orch(t)
 	held(t, inv, ana, "ORCH/A/1")
 	inv.PullEvents()
 
