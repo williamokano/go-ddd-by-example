@@ -55,14 +55,15 @@ func New(mode Mode) *Gateway {
 
 // Charge implements application.PaymentGateway.
 func (g *Gateway) Charge(ctx context.Context, orderID domain.OrderID, amount sharedkernel.Money) (domain.PaymentRef, error) {
-	if g.mode.Delay > 0 {
+	mode := g.modeFor(ctx)
+	if mode.Delay > 0 {
 		select {
 		case <-ctx.Done():
 			return domain.PaymentRef{}, fmt.Errorf("charge %s: %w", orderID, ctx.Err())
-		case <-time.After(g.mode.Delay):
+		case <-time.After(mode.Delay):
 		}
 	}
-	if g.mode.Decline {
+	if mode.Decline {
 		return domain.PaymentRef{}, fmt.Errorf("%w: charge %s of %s", application.ErrPaymentDeclined, orderID, amount)
 	}
 	g.mu.Lock()
