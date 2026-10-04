@@ -89,7 +89,7 @@ func (s *Show) Publish(venue VenueLayout, now time.Time) error {
 		return err
 	}
 	s.status = Published
-	s.events.Record(ShowPublished{ShowID: s.id, VenueID: s.venueID, Schedule: s.schedule, Layout: venue, Prices: s.prices, At: now})
+	s.events.Record(ShowPublished{ShowID: s.id, VenueID: s.venueID, Title: s.title, Schedule: s.schedule, Layout: venue, Prices: s.prices, At: now})
 	return nil
 }
 

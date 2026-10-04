@@ -56,6 +56,7 @@ func (e ShowPriced) OccurredAt() time.Time { return e.At }
 type ShowPublished struct {
 	ShowID   ShowID
 	VenueID  VenueID
+	Title    string
 	Schedule Schedule
 	Layout   VenueLayout
 	Prices   PriceList

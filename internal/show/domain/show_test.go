@@ -116,7 +116,7 @@ func TestShow_Publish(t *testing.T) {
 			t.Errorf("Status() = %v, want published", s.Status())
 		}
 		want := []domain.DomainEvent{domain.ShowPublished{
-			ShowID: showID, VenueID: venueID, Schedule: inAMonth(t), Layout: activeLayout(), Prices: fullPrices(t), At: now,
+			ShowID: showID, VenueID: venueID, Title: "Fado Night", Schedule: inAMonth(t), Layout: activeLayout(), Prices: fullPrices(t), At: now,
 		}}
 		if diff := cmp.Diff(want, s.PullEvents(), showValues); diff != "" {
 			t.Errorf("events mismatch (-want +got):\n%s", diff)

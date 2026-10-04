@@ -59,7 +59,7 @@ func (h *PriceShowHandler) Handle(ctx context.Context, cmd PriceShow) error {
 	return withShow(ctx, h.shows, "price show", cmd.ShowID, cmd.PromoterID, func(show *domain.Show) error {
 		layout, err := h.layouts.Get(ctx, show.VenueID())
 		if err != nil {
-			return err
+			return fmt.Errorf("venue layout: %w", err)
 		}
 		return show.Price(prices, layout, h.clock.Now())
 	})
@@ -82,7 +82,7 @@ func (h *PublishShowHandler) Handle(ctx context.Context, cmd PublishShow) error 
 	return withShow(ctx, h.shows, "publish show", cmd.ShowID, cmd.PromoterID, func(show *domain.Show) error {
 		layout, err := h.layouts.Get(ctx, show.VenueID())
 		if err != nil {
-			return err
+			return fmt.Errorf("venue layout: %w", err)
 		}
 		return show.Publish(layout, h.clock.Now())
 	})
