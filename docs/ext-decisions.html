@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Extension Decision Log</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main class="content">
+<header>
+  <div class="kicker">Extension track · Reference</div>
+  <h1>Extension decision log (ADR-E*)</h1>
+  <p class="lead">Decisions made for the optional extension track. They <em>extend</em> the <a href="07-decisions.html">main decision log</a>; none of them edits or supersedes an existing ADR. Where one narrows or reinterprets an earlier decision, it says so.</p>
+</header>
+
+<h2>ADR-E01 — The extension track is additive and ignorable</h2>
+<p><strong>Status:</strong> accepted.</p>
+<p><strong>Decision:</strong> Extension pages (<code>ext-*.html</code>) are separate from Parts 0–9, with their own progress file (<code>tasks/extension.md</code>). Existing chapters, rules and ADRs are not edited, with one exception: a genuine gap in the main course was fixed there. Requests now name the acting customer or promoter in their body (no gateway headers, no authentication), and the order carries a contact email typed at checkout, because Notifications had no address (chapter 1, TKT-6, 6.6, 7.5, 7.7, 7.8, 8.2). The main course otherwise carries only a sidebar group and a pointer on the welcome page.</p>
+<p><strong>Consequences:</strong> (+) The core course stays focused. (+) Extensions demonstrate that the architecture tolerates change. (−) Some statements in earlier chapters are knowingly outdated for a learner who does the extensions; this log and the overview are where that's said.</p>
+
+<h2 id="adr-e02">ADR-E02 — Pricing is a module of Ticketing's domain, not its own context</h2>
+<p><strong>Status:</strong> accepted.</p>
+<p><strong>Context:</strong> Demand pricing, discounts, fees and taxes all have to be consistent with a specific hold and order, and only Ticketing owns those.</p>
+<p><strong>Decision:</strong> Pricing lives in <code>internal/ticketing/domain/pricing</code>: value objects (<code>Rate</code>, <code>PriceBreakdown</code>, <code>DemandRules</code>, <code>Promotion</code>, <code>FeeSchedule</code>, <code>TaxRule</code>), specifications and pure domain services (<code>DemandPolicy</code>, <code>DiscountPolicy</code>, <code>TaxPolicy</code>, <code>OrderPricing</code>). Rule data comes in through read-only ports. Show keeps owning the list price (SHW-4).</p>
+<p><strong>Consequences:</strong> (+) Pricing is tested without I/O, and the package boundary makes a later extraction cheap. (−) Ticketing's domain grows; watch its size. (−) The venue's country has to reach Ticketing through the snapshot, which is an additive contract change in Venue and Show. <strong>Alternatives:</strong> a Pricing context of its own (premature: there's no separate team or lifecycle yet); pricing in the application layer (untestable rules scattered across use cases).</p>
+
+<h2 id="adr-e03">ADR-E03 — Integer money, basis-point rates, half-up rounding, tax per line</h2>
+<p><strong>Status:</strong> accepted (revisit if a jurisdiction needs finer rates).</p>
+<p><strong>Decision:</strong> Amounts stay integer minor units. Rates are integer basis points. Rounding is half up (away from zero) and happens only at named steps: each demand-adjusted price, each discount share, each fee, each line's tax. Amounts split across lines use largest-remainder allocation, so the parts always sum to the whole.</p>
+<p><strong>Consequences:</strong> (+) Totals are reproducible to the cent, and per-ticket refunds are exact. (+) Receipts match what customers expect. (−) Rates such as 8.875% don't fit in whole basis points. (−) Per-line tax can differ by a cent from tax on the order total, so it's documented rather than discovered. <strong>Alternatives:</strong> decimals via a library (fine, but hides the lesson); banker's rounding (less bias, less intuitive on a receipt).</p>
+
+<h2 id="adr-e04">ADR-E04 — The selling price is decided inside <code>ShowInventory.Hold</code> and locked for the hold</h2>
+<p><strong>Status:</strong> accepted. <strong>Extends:</strong> ADR-005, TKT-6.</p>
+<p><strong>Decision:</strong> The inventory stores <code>DemandRules</code> (off by default). <code>Hold</code> computes occupancy before the hold, asks the pure <code>DemandPolicy</code> for each section's unit price, and stores it on the hold. Orders take their prices from the hold. Discounts, fees and taxes are applied at order placement.</p>
+<p><strong>Consequences:</strong> (+) The price and the occupancy it's based on are consistent, because both sit in one aggregate. (+) Existing tests pass unchanged with the default rules. (+) A customer never sees the price change mid-checkout. (−) Hold rows carry a price column. (−) A preview quote can differ from the held price, so it is labelled non-binding.</p>
+
+<h2>ADR-E05 — <code>Principal</code> lives in <code>platform/actor</code>; the domain never sees it</h2>
+<p><strong>Status:</strong> accepted.</p>
+<p><strong>Decision:</strong> The authenticated actor is a plain value carried in <code>context.Context</code>. <code>application</code> may read it; <code>domain</code> may not import it. When the domain needs "who", the use case passes a plain id.</p>
+<p><strong>Consequences:</strong> (+) Consistent with ADR-008 (time and identity are inputs). (+) Domain tests need no auth fixtures. (−) A <code>context</code> value is implicit, so a lint/architecture test must keep it confined to the application and adapter layers.</p>
+
+<h2>ADR-E06 — Authentication is a strategy over identity providers; local password first</h2>
+<p><strong>Status:</strong> accepted.</p>
+<p><strong>Context:</strong> We want our own small identity module, with room for several SSO sources side by side, and no extra service to run.</p>
+<p><strong>Decision:</strong> An <code>IdentityProvider</code> port reduces every source to a <code>VerifiedIdentity</code>. A registry maps provider names to adapters (<code>password</code>, <code>oidc:*</code>). Users link to external identities by <code>(issuer, subject)</code>, never by email alone. We issue our own signed tokens.</p>
+<p><strong>Consequences:</strong> (+) New SSO = new config or adapter. (+) No Keycloak/Dex service. (−) We own password storage, token signing and revocation, which are security-critical; the checklist in E2.9 exists for that. <strong>Alternatives:</strong> an external IdP as the only source (simplest for production, hides the lesson); Keycloak in Compose (extra service, rejected for now).</p>
+
+<h2>ADR-E07 — Authorization: RBAC as a decorator; ownership in the domain</h2>
+<p><strong>Status:</strong> accepted.</p>
+<p><strong>Decision:</strong> Roles are bundles of permissions; code checks permissions only. Coarse checks are a decorator assembled in the composition root. Rules that depend on business data (venue ownership, VEN-8) are enforced by the aggregate or the use case.</p>
+<p><strong>Consequences:</strong> (+) Existing use-case bodies are untouched, apart from one ownership guard each in the three venue use cases (E2.7). (+) HTTP adapters take customer and promoter ids from the principal, closing an impersonation hole. (−) A forgotten decoration leaves a route open, so an architecture test requires every route to be wrapped or explicitly public. (−) The e2e suite needs a login helper.</p>
+
+<h2>ADR-E08 — Observability by decoration; metrics are optional behind a null object</h2>
+<p><strong>Status:</strong> accepted.</p>
+<p><strong>Decision:</strong> Domain and application never import a metrics library. HTTP middleware, a use-case decorator, event consumers and adapters take a small <code>telemetry.Registry</code>. A no-op implementation runs when metrics are disabled. Prometheus and Grafana run under a Compose profile.</p>
+<p><strong>Consequences:</strong> (+) The default stack is unchanged. (+) No <code>if enabled</code> scattered through code. (−) Labels must be curated to avoid cardinality explosions; that's reviewed, not enforced by the compiler.</p>
+
+<h2>ADR-E09 — Audit from two sources, through each context's own outbox, stored append-only</h2>
+<p><strong>Status:</strong> accepted.</p>
+<p><strong>Decision:</strong> A command-level decorator records every attempt (including denied and failed ones) as an <code>audit.command_attempted.v1</code> record written to the <em>acting context's own outbox</em>, in the same transaction as the change when it succeeds (8.4's <code>TxManager</code>). The outbox envelope also carries the actor, so integration events can be attributed. An <code>audit</code> context consumes both into an append-only table protected by a trigger (and by privileges if 9.6 is done).</p>
+<p><strong>Consequences:</strong> (+) No context writes into another's schema. (+) A successful change and its audit record commit together. (+) Domain event payloads are unchanged. (−) The trail is eventually consistent with the change (relay latency). (−) Changes that are neither decorated commands nor integration events are invisible; the "what to audit" list in E4.1 is how you find them.</p>
+
+<h2 id="adr-e10">ADR-E10 — Payments becomes its own bounded context, with an Open Host Service for commands</h2>
+<p><strong>Status:</strong> accepted. <strong>Relation to earlier decisions:</strong> refines the chapter-1 classification of Payments ("generic: buy it") and narrows ADR-001's "Kafka only" for <em>synchronous commands</em>; ADR-010's saga still applies.</p>
+<p><strong>Context:</strong> Real payments need states, idempotency, webhooks, refunds and disputes: too much to be a two-method port. Authorizing a payment is a request/response conversation.</p>
+<p><strong>Decision:</strong> A <code>payments</code> context owns the model. Other contexts call it synchronously only through <code>payments/contracts</code> (a versioned <code>Client</code> interface and DTOs, in-process for now). Every outcome leaves as an integration event through the outbox.</p>
+<p><strong>Consequences:</strong> (+) Ticketing keeps its own port and ACL. (+) Extracting Payments later means swapping the <code>Client</code> implementation. (−) A sanctioned synchronous path exists between contexts, so the architecture test lists exactly which <code>contracts</code> packages may be imported.</p>
+
+<h2>ADR-E11 — Provider vocabulary stays inside the adapter</h2>
+<p><strong>Status:</strong> accepted.</p>
+<p><strong>Decision:</strong> Only <code>adapters/*/stripe</code> imports the SDK or uses its words. The port speaks our types: sealed result sets, a small decline taxonomy, normalized <code>ProviderNotification</code>s, and an opaque <code>ProviderRef</code>. Raw payloads are kept only in the inbox for diagnostics.</p>
+<p><strong>Consequences:</strong> (+) A second provider is one adapter. (+) The fake and the real adapter share one contract suite. (−) Mapping tables to maintain; unknown values must fail loudly or map to <code>Other</code>, never be guessed.</p>
+
+<h2>ADR-E12 — Authorize, then confirm seats, then capture</h2>
+<p><strong>Status:</strong> accepted. <strong>Extends:</strong> ADR-010 (TKT-8 compensation).</p>
+<p><strong>Decision:</strong> Checkout authorizes first, confirms seats while funds are reserved, then captures. Failed confirmation cancels the authorization (Payments calls it a void) instead of refunding a capture.</p>
+<p><strong>Consequences:</strong> (+) No money moves for the common failure; no refund fees. (+) Smaller blast radius for late payments. (−) Order has an extra state; authorizations expire (PAY-7), so a long delay between steps needs reconciliation.</p>
+
+<h2 id="adr-e13">ADR-E13 — Refund is an entity inside <code>Payment</code>; <code>Dispute</code> is its own aggregate</h2>
+<p><strong>Status:</strong> accepted.</p>
+<p><strong>Decision:</strong> PAY-4 (refunds never exceed captured) is a true invariant, so refunds live in the payment's consistency boundary. A dispute has its own lifecycle, deadlines and external driver, and affects the payment eventually through an event.</p>
+<p><strong>Consequences:</strong> (+) Concurrent refunds are safe through the version check. (−) A payment with many refunds loads them all (acceptable: the count is small). <strong>Revisit if</strong> refunds become initiated by many independent parties.</p>
+
+<h2 id="adr-e14">ADR-E14 — Fraud: the vendor supplies a signal; our policy decides</h2>
+<p><strong>Status:</strong> accepted.</p>
+<p><strong>Decision:</strong> A <code>fraud</code> context owns <code>RiskAssessment</code> and a <code>RiskPolicy</code> domain service. Vendor scores and verdicts are inputs. Unavailability is handled by an explicit, configurable, tested fail-open/fail-closed policy that depends on order value. Screening is a saga step behind an Open Host Service, switchable off.</p>
+<p><strong>Consequences:</strong> (+) Business risk appetite is testable and vendor-independent. (+) An outage has a defined behaviour. (−) We duplicate a small amount of decision logic the vendor also has; that's the price of owning the decision.</p>
+
+<h2 id="adr-e15">ADR-E15 — Outbound vendor feedback uses a durable work queue</h2>
+<p><strong>Status:</strong> accepted.</p>
+<p><strong>Decision:</strong> Events are translated into <code>TransactionOutcome</code>s and stored in a queue table (written with the consumer's inbox row), then delivered by a worker with retry, backoff, per-transaction ordering, idempotent ids and a dead-letter state. Reporting never sits in a customer-facing request path.</p>
+<p><strong>Consequences:</strong> (+) A vendor outage costs nothing but delay. (+) Same reliability story as the outbox. (−) One more worker and table to operate; dead-letters need an owner.</p>
+
+<h2 id="adr-e16">ADR-E16 — Every chargeback is accepted on arrival; defence is deferred</h2>
+<p><strong>Status:</strong> accepted (revisit when chargeback losses justify a defence, E5.14).</p>
+<p><strong>Decision:</strong> When a dispute opens, Payments accepts it with the provider, marks the payment <code>ChargedBack</code>, and publishes <code>dispute_accepted.v1</code>. Ticketing voids the order's tickets and refunds nothing. The customer's identifiers are denylisted (ADR-E17).</p>
+<p><strong>Consequences:</strong> (+) No evidence workflow, no deadlines to miss, and a much smaller first version. (+) The <code>Dispute</code> aggregate already has the states a defence will need. (−) We lose every dispute, including the ones we would have won. (−) A customer who is wrongly blocked needs staff to lift the entry.</p>
+
+<h2 id="adr-e17">ADR-E17 — A Denylist context; each context checks the identifiers it owns</h2>
+<p><strong>Status:</strong> accepted.</p>
+<p><strong>Context:</strong> A chargeback must stop the customer from buying again by account, email and card, and those identifiers belong to Ticketing, Identity and Payments respectively.</p>
+<p><strong>Decision:</strong> A small generic <code>denylist</code> context stores blocked <code>(kind, value)</code> identifiers with reasons and history, and publishes a synchronous <code>Check</code> (an Open Host Service, as in ADR-E10). It fills itself from events (<code>order_charged_back</code>; later confirmed fraud) and keeps a customer → email projection. Ticketing checks the customer before holding seats; Payments checks the card fingerprint before authorizing. Card tokens are never blocked, only provider fingerprints. Emails are stored as keyed hashes.</p>
+<p><strong>Consequences:</strong> (+) New identifier kinds and new reasons to block don't touch the contexts that check. (+) No context depends on another's model. (−) One more synchronous dependency on the purchase path, which fails closed. (−) Blocking by card or email can catch innocent people who share them; lifting is a manual, audited staff action.</p>
+
+<h2>Template</h2>
+<p>Use the same shape as the main log's template: Status, Context, Decision, Consequences, Alternatives. Number new extension decisions <code>ADR-E18</code> onward.</p>
+</main>
+<script src="assets/course.js"></script>
+</body>
+</html>

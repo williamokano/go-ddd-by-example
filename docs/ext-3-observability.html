@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Extension E3 · Observability</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main class="content">
+<header>
+  <div class="kicker">Extension track · E3 · needs Part 5</div>
+  <h1>Observability: metrics, Prometheus and Grafana</h1>
+  <p class="lead">Part 8 gave you correlation IDs and 9.7 sketched tracing. Now you'll answer "is it healthy, and is the business working?" with numbers: metrics scraped by Prometheus, drawn in Grafana, and <strong>optional</strong>. The architectural question is the same as in E2: how do we instrument everything without the domain ever knowing a metrics library exists?</p>
+</header>
+
+<h2>Where instrumentation belongs</h2>
+<div class="table-wrap"><table>
+  <tr><th>What you want to measure</th><th>Where to hook in</th><th>Why not the domain</th></tr>
+  <tr><td>HTTP rate, errors, duration (RED)</td><td>HTTP middleware (driving adapter)</td><td>It's about the transport.</td></tr>
+  <tr><td>Use-case rate, errors, duration</td><td>A decorator, assembled in the composition root (the same trick as E2.6)</td><td>Same shape for every use case.</td></tr>
+  <tr><td>Business facts: seats held, orders paid, refunds</td><td>A consumer of each context's <em>own</em> events, plus use-case outcomes</td><td>Events already say what happened; the model needn't change.</td></tr>
+  <tr><td>Infrastructure health: outbox lag, consumer lag, DB pool, Kafka errors</td><td>Inside the relevant adapter or a small collector</td><td>Only adapters know about these.</td></tr>
+</table></div>
+
+<div class="callout why"><span class="label">Design decision (ADR-E08)</span>
+<p>The domain and application packages <strong>never import a metrics library</strong>. Decorators and adapters take a small interface from <code>internal/platform/telemetry</code> (a <code>Registry</code> that creates counters and histograms), with a Prometheus implementation and a <em>no-op</em> implementation. The no-op is what runs when metrics are switched off: a <em>null object</em>, so no <code>if enabled</code> checks are scattered around the code.</p></div>
+
+<section class="lesson" id="le3-1">
+<h3><span class="lesson-id">E3.1</span> A metrics endpoint and the RED trio for HTTP</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Expose <code>/metrics</code> and record request rate, errors and latency for every route.</dd>
+  <dt>Creates</dt><dd><code>internal/platform/telemetry/{registry,prom,noop}.go</code>, <code>platform/httpx/metrics.go</code></dd>
+  <dt>New dependency</dt><dd><code>github.com/prometheus/client_golang</code> (the only place it's imported is <code>telemetry/prom</code>)</dd>
+</dl>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>A request through the middleware increments <code>http_requests_total{route,method,code}</code> exactly once; a failing handler is counted with its status code.</li>
+  <li><strong>Label by route pattern (<code>/venues/{id}</code>), never by raw path.</strong> The mux records the matched pattern in <code>r.Pattern</code> (Go 1.23+), so the middleware can read it after the inner handler returns. Test that two different venue ids produce one series, not two, and that unmatched paths share a single <code>route="unmatched"</code>.</li>
+  <li>Duration goes into a histogram; assert a handler that sleeps lands in the right bucket (inject a fake clock or use a small sleep with generous bounds).</li>
+  <li>With <code>METRICS_ENABLED=false</code> (a new row in chapter 6's config table, parsed in <code>platform/config</code>) the registry is the no-op one, <code>/metrics</code> returns 404, and the handlers behave identically.</li>
+</ol></div>
+<div class="callout warn"><span class="label">Pitfall: cardinality</span><p>Every distinct label value is a new time series in memory forever. User IDs, order IDs, raw URLs, error messages and email addresses must never be label values. Rule of thumb: a label's possible values should be a short, fixed list you could write down.</p></div>
+</section>
+
+<section class="lesson" id="le3-2">
+<h3><span class="lesson-id">E3.2</span> A use-case decorator for rate, errors and duration</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Measure every command and query with one decorator, and leave every use-case file alone.</dd>
+</dl>
+<div class="callout do"><span class="label">Your turn</span><ol>
+  <li>Write <code>Observe[C,R](name, reg, next)</code> in <code>platform/telemetry</code>, with the same shape as E2's <code>Require</code> (a struct with a <code>Handle</code> method, so the HTTP adapters accept it). It records <code>usecase_duration_seconds{usecase,outcome}</code> where outcome is one of a <em>small enum</em>: <code>ok</code>, <code>domain_error</code>, <code>forbidden</code>, <code>conflict</code>, <code>internal</code>.</li>
+  <li>Classify errors with <code>errors.Is</code> against your domain/application sentinel errors, not by string-matching messages.</li>
+  <li>If you did E2, decide and test the decoration order: should <code>Observe</code> wrap <code>Require</code> or sit inside it? What does each choice show you about forbidden calls?</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>An optimistic-concurrency conflict (ADR-011) is an <em>expected</em> outcome under contention, not a failure. Should it count as an error in the dashboard's error rate? What does your answer say about what "error" means for a business?</p></div>
+</section>
+
+<section class="lesson" id="le3-3">
+<h3><span class="lesson-id">E3.3</span> Business metrics from events and outcomes</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Count business outcomes (holds, sales, sell-outs, refunds, emails) without touching an aggregate.</dd>
+  <dt>Creates</dt><dd>A small metrics consumer per context that subscribes to that context's <em>own</em> topics; business counters fed from use-case outcomes in the composition root</dd>
+</dl>
+<div class="callout why"><span class="label">Which events may a metrics consumer read?</span><p>Holds and payments are visible only inside Ticketing: <code>OrderPaid</code> and <code>SeatsSold</code> travel on the private <code>ticketing.internal</code> topic, and there's no "seats held" integration event at all. A Ticketing-owned metrics consumer may read Ticketing's private topic; a generic consumer that reads everyone's private topics would be a boundary leak. For holds, count successful <code>HoldSeats</code> calls in the use-case decorator from E3.2, using the number of seats in the command.</p></div>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>A successful <code>HoldSeats</code> with 3 seats increments <code>stagehand_seats_held_total</code> by 3; a rejected one doesn't.</li>
+  <li>Feeding <code>ticketing.tickets_issued.v1</code> to the metrics handler increments <code>stagehand_tickets_sold_total</code> by the number of tickets. A <em>duplicate</em> delivery (at-least-once!) over-counts unless you use the inbox from 8.4. Decide whether a few percent of drift is acceptable for this metric, and say why.</li>
+  <li><code>stagehand_orders_total{outcome="paid"|"failed"|"refunded"}</code> from Ticketing's own events (<code>OrderPaid</code> on <code>ticketing.internal</code>, <code>ticketing.order_refunded.v1</code>), and failed payments from the <code>Checkout</code> outcome.</li>
+  <li><code>stagehand_shows_sold_out_total</code> from <code>ticketing.inventory_sold_out.v1</code>; <code>stagehand_emails_total{kind}</code> inside Notifications.</li>
+  <li>A gauge of <em>currently</em> held seats can't be rebuilt by counting events after a restart. Compute it from a periodic read query instead (the <code>GET /shows/{id}/seats</code> query from 7.5 is a hint).</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>Which of these metrics are for engineers (is it broken?) and which for the business (is it working)? Who should be able to change the second kind without a deploy?</p></div>
+</section>
+
+<section class="lesson" id="le3-4">
+<h3><span class="lesson-id">E3.4</span> Infrastructure metrics: lag, pools and the outbox</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Make the asynchronous plumbing visible: the first place a messaging system hurts you.</dd>
+</dl>
+<div class="callout do"><span class="label">Your turn</span><ol>
+  <li><strong>Outbox lag:</strong> the age of the oldest unpublished row per schema, as a gauge sampled by a collector that runs a cheap query at scrape time (or every few seconds). This is the single most useful metric in the whole system.</li>
+  <li><strong>Relay and consumer:</strong> messages published, publish failures, handler errors by consumer group, and consumer lag if the client exposes it.</li>
+  <li><strong>Database:</strong> expose the pgx pool's stats (acquired, idle, wait count and duration) from the Postgres adapter, not from application code.</li>
+  <li><strong>Go runtime and process</strong> collectors come free from the client library; register them once.</li>
+</ol></div>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li>With the testcontainers Postgres: insert an old outbox row → the lag gauge reports roughly its age; publish it → the lag drops to 0.</li>
+  <li>The collector must not hold the scrape hostage: a slow query times out and reports a "scrape error" metric rather than blocking <code>/metrics</code>.</li>
+</ol></div>
+</section>
+
+<section class="lesson" id="le3-5">
+<h3><span class="lesson-id">E3.5</span> Prometheus and Grafana as an optional Compose profile</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd><code>make up</code> still gives you the original stack; <code>make up-obs</code> adds Prometheus and Grafana with a ready-made dashboard.</dd>
+  <dt>Creates</dt><dd><code>deploy/prometheus/prometheus.yml</code>, <code>deploy/grafana/provisioning/{datasources,dashboards}/*</code>, <code>deploy/grafana/dashboards/stagehand.json</code>, Compose services with <code>profiles: ["observability"]</code>, Make targets</dd>
+</dl>
+<div class="callout do"><span class="label">Your turn</span><ol>
+  <li>Add the two services to <code>docker-compose.yml</code> under a <strong>profile</strong>. Services without a profile are unaffected, so the default stack doesn't change. Add <code>make up-obs</code> (<code>docker compose --profile observability up -d --build --wait</code>). Make <code>make down</code> pass <code>--profile observability</code> as well: Compose only acts on the profiles you name, so a plain <code>down</code> can leave Prometheus and Grafana running.</li>
+  <li>Configure the scrape job against the app's <code>/metrics</code> (<code>app:8080</code> inside Compose; <code>host.docker.internal:8080</code> when you use <code>make run</code> on the host). Provision the Grafana datasource and dashboard <strong>from files</strong>, so a fresh <code>make up-obs</code> shows the dashboard without clicking anything.</li>
+  <li>Build one dashboard with four rows: <em>HTTP RED</em>, <em>use cases</em> (p50/p95/p99 from the histogram with <code>histogram_quantile</code>), <em>business</em> (orders by outcome, seats held vs sold), <em>plumbing</em> (outbox lag, consumer errors, DB pool wait).</li>
+  <li>Prove "turn it off" both ways: <code>make up</code> never starts the observability containers, and the e2e suite passes with <code>METRICS_ENABLED=false</code> set on the app service.</li>
+</ol></div>
+<div class="callout warn"><span class="label">Pitfall</span><p>Dashboard JSON exported from the UI is noisy and full of generated IDs. Keep it in the repo, review it like code, and note the Grafana version in the file. Treat "I edited it in the UI" as an unsaved change.</p></div>
+</section>
+
+<section class="lesson" id="le3-6">
+<h3><span class="lesson-id">E3.6</span> Stretch: an SLO and one alert</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Turn graphs into a promise.</dd>
+</dl>
+<div class="callout do"><span class="label">Your turn</span><ol>
+  <li>Pick one user-visible promise (for example: "99% of seat holds complete in under 300 ms over 30 days") and write the Prometheus recording rule and alert rule that track it.</li>
+  <li>Alert on <strong>symptoms</strong> (the promise is burning down, outbox lag over a minute) rather than causes (CPU high).</li>
+  <li>If you did 9.7: which histograms could carry exemplars that link a slow request to its trace?</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>You instrumented a whole system and the domain packages still import nothing new. Run <code>go list -deps ./internal/*/domain</code> and check. If something leaked, which lesson's habit slipped?</p></div>
+</section>
+</main>
+<script src="assets/course.js"></script>
+</body>
+</html>

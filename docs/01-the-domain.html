@@ -60,8 +60,10 @@ VenueRetired ─────────▶ ShowCancelled (each future show)
   <tr><td>Venue Management</td><td><span class="tag">supporting</span></td><td>Same as above.</td><td>Domain model, simplest. Our learning playground.</td></tr>
   <tr><td>Payments</td><td><span class="tag">generic</span></td><td>Every business needs it and it's solved elsewhere.</td><td>Buy it. Here: a driven port with a fake adapter.</td></tr>
   <tr><td>Notifications</td><td><span class="tag">generic</span></td><td>Sending emails.</td><td>A transaction script. No aggregates.</td></tr>
-  <tr><td>Identity &amp; access</td><td><span class="tag">generic</span></td><td>Login, roles.</td><td>Out of scope. We trust an <code>X-Customer-ID</code> / <code>X-Actor-ID</code> header.</td></tr>
+  <tr><td>Identity &amp; access</td><td><span class="tag">generic</span></td><td>Login, roles.</td><td>Out of scope: no authentication. Callers say who they are in the request (see the note below).</td></tr>
 </table></div>
+
+<div class="callout warn"><span class="label">No authentication, but an email for purchasing</span><p>The course has no login. Every request that acts for someone names them explicitly in its body: <code>promoterId</code> when drafting, pricing, publishing or cancelling a show; <code>customerId</code> when holding seats, releasing a hold or placing an order. Nothing checks these ids, so anyone can claim to be anyone. That's a deliberate simplification, kept visible in the API rather than hidden behind an imaginary gateway. The only personal data is the <strong>contact email</strong> the customer types at checkout (TKT-6): it's where the tickets and any refund notice go. Real authentication is the optional <a href="ext-2-identity.html">extension E2</a>.</p></div>
 
 <h2>Bounded contexts and their languages</h2>
 <p>A <strong>bounded context</strong> is a part of the <em>solution</em> space: a boundary inside which every word has exactly one meaning, and one model applies. The same word can mean different things in different contexts. That isn't a bug; it's the reason the boundaries exist.</p>
@@ -105,7 +107,7 @@ VenueRetired ─────────▶ ShowCancelled (each future show)
   <tr><td>Show inventory</td><td>Everything sellable for one show: the seats and GA places with their state and price.</td></tr>
   <tr><td>Seat (ticketing)</td><td>A sellable unit, identified by a <em>seat ref</em> (e.g. <code>ORCH/A/12</code>, or <code>FLOOR/GA/0457</code> for a GA place). Its state is Available, Held or Sold.</td></tr>
   <tr><td>Hold</td><td>A temporary, exclusive claim by a customer on some seats, with an <em>expiry</em> (default 10 minutes).</td></tr>
-  <tr><td>Order</td><td>A customer's purchase of the seats in one hold. Has lines, a total and a payment status.</td></tr>
+  <tr><td>Order</td><td>A customer's purchase of the seats in one hold. Has lines, a total, a contact email and a payment status.</td></tr>
   <tr><td>Ticket</td><td>Proof of entry for one seat at one show, with a unique ticket code. It can be voided.</td></tr>
   <tr><td>Void</td><td>To invalidate a ticket (or a whole inventory) because the show was cancelled.</td></tr>
   <tr><td>Refund</td><td>Returning a paid order's money through the payment provider.</td></tr>
@@ -195,7 +197,7 @@ VenueRetired ─────────▶ ShowCancelled (each future show)
   <li><code>Order</code> (root): one checkout of one hold. Contains <code>OrderLine</code> value objects.</li>
   <li><code>Ticket</code> (root): one per sold seat. Small and independent, so it can be voided or checked in without locking anything else.</li>
 </ul>
-<p><strong>Value objects:</strong> <code>ShowID</code>, <code>CustomerID</code>, <code>HoldID</code>, <code>OrderID</code>, <code>TicketID</code>, <code>SeatRef</code>, <code>SeatState</code>, <code>Money</code> (shared kernel), <code>OrderLine</code>, <code>PaymentRef</code>, <code>TicketCode</code>.</p>
+<p><strong>Value objects:</strong> <code>ShowID</code>, <code>CustomerID</code>, <code>HoldID</code>, <code>OrderID</code>, <code>TicketID</code>, <code>SeatRef</code>, <code>SeatState</code>, <code>Money</code> (shared kernel), <code>OrderLine</code>, <code>ContactEmail</code>, <code>PaymentRef</code>, <code>TicketCode</code>.</p>
 <div class="table-wrap"><table>
   <tr><th>ID</th><th>Rule</th></tr>
   <tr><td>TKT-1</td><td>An inventory is opened once per published show, from the snapshot in <code>show.published.v1</code>. Opening it twice is a no-op (idempotent).</td></tr>
@@ -203,7 +205,7 @@ VenueRetired ─────────▶ ShowCancelled (each future show)
   <tr><td>TKT-3</td><td>A customer has at most one active hold per show.</td></tr>
   <tr><td>TKT-4</td><td>A hold expires at <code>heldAt + 10 min</code>. Expired holds release their seats. Expiry is evaluated against a time passed in, never <code>time.Now()</code> inside the domain.</td></tr>
   <tr><td>TKT-5</td><td><strong>A seat is never Sold twice and never held by two holds.</strong> (The core invariant.)</td></tr>
-  <tr><td>TKT-6</td><td>An order is placed only for a non-expired hold owned by the same customer. Its total = the sum of the line prices, in one currency.</td></tr>
+  <tr><td>TKT-6</td><td>An order is placed only for a non-expired hold owned by the same customer. Its total = the sum of the line prices, in one currency. It carries a valid contact email, given at checkout: where the tickets and any refund notice are sent.</td></tr>
   <tr><td>TKT-7</td><td>Order lifecycle: Pending → Paid → Fulfilled, or Pending → PaymentFailed, or Paid → Refunded. Fulfilled → Refunded happens when the show is cancelled.</td></tr>
   <tr><td>TKT-8</td><td>Confirming a hold for a paid order sells its seats. If the hold has expired or been released by then, confirmation fails and the order must be refunded (compensation).</td></tr>
   <tr><td>TKT-9</td><td>One ticket is issued per sold seat. Each ticket code is unique.</td></tr>
@@ -211,7 +213,7 @@ VenueRetired ─────────▶ ShowCancelled (each future show)
   <tr><td>TKT-11</td><td>When a show is cancelled, the inventory closes (no new holds; active holds are released), all its tickets are voided, and every Paid/Fulfilled order is refunded.</td></tr>
   <tr><td>TKT-12</td><td>No new holds on a closed inventory or after the show's start time.</td></tr>
 </table></div>
-<p><strong>Publishes:</strong> <code>ticketing.inventory_sold_out.v1</code>, <code>ticketing.tickets_issued.v1</code>, <code>ticketing.order_refunded.v1</code>. <strong>Consumes:</strong> <code>show.published.v1</code>, <code>show.cancelled.v1</code>.</p>
+<p><strong>Publishes:</strong> <code>ticketing.inventory_sold_out.v1</code>, <code>ticketing.tickets_issued.v1</code>, <code>ticketing.order_refunded.v1</code> (the last two carry the order's contact email, so Notifications knows where to write). <strong>Consumes:</strong> <code>show.published.v1</code>, <code>show.cancelled.v1</code>.</p>
 
 <h3>Notifications (generic)</h3>
 <p>No aggregates. A handler per integration event formats a message and sends it through an <code>EmailSender</code> port; the adapter just logs it. It's here to show that a transaction script is the right tool for a generic subdomain.</p>

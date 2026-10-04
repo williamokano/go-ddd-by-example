@@ -109,6 +109,7 @@
 <div class="callout tdd"><span class="label">TDD script (highlights)</span><ol class="tests">
   <li>DraftShow: the venue isn't in the projection → <code>ErrVenueUnknown</code>; venue retired → <code>ErrVenueNotActive</code>; overlap → <code>ErrScheduleConflict</code>.</li>
   <li>Authorisation: only the promoter who drafted the show may price, publish or cancel it. This check lives in the <em>application</em> layer. Discuss why.</li>
+  <li>HTTP: every request that acts for a promoter carries <code>promoterId</code> in its JSON body (there's no login; see <a href="01-the-domain.html">chapter 1</a>). A missing or malformed id → 422.</li>
   <li>PublishShow writes a <code>show.published.v1</code> carrying the layout snapshot and prices (from the projection plus the price list).</li>
   <li>The 6.1 acceptance test is green.</li>
 </ol></div>

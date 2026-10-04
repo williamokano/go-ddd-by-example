@@ -33,7 +33,7 @@
   <dt>Creates</dt><dd><code>internal/notifications/</code>: handlers for <code>tickets_issued</code> and <code>order_refunded</code>, an <code>EmailSender</code> port, a <code>logsender</code> adapter, a consumer</dd>
 </dl>
 <div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
-  <li>The handler formats the expected email from a <code>TicketsIssuedV1</code> (golden text) and calls the sender.</li>
+  <li>The handler formats the expected email from a <code>TicketsIssuedV1</code> (golden text) and sends it to the contact email the event carries. Notifications never looks the customer up anywhere.</li>
   <li>A duplicate event doesn't send twice. This needs the inbox from 8.4: write the test now, see it fail, and come back.</li>
 </ol></div>
 <div class="callout discuss"><span class="label">Discuss</span><p>No domain package, no aggregates, no repository. Is that "bad DDD"? (No. Strategic DDD tells you <em>where not</em> to invest. Generic subdomain, simplest thing that works.)</p></div>
