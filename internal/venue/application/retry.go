@@ -6,6 +6,9 @@ import (
 	"fmt"
 )
 
+// conflictAttempts bounds how often a use case re-runs after losing a race.
+const conflictAttempts = 3
+
 // RetryOnConflict runs fn up to attempts times while it fails with
 // ErrConcurrentModification.
 //

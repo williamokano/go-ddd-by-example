@@ -67,3 +67,32 @@ func TestRetryOnConflict(t *testing.T) {
 		}
 	})
 }
+
+// conflictOnce is a VenueRepository whose first Save loses a race.
+type conflictOnce struct {
+	application.VenueRepository
+	conflicted bool
+}
+
+func (r *conflictOnce) Save(ctx context.Context, v *domain.Venue) error {
+	if !r.conflicted {
+		r.conflicted = true
+		return application.ErrConcurrentModification
+	}
+	return r.VenueRepository.Save(ctx, v)
+}
+
+func TestAddSection_RetriesAConflict(t *testing.T) {
+	f := newFixture(t)
+	id := f.draftVenue(t)
+	handler := application.NewAddSectionHandler(&conflictOnce{VenueRepository: f.repo}, f.clock)
+
+	err := handler.Handle(f.ctx, application.AddSection{VenueID: id.String(), Code: "BOX", Kind: application.KindGA, Capacity: 4})
+
+	if err != nil {
+		t.Fatalf("Handle() error = %v, want the retry to succeed", err)
+	}
+	if got := len(f.venue(t, id).Sections()); got != 2 {
+		t.Errorf("venue has %d sections, want 2", got)
+	}
+}
