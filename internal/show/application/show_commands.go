@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
@@ -128,6 +129,60 @@ func (h *MarkShowSoldOutHandler) Handle(ctx context.Context, cmd MarkShowSoldOut
 	return withShow(ctx, h.shows, "mark show sold out", cmd.ShowID, "", func(show *domain.Show) error {
 		return show.MarkSoldOut(h.clock.Now())
 	})
+}
+
+// MarkShowBackOnSale records Ticketing's fact that seats are on sale again.
+type MarkShowBackOnSale struct{ ShowID string }
+
+// MarkShowBackOnSaleHandler is the SHW-10 policy, driven by Ticketing's fact.
+type MarkShowBackOnSaleHandler struct {
+	shows ShowRepository
+	clock Clock
+}
+
+// NewMarkShowBackOnSaleHandler wires the use case to its ports.
+func NewMarkShowBackOnSaleHandler(shows ShowRepository, clock Clock) *MarkShowBackOnSaleHandler {
+	return &MarkShowBackOnSaleHandler{shows: shows, clock: clock}
+}
+
+// Handle puts the show back on sale (a no-op if that is old news).
+func (h *MarkShowBackOnSaleHandler) Handle(ctx context.Context, cmd MarkShowBackOnSale) error {
+	return withShow(ctx, h.shows, "mark show back on sale", cmd.ShowID, "", func(show *domain.Show) error {
+		return show.MarkBackOnSale(h.clock.Now())
+	})
+}
+
+// CompleteEndedShowsHandler is SHW-9, driven by the clock: a scheduler
+// calls it, like Ticketing's hold sweep (7.9).
+type CompleteEndedShowsHandler struct {
+	shows ShowRepository
+	clock Clock
+}
+
+// NewCompleteEndedShowsHandler wires the use case to its ports.
+func NewCompleteEndedShowsHandler(shows ShowRepository, clock Clock) *CompleteEndedShowsHandler {
+	return &CompleteEndedShowsHandler{shows: shows, clock: clock}
+}
+
+// Handle completes every show that has ended, one transaction each.
+func (h *CompleteEndedShowsHandler) Handle(ctx context.Context) error {
+	now := h.clock.Now()
+	ended, err := h.shows.ListEnded(ctx, now)
+	if err != nil {
+		return fmt.Errorf("complete ended shows: %w", err)
+	}
+	var errs []error
+	for _, id := range ended {
+		if err := withShow(ctx, h.shows, "complete show", id.String(), "", func(show *domain.Show) error {
+			return show.Complete(now)
+		}); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if err := errors.Join(errs...); err != nil {
+		return fmt.Errorf("complete ended shows: %w", err)
+	}
+	return nil
 }
 
 // withShow runs the load → authorise → decide → save recipe, retried on a

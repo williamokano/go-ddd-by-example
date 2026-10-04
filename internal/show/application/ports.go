@@ -19,6 +19,10 @@ type ShowRepository interface {
 	// ListOpenAtVenue returns the venue's shows that are not cancelled or
 	// completed: the ones the SchedulingPolicy and SHW-7 care about.
 	ListOpenAtVenue(ctx context.Context, venueID domain.VenueID) ([]*domain.Show, error)
+
+	// ListEnded returns the Published and SoldOut shows that ended by now:
+	// the ones SHW-9 completes.
+	ListEnded(ctx context.Context, now time.Time) ([]domain.ShowID, error)
 }
 
 // VenueLayouts is Show's local projection of Venue's facts (the ACL's store).

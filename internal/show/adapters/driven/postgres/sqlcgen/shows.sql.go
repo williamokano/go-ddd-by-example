@@ -88,6 +88,30 @@ func (q *Queries) InsertShow(ctx context.Context, arg InsertShowParams) (int64, 
 	return result.RowsAffected(), nil
 }
 
+const listEndedShows = `-- name: ListEndedShows :many
+SELECT id FROM show.shows WHERE status IN ('published', 'sold_out') AND ends_at <= $1
+`
+
+func (q *Queries) ListEndedShows(ctx context.Context, endsAt time.Time) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listEndedShows, endsAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOpenShowsAtVenue = `-- name: ListOpenShowsAtVenue :many
 SELECT id, venue_id, promoter_id, title, doors_open, starts_at, ends_at, status, prices, cancellation_reason, version
 FROM show.shows

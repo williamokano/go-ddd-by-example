@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -56,6 +57,19 @@ func (r *ShowRepository) ListOpenAtVenue(ctx context.Context, venueID domain.Ven
 		shows = append(shows, s)
 	}
 	return shows, nil
+}
+
+// ListEnded implements application.ShowRepository.
+func (r *ShowRepository) ListEnded(ctx context.Context, now time.Time) ([]domain.ShowID, error) {
+	ids, err := sqlcgen.New(pgplatform.Conn(ctx, r.pool)).ListEndedShows(ctx, now)
+	if err != nil {
+		return nil, fmt.Errorf("list ended shows: %w", err)
+	}
+	out := make([]domain.ShowID, len(ids))
+	for i, id := range ids {
+		out[i] = domain.NewShowID(id)
+	}
+	return out, nil
 }
 
 // Save implements application.ShowRepository.

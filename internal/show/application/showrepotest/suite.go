@@ -5,6 +5,7 @@ package showrepotest
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -122,6 +123,33 @@ func Run(t *testing.T, newRepo func(t *testing.T) application.ShowRepository) {
 
 		if left := show.PullEvents(); len(left) != 0 {
 			t.Errorf("%d events left after Save", len(left))
+		}
+	})
+
+	t.Run("list ended finds published and sold-out shows past their end (SHW-9)", func(t *testing.T) {
+		repo := newRepo(t)
+		venue := layout()
+		publish := func(s *domain.Show) *domain.Show {
+			if err := s.Price(prices(t), venue, now); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Publish(venue, now); err != nil {
+				t.Fatal(err)
+			}
+			return s
+		}
+		ended := publish(draft(t, venue, 0))
+		later := publish(draft(t, venue, 24*time.Hour))
+		stillDraft := draft(t, venue, 0)
+		for _, s := range []*domain.Show{ended, later, stillDraft} {
+			save(t, repo, s)
+		}
+
+		got, err := repo.ListEnded(context.Background(), now.Add(30*24*time.Hour+3*time.Hour))
+
+		// The database may hold other tests' shows: check ours only.
+		if err != nil || !slices.Contains(got, ended.ID()) || slices.Contains(got, later.ID()) || slices.Contains(got, stillDraft.ID()) {
+			t.Errorf("ListEnded() = %v, %v; want %s and neither the later show nor the draft", got, err, ended.ID())
 		}
 	})
 

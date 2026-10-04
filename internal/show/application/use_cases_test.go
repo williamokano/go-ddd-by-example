@@ -177,3 +177,34 @@ func TestMarkShowSoldOut(t *testing.T) {
 		}
 	})
 }
+
+func TestCompleteEndedShows(t *testing.T) {
+	f := newFixture(t)
+	id := f.publishedShow(t)
+	complete := application.NewCompleteEndedShowsHandler(f.shows, f.clock)
+
+	if err := complete.Handle(f.ctx); err != nil || f.status(t, id) != domain.Published {
+		t.Fatalf("before the end: err %v, status %v; want still published", err, f.status(t, id))
+	}
+	f.clock.Advance(60 * 24 * time.Hour)
+
+	if err := complete.Handle(f.ctx); err != nil || f.status(t, id) != domain.Completed {
+		t.Errorf("after the end: err %v, status %v; want completed (SHW-9)", err, f.status(t, id))
+	}
+}
+
+func TestMarkShowBackOnSale(t *testing.T) {
+	f := newFixture(t)
+	id := f.publishedShow(t)
+	if err := f.soldOut.Handle(f.ctx, application.MarkShowSoldOut{ShowID: id.String()}); err != nil {
+		t.Fatal(err)
+	}
+	back := application.NewMarkShowBackOnSaleHandler(f.shows, f.clock)
+
+	err1 := back.Handle(f.ctx, application.MarkShowBackOnSale{ShowID: id.String()})
+	err2 := back.Handle(f.ctx, application.MarkShowBackOnSale{ShowID: id.String()})
+
+	if err1 != nil || err2 != nil || f.status(t, id) != domain.Published {
+		t.Errorf("errs = %v, %v; status %v; want published (SHW-10)", err1, err2, f.status(t, id))
+	}
+}

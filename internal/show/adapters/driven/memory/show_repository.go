@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 
@@ -59,6 +60,19 @@ func (r *ShowRepository) ListOpenAtVenue(_ context.Context, venueID domain.Venue
 	for _, state := range r.shows {
 		if state.VenueID == venueID && !state.Status.IsTerminal() {
 			out = append(out, domain.RehydrateShow(state))
+		}
+	}
+	return out, nil
+}
+
+// ListEnded implements application.ShowRepository.
+func (r *ShowRepository) ListEnded(_ context.Context, now time.Time) ([]domain.ShowID, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []domain.ShowID
+	for id, state := range r.shows {
+		if (state.Status == domain.Published || state.Status == domain.SoldOut) && !now.Before(state.Schedule.EndsAt()) {
+			out = append(out, id)
 		}
 	}
 	return out, nil
