@@ -1,0 +1,26 @@
+{
+  "venue_id": "0192f5e0-7c1a-7b3e-9d2a-3f4b5c6d7e8f",
+  "name": "Coliseu dos Recreios",
+  "sections": [
+    {
+      "code": "ORCH",
+      "kind": "seated",
+      "rows": [
+        {
+          "label": "A",
+          "seats": 10
+        },
+        {
+          "label": "B",
+          "seats": 12
+        }
+      ]
+    },
+    {
+      "code": "FLOOR",
+      "kind": "ga",
+      "capacity": 500
+    }
+  ],
+  "activated_at": "2026-11-01T20:00:00Z"
+}
