@@ -3,7 +3,7 @@
 Source of truth for *where we are* in the course. Lessons live in `docs/part-*.html`.
 Tick a lesson when its "Done when" checks pass; add a one-line note (date, anything notable).
 
-**Current lesson:** 6.1 — The outer loop: the acceptance test first
+**Current lesson:** 7.1 — Extract the shared kernel
 
 ## Part 0 — Orientation & setup (`docs/part-0-orientation.html`)
 - [x] 0.1 Event storming on paper
@@ -68,12 +68,14 @@ Tick a lesson when its "Done when" checks pass; add a one-line note (date, anyth
   - Kafka stopped: activation still 204, backlog 1 in venue.outbox; Kafka back: drained in ~6s.
 
 ## Part 6 — The Show context (`docs/part-6-show-context.html`)
-- [ ] 6.1 The outer loop: the acceptance test first
-- [ ] 6.2 Value objects: ShowID, Schedule, Money, PriceList
-- [ ] 6.3 The Show aggregate and its state machine
-- [ ] 6.4 Domain service: SchedulingPolicy
-- [ ] 6.5 Anti-corruption layer: the local VenueLayout projection
-- [ ] 6.6 Use cases, adapters, contracts, and the outer loop goes green
+- [x] 6.1 The outer loop: the acceptance test first
+- [x] 6.2 Value objects: ShowID, Schedule, Money, PriceList
+- [x] 6.3 The Show aggregate and its state machine
+  - DraftShow/Price/Publish take the local VenueLayout, so SHW-1 (active venue) stays a domain rule.
+- [x] 6.4 Domain service: SchedulingPolicy
+- [x] 6.5 Anti-corruption layer: the local VenueLayout projection
+- [x] 6.6 Use cases, adapters, contracts, and the outer loop goes green
+  - Authorisation (only the drafting promoter) is an application rule: ErrNotPromoter → 403.
 
 ## Part 7 — Ticketing: the core domain (`docs/part-7-ticketing-core.html`)
 - [ ] 7.1 Extract the shared kernel

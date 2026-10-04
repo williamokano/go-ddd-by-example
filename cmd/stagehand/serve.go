@@ -17,10 +17,16 @@ import (
 	"github.com/williamokano/go-ddd-by-example/internal/platform/kafka"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/outbox"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/postgres"
+	showids "github.com/williamokano/go-ddd-by-example/internal/show/adapters/driven/ids"
+	showpg "github.com/williamokano/go-ddd-by-example/internal/show/adapters/driven/postgres"
+	showconsumer "github.com/williamokano/go-ddd-by-example/internal/show/adapters/driving/consumer"
+	showhttp "github.com/williamokano/go-ddd-by-example/internal/show/adapters/driving/httpapi"
+	showapp "github.com/williamokano/go-ddd-by-example/internal/show/application"
 	"github.com/williamokano/go-ddd-by-example/internal/venue/adapters/driven/ids"
 	venuepg "github.com/williamokano/go-ddd-by-example/internal/venue/adapters/driven/postgres"
 	"github.com/williamokano/go-ddd-by-example/internal/venue/adapters/driving/httpapi"
 	"github.com/williamokano/go-ddd-by-example/internal/venue/application"
+	venuecontracts "github.com/williamokano/go-ddd-by-example/internal/venue/contracts"
 )
 
 // serve is the composition root: the only place that knows every concrete
@@ -47,7 +53,9 @@ func serve(ctx context.Context) error {
 	// Background work, tied to the root context: stops on SIGINT/SIGTERM.
 	var background sync.WaitGroup
 	defer background.Wait()
-	background.Go(func() { outbox.NewRelay(pool, "venue", producer, logger).Run(ctx, cfg.OutboxPollInterval) })
+	for _, schema := range []string{"venue", "show"} {
+		background.Go(func() { outbox.NewRelay(pool, schema, producer, logger).Run(ctx, cfg.OutboxPollInterval) })
+	}
 
 	// Driven adapters.
 	clk := clock.System{}
@@ -63,9 +71,29 @@ func serve(ctx context.Context) error {
 		Queries:    venuepg.NewVenueQueries(pool),
 	}, logger)
 
+	// Show: its own repositories, its projection of Venue, its API and its
+	// consumer of venue.events (group "show").
+	shows := showpg.NewShowRepository(pool)
+	layouts := showpg.NewVenueLayouts(pool)
+	showAPI := showhttp.Routes(showhttp.UseCases{
+		Draft:   showapp.NewDraftShowHandler(shows, layouts, showids.NewShowIDs(idgen.UUIDv7{}), clk),
+		Price:   showapp.NewPriceShowHandler(shows, layouts, clk),
+		Publish: showapp.NewPublishShowHandler(shows, layouts, clk),
+		Cancel:  showapp.NewCancelShowHandler(shows, clk),
+		Queries: showpg.NewShowQueries(pool),
+	}, logger)
+	venueEvents := showconsumer.NewVenueConsumer(
+		showapp.NewOnVenueActivatedHandler(layouts),
+		showapp.NewOnVenueRetiredHandler(layouts, shows, clk),
+		logger,
+	)
+	consume(ctx, &background, cfg, "show", []string{venuecontracts.Topic}, venueEvents.Handle, logger)
+
 	mux := http.NewServeMux()
 	mux.Handle("/venues", venueAPI)
 	mux.Handle("/venues/", venueAPI)
+	mux.Handle("/shows", showAPI)
+	mux.Handle("/shows/", showAPI)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
 
 	server := &http.Server{
@@ -74,6 +102,18 @@ func serve(ctx context.Context) error {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	return runServer(ctx, server, logger)
+}
+
+// consume runs a consumer group in the background until ctx is done.
+func consume(ctx context.Context, wg *sync.WaitGroup, cfg config.Config, group string, topics []string, handle kafka.Handler, logger *slog.Logger) {
+	wg.Go(func() {
+		err := kafka.Run(ctx, kafka.ConsumerConfig{
+			Brokers: cfg.KafkaBrokers, Group: group, Topics: topics, MaxAttempts: 5, Backoff: 100 * time.Millisecond,
+		}, handle, logger)
+		if err != nil {
+			logger.Error("consumer stopped", "group", group, "error", err)
+		}
+	})
 }
 
 // runServer serves until ctx is cancelled (SIGINT/SIGTERM), then drains
