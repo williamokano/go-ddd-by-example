@@ -99,6 +99,7 @@ VenueRetired ─────────▶ ShowCancelled (each future show)
   <tr><td>Price list</td><td>One price per section of the venue (a <em>Money</em> amount per section code).</td></tr>
   <tr><td>Venue layout (local)</td><td>Show's own read-only copy of what it needs to know about a venue: its id, whether it is active, and its layout (sections, rows, GA capacities), which it forwards to Ticketing on publish. Built from Venue's events.</td></tr>
   <tr><td>Draft / Published / Sold out / Cancelled / Completed</td><td>Show lifecycle (state machine below).</td></tr>
+  <tr><td>Completed</td><td>A show whose end time has passed. The clock completes it, not a person (Part 9.5).</td></tr>
 </table></div>
 
 <h3>Ticketing context — glossary</h3>
@@ -111,6 +112,11 @@ VenueRetired ─────────▶ ShowCancelled (each future show)
   <tr><td>Ticket</td><td>Proof of entry for one seat at one show, with a unique ticket code. It can be voided.</td></tr>
   <tr><td>Void</td><td>To invalidate a ticket (or a whole inventory) because the show was cancelled.</td></tr>
   <tr><td>Refund</td><td>Returning a paid order's money through the payment provider.</td></tr>
+  <tr><td>Section inventory</td><td>Since Part 9.1 (ADR-013): the inventory of one section of one show. The show inventory is the set of its sections.</td></tr>
+  <tr><td>Check-in</td><td>Letting a ticket in at a gate, on the show's day. A ticket is checked in once (Part 9.2).</td></tr>
+  <tr><td>Return</td><td>The buyer giving a fulfilled order back before the show: refunded, tickets voided, seats back on sale (Part 9.5).</td></tr>
+  <tr><td>Back on sale</td><td>A sold-out section (and show) that has seats again after a return.</td></tr>
+  <tr><td>Service fee / VAT / Price breakdown</td><td>Stagehand's fee on an order, the tax at the venue country's rate, and the stored split subtotal + fee + VAT = total (Part 9.8).</td></tr>
 </table></div>
 
 <h2>Context map</h2>
@@ -158,14 +164,14 @@ VenueRetired ─────────▶ ShowCancelled (each future show)
   <tr><th>ID</th><th>Rule (invariant or policy)</th></tr>
   <tr><td>VEN-1</td><td>A venue has a non-blank name (≤ 120 chars) and a valid address (street, city, country code ISO-3166 alpha-2).</td></tr>
   <tr><td>VEN-2</td><td>Section codes are unique within a venue (case-insensitive, stored upper-case, 1–10 chars <code>[A-Z0-9-]</code>).</td></tr>
-  <tr><td>VEN-3</td><td>A seated section has ≥ 1 row, each row ≥ 1 seat, and row labels are unique within the section. A GA section has a capacity ≥ 1 and no rows.</td></tr>
+  <tr><td>VEN-3</td><td>A seated section has ≥ 1 row, each row ≥ 1 seat, and row labels are unique within the section. A GA section has a capacity ≥ 1 and no rows. <em>(Part 9.3: a row may mark some of its seats as accessible (step-free); each must be a seat of that row, listed once.)</em></td></tr>
   <tr><td>VEN-4</td><td>The layout (sections) can only change while the venue is <em>Draft</em>.</td></tr>
   <tr><td>VEN-5</td><td>A venue can be activated only from Draft and only if it has ≥ 1 section.</td></tr>
   <tr><td>VEN-6</td><td>A venue can be retired only when Active. Retired is terminal.</td></tr>
   <tr><td>VEN-7</td><td>Capacity = the number of seats in seated sections + the capacity of GA sections.</td></tr>
 </table></div>
 <p><strong>Commands → domain events:</strong> RegisterVenue → <code>VenueRegistered</code> · AddSection → <code>SectionAdded</code> · ActivateVenue → <code>VenueActivated</code> · RetireVenue → <code>VenueRetired</code>.</p>
-<p><strong>Publishes:</strong> <code>venue.activated.v1</code> (venue id, name, full layout: each section with code, kind, and rows (label + seat count) or GA capacity) · <code>venue.retired.v1</code> (venue id, retired at).</p>
+<p><strong>Publishes:</strong> <code>venue.activated.v1</code> (venue id, name, full layout: each section with code, kind, and rows (label + seat count, plus accessible seats since 9.3) or GA capacity; the venue's country since 9.8) · <code>venue.retired.v1</code> (venue id, retired at).</p>
 
 <h3>Show Scheduling</h3>
 <p><strong>Aggregate: <code>Show</code></strong> (root). <strong>Value objects:</strong> <code>ShowID</code>, <code>VenueID</code> (Show's own type), <code>PromoterID</code>, <code>Schedule</code>, <code>Money</code>, <code>PriceList</code>, <code>CancellationReason</code>, <code>ShowStatus</code>. It references the venue by <strong>ID only</strong>. Read model: <code>VenueLayout</code> (a local projection of venue facts).</p>
@@ -186,14 +192,17 @@ VenueRetired ─────────▶ ShowCancelled (each future show)
   <tr><td>SHW-6</td><td>Draft, Published or SoldOut shows can be cancelled. Cancelled and Completed are terminal.</td></tr>
   <tr><td>SHW-7</td><td>When a venue is retired, every non-terminal show at it whose start is in the future is cancelled with reason <code>venue_retired</code>. <em>(Policy reacting to another context.)</em></td></tr>
   <tr><td>SHW-8</td><td>When Ticketing reports the inventory is sold out, a Published show becomes SoldOut. Receiving the same fact twice, or receiving it for a Cancelled/Completed show, is a no-op.</td></tr>
+  <tr><td>SHW-9</td><td>A Published or SoldOut show becomes Completed once its <code>endsAt</code> has passed. Nobody sends that command: a scheduler sweeps for ended shows (<em>a policy driven by the clock</em>). Completing a show before it ends is rejected; completing it twice is a no-op. <em>(Part 9.5.)</em></td></tr>
+  <tr><td>SHW-10</td><td>When Ticketing reports a sold-out show has seats again (a return, TKT-14), a SoldOut show becomes Published. Like SHW-8, receiving it twice, or for a Published, Cancelled or Completed show, is a no-op. <em>(Part 9.5.)</em></td></tr>
 </table></div>
 <p><strong>Publishes:</strong> <code>show.published.v1</code> (show id, venue id, schedule, and each section with code, kind, rows or GA capacity, and price) · <code>show.cancelled.v1</code> (show id, reason). <strong>Consumes:</strong> <code>venue.activated.v1</code>, <code>venue.retired.v1</code>, <code>ticketing.inventory_sold_out.v1</code>.</p>
+<p><em>After Part 9:</em> <code>show.published.v1</code> is retired and replaced by <code>show.published.v2</code> (9.3: seated sections list every seat, so a seat can carry an <code>accessible</code> flag; 9.8 adds <code>venue_country</code> additively, without a new version). Show also consumes <code>ticketing.inventory_available_again.v1</code> (SHW-10).</p>
 <div class="callout discuss"><span class="label">Design note</span><p><code>show.published.v1</code> carries a <em>snapshot</em> of the sections and prices, so Ticketing never has to ask Venue or Show anything. Because of that snapshot, if the venue's layout changed later, already-published shows keep selling the layout they were published with. That's the business rule we want.</p></div>
 
 <h3>Ticketing (core)</h3>
 <p><strong>Aggregates:</strong></p>
 <ul>
-  <li><code>ShowInventory</code> (root): per show, all seat states plus the active <code>Hold</code>s (entities inside it). It's the consistency boundary for "never sell a seat twice".</li>
+  <li><code>ShowInventory</code> (root): per show, all seat states plus the active <code>Hold</code>s (entities inside it). It's the consistency boundary for "never sell a seat twice". <em>(Part 9.1, ADR-013, splits it into one <code>SectionInventory</code> per show and section: a busy show stops serialising every hold on one row. A hold is then always in one section.)</em></li>
   <li><code>Order</code> (root): one checkout of one hold. Contains <code>OrderLine</code> value objects.</li>
   <li><code>Ticket</code> (root): one per sold seat. Small and independent, so it can be voided or checked in without locking anything else.</li>
 </ul>
@@ -202,18 +211,22 @@ VenueRetired ─────────▶ ShowCancelled (each future show)
   <tr><th>ID</th><th>Rule</th></tr>
   <tr><td>TKT-1</td><td>An inventory is opened once per published show, from the snapshot in <code>show.published.v1</code>. Opening it twice is a no-op (idempotent).</td></tr>
   <tr><td>TKT-2</td><td>A hold contains 1–8 seats, all Available at the moment of holding. Otherwise the whole hold is rejected (all or nothing).</td></tr>
-  <tr><td>TKT-3</td><td>A customer has at most one active hold per show.</td></tr>
+  <tr><td>TKT-3</td><td>A customer has at most one active hold per show. <em>(Since ADR-013: per show <strong>and section</strong>. The inventory that would check "per show" no longer exists, and checking across sections would need a cross-aggregate lock for a rule the business doesn't care much about.)</em></td></tr>
   <tr><td>TKT-4</td><td>A hold expires at <code>heldAt + 10 min</code>. Expired holds release their seats. Expiry is evaluated against a time passed in, never <code>time.Now()</code> inside the domain.</td></tr>
   <tr><td>TKT-5</td><td><strong>A seat is never Sold twice and never held by two holds.</strong> (The core invariant.)</td></tr>
-  <tr><td>TKT-6</td><td>An order is placed only for a non-expired hold owned by the same customer. Its total = the sum of the line prices, in one currency. It carries a valid contact email, given at checkout: where the tickets and any refund notice are sent.</td></tr>
+  <tr><td>TKT-6</td><td>An order is placed only for a non-expired hold owned by the same customer. Its total = the sum of the line prices, in one currency (fees and VAT on top since 9.8, TKT-15). It carries a valid contact email, given at checkout: where the tickets and any refund notice are sent.</td></tr>
   <tr><td>TKT-7</td><td>Order lifecycle: Pending → Paid → Fulfilled, or Pending → PaymentFailed, or Paid → Refunded. Fulfilled → Refunded happens when the show is cancelled.</td></tr>
   <tr><td>TKT-8</td><td>Confirming a hold for a paid order sells its seats. If the hold has expired or been released by then, confirmation fails and the order must be refunded (compensation).</td></tr>
   <tr><td>TKT-9</td><td>One ticket is issued per sold seat. Each ticket code is unique.</td></tr>
-  <tr><td>TKT-10</td><td>When every seat is Sold, the inventory raises <code>InventorySoldOut</code> exactly once.</td></tr>
+  <tr><td>TKT-10</td><td>When every seat is Sold, the inventory raises <code>InventorySoldOut</code> exactly once. <em>(Since ADR-013: each section raises <code>SectionSoldOut</code>, and the <code>ShowSoldOut</code> domain service decides, from all sections, when the show as a whole is sold out.)</em></td></tr>
   <tr><td>TKT-11</td><td>When a show is cancelled, the inventory closes (no new holds; active holds are released), all its tickets are voided, and every Paid/Fulfilled order is refunded.</td></tr>
   <tr><td>TKT-12</td><td>No new holds on a closed inventory or after the show's start time.</td></tr>
+  <tr><td>TKT-13</td><td>A ticket is checked in at a gate once, never when voided, and only on the show's day: within 12 hours before or after its start (Ticketing knows the start, not the venue's time zone). <em>(Part 9.2.)</em></td></tr>
+  <tr><td>TKT-14</td><td>Only the buyer may return a Fulfilled order, and only before the show starts. The order is refunded, its tickets are voided and its seats go back on sale. If the section was sold out, it announces it has seats again (<code>SectionBackOnSale</code>, published as <code>inventory_available_again.v1</code>). <em>(Part 9.5.)</em></td></tr>
+  <tr><td>TKT-15</td><td>Order total = subtotal + service fee + VAT. The fee is the first matching fee rule (7% for 6+ seats, otherwise 10%), never below EUR 1.50. VAT is charged on subtotal + fee at the venue country's rate; no rate means no sale. The order stores the breakdown, not only the total. <em>(Part 9.8: <code>PricingPolicy</code> domain service, specification pattern.)</em></td></tr>
 </table></div>
 <p><strong>Publishes:</strong> <code>ticketing.inventory_sold_out.v1</code>, <code>ticketing.tickets_issued.v1</code>, <code>ticketing.order_refunded.v1</code> (the last two carry the order's contact email, so Notifications knows where to write). <strong>Consumes:</strong> <code>show.published.v1</code>, <code>show.cancelled.v1</code>.</p>
+<p><em>After Part 9:</em> Ticketing also publishes <code>ticketing.inventory_available_again.v1</code> (TKT-14 → SHW-10). It consumes <code>show.published.v2</code> and skips the retired v1. The checkout saga runs as an orchestrated <code>CheckoutProcess</code> by default (ADR-014); its steps travel as internal messages, never through <code>contracts</code>.</p>
 
 <h3>Notifications (generic)</h3>
 <p>No aggregates. A handler per integration event formats a message and sends it through an <code>EmailSender</code> port; the adapter just logs it. It's here to show that a transaction script is the right tool for a generic subdomain.</p>
@@ -237,7 +250,7 @@ VenueRetired ─────────▶ ShowCancelled (each future show)
 <ul>
   <li>Authentication and authorisation. Actor IDs come from headers.</li>
   <li>A real payment provider, real email, PDFs and QR codes.</li>
-  <li>Dynamic pricing, discounts, fees and taxes. (A stretch goal could add fees as a domain service.)</li>
+  <li>Dynamic pricing and discounts. (Fees and VAT arrive in Part 9.8 as a domain service, TKT-15.)</li>
   <li>A frontend. We drive everything over HTTP with <code>curl</code> / <code>.http</code> files.</li>
 </ul>
 </main>

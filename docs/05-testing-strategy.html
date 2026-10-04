@@ -131,13 +131,17 @@ func Run(t *testing.T, newRepo func(t *testing.T) application.VenueRepository) {
   <li>Build tag <code>e2e</code>. They start the full stack (<code>docker compose up -d --wait</code> via the Makefile, or a testcontainers Compose stack) and talk only HTTP. They never touch the database directly.</li>
   <li>Cross-context effects are eventually consistent, so they use an <code>eventually(t, 10*time.Second, func() bool {...})</code> polling helper. Never <code>time.Sleep(3*time.Second)</code>.</li>
   <li>They cover the scenarios S1–S6 from Chapter 1. Keep them few: they're slow and tell you <em>that</em> something broke, not <em>where</em>.</li>
-  <li>Hold expiry (S2, S3) needs time control. In e2e the hold TTL is configurable through an env var (e.g. 2s), so we don't wait 10 minutes.</li>
+  <li>Hold expiry (S2, S3) needs time control. In e2e the hold TTL is configurable through an env var (<code>make test-e2e</code> uses 3s), so we don't wait 10 minutes.</li>
+  <li>Payment outcomes are chosen per request with the test-only <code>X-Fake-Payment-Mode</code> header, so one running app serves every scenario.</li>
 </ul>
+<h3>Failure drills (Part 8.5)</h3>
+<p>Build tags <code>e2e,drills</code>, run by <code>make drills</code>. Each drill stops a Compose service on purpose (Kafka, Postgres, the app) in the middle of a flow, starts it again with <code>docker compose up -d --wait</code> (<code>start</code> doesn't wait for health), and asserts nothing was lost or doubled. They use the default 10-minute TTL: with the e2e 3s TTL, holds expire during the outage and the drill tests refunds instead of recovery. Drill 4 (Postgres down while messages flow) found a real bug: the consumer dead-lettered transient errors. ADR-015 is the fix.</p>
 
 <h2>Make targets</h2>
 <pre><code>make test              # go test ./...            — domain, application, http, contract, arch  (seconds)
 make test-integration  # go test -tags=integration ./...   — + testcontainers                  (~1 min)
 make test-e2e          # docker compose up + go test -tags=e2e ./test/e2e/...                  (~2 min)
+make drills            # docker compose up + the failure drills (stop/start services)          (~3 min)
 make cover             # coverage report; we read it, we don't chase a number</code></pre>
 <div class="callout warn"><span class="label">Coverage</span><p>The domain will reach ~100% coverage naturally with TDD. Don't chase a percentage elsewhere. One good e2e test covers <code>main.go</code> wiring better than an artificial unit test would.</p></div>
 </main>
