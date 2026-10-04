@@ -90,6 +90,25 @@ func TestVenueRepository_Save_StaleVersion(t *testing.T) {
 	}
 }
 
+func TestVenueRepository_Save_DrainsEvents(t *testing.T) {
+	repo := memory.NewVenueRepository()
+	venue := newDraftVenue(t)
+
+	if err := repo.Save(context.Background(), venue); err != nil {
+		t.Fatal(err)
+	}
+
+	want := []domain.DomainEvent{
+		domain.VenueRegistered{VenueID: venue.ID(), Name: venue.Name(), At: fixedNow},
+	}
+	if diff := cmp.Diff(want, repo.Published(), domainValues); diff != "" {
+		t.Errorf("Published() mismatch (-want +got):\n%s", diff)
+	}
+	if left := venue.PullEvents(); len(left) != 0 {
+		t.Errorf("venue still has %d pending events after Save", len(left))
+	}
+}
+
 var (
 	fixedNow     = time.Date(2026, 11, 1, 20, 0, 0, 0, time.UTC)
 	domainValues = cmp.AllowUnexported(

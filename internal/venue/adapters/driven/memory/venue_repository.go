@@ -6,6 +6,7 @@ package memory
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 
 	"github.com/williamokano/go-ddd-by-example/internal/venue/application"
@@ -19,7 +20,8 @@ import (
 // tests, because the stored venue would see the mutation.
 type VenueRepository struct {
 	mu     sync.Mutex
-	venues map[domain.VenueID]domain.VenueState
+	venues    map[domain.VenueID]domain.VenueState
+	published []domain.DomainEvent
 }
 
 // NewVenueRepository returns an empty repository.
@@ -50,7 +52,16 @@ func (r *VenueRepository) Save(_ context.Context, v *domain.Venue) error {
 	state := stateOf(v)
 	state.Version++
 	r.venues[v.ID()] = state
+	r.published = append(r.published, v.PullEvents()...)
 	return nil
+}
+
+// Published returns every event drained by Save, in order. It stands in for
+// the outbox, so tests can check which facts a use case produced.
+func (r *VenueRepository) Published() []domain.DomainEvent {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.published)
 }
 
 // stateOf reads the venue back through its getters.
