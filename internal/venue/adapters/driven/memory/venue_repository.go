@@ -19,7 +19,7 @@ import (
 // with the pointer, a use case that forgets to call Save would still pass its
 // tests, because the stored venue would see the mutation.
 type VenueRepository struct {
-	mu     sync.Mutex
+	mu        sync.Mutex
 	venues    map[domain.VenueID]domain.VenueState
 	published []domain.DomainEvent
 }
