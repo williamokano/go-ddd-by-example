@@ -29,4 +29,6 @@ type SeatView struct {
 	State   SeatState
 	HoldID  HoldID  // set while Held
 	OrderID OrderID // set once Sold
+
+	Accessible bool // step-free access (9.3)
 }

@@ -22,7 +22,8 @@ type (
 	}
 )
 
-// ShowConsumer consumes show.events (group "ticketing").
+// ShowConsumer consumes show.events (group "ticketing"). It reads
+// show.published.v2 and skips v1 (9.3): both arrive for every show, v1 first.
 type ShowConsumer struct {
 	open   openInventory
 	close  closeInventory
@@ -37,12 +38,16 @@ func NewShowConsumer(open openInventory, closer closeInventory, logger *slog.Log
 // Handle is a kafka.Handler.
 func (c *ShowConsumer) Handle(ctx context.Context, env kafka.Envelope) error {
 	switch env.EventType {
-	case showcontracts.TypeShowPublishedV1:
-		var e showcontracts.ShowPublishedV1
+	case showcontracts.TypeShowPublishedV2:
+		var e showcontracts.ShowPublishedV2
 		if err := json.Unmarshal(env.Payload, &e); err != nil {
 			return kafka.Permanent(fmt.Errorf("decode %s: %w", env.EventType, err))
 		}
-		if err := c.open.Handle(ctx, toOpenInventory(e)); err != nil {
+		cmd, err := toOpenInventory(e)
+		if err != nil {
+			return kafka.Permanent(fmt.Errorf("%s: %w", env.EventType, err))
+		}
+		if err := c.open.Handle(ctx, cmd); err != nil {
 			return fmt.Errorf("%s: %w", env.EventType, err)
 		}
 		return nil
@@ -61,14 +66,26 @@ func (c *ShowConsumer) Handle(ctx context.Context, env kafka.Envelope) error {
 	}
 }
 
-func toOpenInventory(e showcontracts.ShowPublishedV1) application.OpenInventory {
+// toOpenInventory folds v2's seats back into Ticketing's rows, numbered
+// 1..n; a row with gaps is not something Ticketing can sell.
+func toOpenInventory(e showcontracts.ShowPublishedV2) (application.OpenInventory, error) {
 	cmd := application.OpenInventory{ShowID: e.ShowID, StartsAt: e.StartsAt}
 	for _, s := range e.Sections {
 		spec := application.SectionSpec{Code: s.Code, Kind: s.Kind, Capacity: s.Capacity, Price: s.Price.Amount, Currency: s.Price.Currency}
-		for _, r := range s.Rows {
-			spec.Rows = append(spec.Rows, application.RowSpec{Label: r.Label, Seats: r.Seats})
+		for _, seat := range s.Seats {
+			if n := len(spec.Rows); n == 0 || spec.Rows[n-1].Label != seat.Row {
+				spec.Rows = append(spec.Rows, application.RowSpec{Label: seat.Row})
+			}
+			row := &spec.Rows[len(spec.Rows)-1]
+			if seat.Number != row.Seats+1 {
+				return application.OpenInventory{}, fmt.Errorf("section %s row %s: seat %d after seat %d", s.Code, seat.Row, seat.Number, row.Seats)
+			}
+			row.Seats++
+			if seat.Accessible {
+				row.Accessible = append(row.Accessible, seat.Number)
+			}
 		}
 		cmd.Sections = append(cmd.Sections, spec)
 	}
-	return cmd
+	return cmd, nil
 }

@@ -20,4 +20,6 @@ type SeatRow struct {
 	State    string
 	Amount   int64
 	Currency string
+
+	Accessible bool
 }

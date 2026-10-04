@@ -30,8 +30,9 @@ type SectionSpec struct {
 
 // RowSpec is one row of a seated section.
 type RowSpec struct {
-	Label string
-	Seats int
+	Label      string
+	Seats      int
+	Accessible []int // seat numbers with step-free access
 }
 
 // OpenInventoryHandler is the TKT-1 policy: one inventory per section of a
@@ -94,7 +95,7 @@ func newLayout(specs []SectionSpec) (domain.InventoryLayout, error) {
 		}
 		section := domain.InventorySection{Code: s.Code, Kind: s.Kind, Capacity: s.Capacity, Price: price}
 		for _, r := range s.Rows {
-			section.Rows = append(section.Rows, domain.InventoryRow{Label: r.Label, Seats: r.Seats})
+			section.Rows = append(section.Rows, domain.InventoryRow{Label: r.Label, Seats: r.Seats, Accessible: r.Accessible})
 		}
 		layout.Sections = append(layout.Sections, section)
 	}

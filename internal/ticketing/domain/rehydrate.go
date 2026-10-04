@@ -43,7 +43,7 @@ func RehydrateInventory(s InventoryState) *SectionInventory {
 		holds: make(map[HoldID]Hold, len(s.Holds)), closed: s.Closed, soldOut: s.SoldOut, version: s.Version,
 	}
 	for _, v := range s.Seats {
-		inv.seats[v.Ref] = &seat{price: v.Price, state: v.State, holdID: v.HoldID, orderID: v.OrderID}
+		inv.seats[v.Ref] = &seat{price: v.Price, state: v.State, holdID: v.HoldID, orderID: v.OrderID, accessible: v.Accessible}
 		inv.order = append(inv.order, v.Ref)
 	}
 	for _, h := range s.Holds {

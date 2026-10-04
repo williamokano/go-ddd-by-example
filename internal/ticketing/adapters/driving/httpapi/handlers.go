@@ -64,7 +64,7 @@ func (h *handlers) seats(w http.ResponseWriter, r *http.Request) {
 	}
 	resp := make([]seatResponse, len(rows))
 	for i, s := range rows {
-		resp[i] = seatResponse{Ref: s.Ref, State: s.State, Price: priceDTO{Amount: s.Amount, Currency: s.Currency}}
+		resp[i] = seatResponse{Ref: s.Ref, State: s.State, Price: priceDTO{Amount: s.Amount, Currency: s.Currency}, Accessible: s.Accessible}
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }

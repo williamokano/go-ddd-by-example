@@ -98,11 +98,15 @@ func TestReleaseHold(t *testing.T) {
 }
 
 func TestListSeats(t *testing.T) {
-	s := &stubs{seats: []application.SeatRow{{Ref: "ORCH/A/1", State: "available", Amount: 4500, Currency: "EUR"}}}
+	s := &stubs{seats: []application.SeatRow{
+		{Ref: "ORCH/A/1", State: "available", Amount: 4500, Currency: "EUR"},
+		{Ref: "ORCH/A/2", State: "available", Amount: 4500, Currency: "EUR", Accessible: true},
+	}}
 
 	w := do(s.handler(), http.MethodGet, "/shows/"+show+"/seats", "")
 
-	want := `[{"ref":"ORCH/A/1","state":"available","price":{"amount":4500,"currency":"EUR"}}]` + "\n"
+	want := `[{"ref":"ORCH/A/1","state":"available","price":{"amount":4500,"currency":"EUR"}},` +
+		`{"ref":"ORCH/A/2","state":"available","price":{"amount":4500,"currency":"EUR"},"accessible":true}]` + "\n"
 	if w.Code != http.StatusOK || w.Body.String() != want {
 		t.Errorf("status %d, body %s", w.Code, w.Body)
 	}

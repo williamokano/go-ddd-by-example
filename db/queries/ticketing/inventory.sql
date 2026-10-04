@@ -7,7 +7,7 @@ SELECT show_id, section, position, starts_at, closed, sold_out, version
 FROM ticketing.section_inventories WHERE show_id = $1 ORDER BY position;
 
 -- name: ListSeats :many
-SELECT seat_ref, price_amount, currency, state, hold_id, order_id
+SELECT seat_ref, price_amount, currency, state, hold_id, order_id, accessible
 FROM ticketing.seats WHERE show_id = $1 AND section = $2 ORDER BY position;
 
 -- name: ListHolds :many
@@ -27,8 +27,8 @@ SET closed = $3, sold_out = $4, version = version + 1, updated_at = now()
 WHERE show_id = $1 AND section = $2 AND version = sqlc.arg(expected_version);
 
 -- name: InsertSeats :copyfrom
-INSERT INTO ticketing.seats (show_id, section, seat_ref, position, price_amount, currency, state, hold_id, order_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
+INSERT INTO ticketing.seats (show_id, section, seat_ref, position, price_amount, currency, state, hold_id, order_id, accessible)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
 
 -- name: UpdateSeat :exec
 UPDATE ticketing.seats SET state = $3, hold_id = $4, order_id = $5
@@ -45,7 +45,7 @@ INSERT INTO ticketing.holds (hold_id, show_id, section, customer_id, seats, expi
 SELECT EXISTS (SELECT 1 FROM ticketing.section_inventories WHERE show_id = $1);
 
 -- name: ListShowSeats :many
-SELECT s.seat_ref, s.price_amount, s.currency, s.state
+SELECT s.seat_ref, s.price_amount, s.currency, s.state, s.accessible
 FROM ticketing.seats s
 JOIN ticketing.section_inventories i ON i.show_id = s.show_id AND i.section = s.section
 WHERE s.show_id = $1

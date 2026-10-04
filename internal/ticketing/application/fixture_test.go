@@ -48,7 +48,7 @@ func openCmd(showID string) application.OpenInventory {
 	return application.OpenInventory{
 		ShowID: showID, StartsAt: fixedNow.Add(30 * 24 * time.Hour),
 		Sections: []application.SectionSpec{
-			{Code: "ORCH", Kind: "seated", Rows: []application.RowSpec{{Label: "A", Seats: 2}}, Price: 4500, Currency: "EUR"},
+			{Code: "ORCH", Kind: "seated", Rows: []application.RowSpec{{Label: "A", Seats: 2, Accessible: []int{2}}}, Price: 4500, Currency: "EUR"},
 			{Code: "FLOOR", Kind: "ga", Capacity: 3, Price: 2500, Currency: "EUR"},
 		},
 	}

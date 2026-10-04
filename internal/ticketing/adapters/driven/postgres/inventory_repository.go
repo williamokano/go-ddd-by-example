@@ -129,7 +129,7 @@ func toSeatView(s sqlcgen.ListSeatsRow) (domain.SeatView, error) {
 	if !ok {
 		return domain.SeatView{}, fmt.Errorf("seat %s: unknown stored state %q", s.SeatRef, s.State)
 	}
-	view := domain.SeatView{Ref: ref, Price: price, State: state}
+	view := domain.SeatView{Ref: ref, Price: price, State: state, Accessible: s.Accessible}
 	if s.HoldID.Valid {
 		view.HoldID = domain.NewHoldID(s.HoldID.UUID)
 	}
@@ -243,7 +243,7 @@ func updateInventory(ctx context.Context, q *sqlcgen.Queries, inv *domain.Sectio
 func seatRow(inv *domain.SectionInventory, s domain.SeatView) sqlcgen.InsertSeatsParams {
 	row := sqlcgen.InsertSeatsParams{
 		ShowID: inv.ShowID().UUID(), Section: inv.Section(), SeatRef: s.Ref.String(), PriceAmount: s.Price.Amount(),
-		Currency: s.Price.Currency().String(), State: s.State.String(),
+		Currency: s.Price.Currency().String(), State: s.State.String(), Accessible: s.Accessible,
 	}
 	if !s.HoldID.IsZero() {
 		row.HoldID = uuid.NullUUID{UUID: s.HoldID.UUID(), Valid: true}

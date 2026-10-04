@@ -24,6 +24,8 @@ type seatResponse struct {
 	Ref   string   `json:"ref"`
 	State string   `json:"state"`
 	Price priceDTO `json:"price"`
+
+	Accessible bool `json:"accessible,omitempty"`
 }
 
 type priceDTO struct {

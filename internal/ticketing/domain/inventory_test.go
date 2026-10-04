@@ -151,3 +151,22 @@ func TestSectionInventory_Hold(t *testing.T) {
 		}
 	})
 }
+
+// Accessibility travels from Venue's layout to each seat (9.3).
+func TestOpenInventory_MarksAccessibleSeats(t *testing.T) {
+	l := layout(t)
+	l.Sections[0].Rows[0].Accessible = []int{2}
+
+	sections, err := domain.OpenInventory(showID, l, startsAt, now)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	accessible := map[string]bool{}
+	for _, s := range sections[0].Seats() {
+		accessible[s.Ref.String()] = s.Accessible
+	}
+	if !accessible["ORCH/A/2"] || accessible["ORCH/A/1"] || accessible["ORCH/B/1"] {
+		t.Errorf("accessible = %v, want only ORCH/A/2", accessible)
+	}
+}

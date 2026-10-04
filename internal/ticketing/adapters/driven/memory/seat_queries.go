@@ -30,6 +30,7 @@ func (q SeatQueries) ListSeats(ctx context.Context, showID domain.ShowID) ([]app
 		for _, s := range inv.Seats() {
 			rows = append(rows, application.SeatRow{
 				Ref: s.Ref.String(), State: s.State.String(), Amount: s.Price.Amount(), Currency: s.Price.Currency().String(),
+				Accessible: s.Accessible,
 			})
 		}
 	}

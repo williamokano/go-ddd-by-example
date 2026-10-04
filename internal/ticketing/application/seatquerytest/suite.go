@@ -40,7 +40,7 @@ func Run(t *testing.T, newQueries func(t *testing.T) (application.InventoryRepos
 			t.Fatal(err)
 		}
 		if len(rows) != 5 || rows[0] != (application.SeatRow{Ref: "ORCH/A/1", State: "available", Amount: 4500, Currency: "EUR"}) ||
-			rows[1].State != "held" || rows[4].Ref != "FLOOR/GA/0003" {
+			rows[1].State != "held" || !rows[1].Accessible || rows[4].Ref != "FLOOR/GA/0003" {
 			t.Errorf("rows = %+v", rows)
 		}
 	})

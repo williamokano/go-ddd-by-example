@@ -112,6 +112,7 @@ type InsertSeatsParams struct {
 	State       string
 	HoldID      uuid.NullUUID
 	OrderID     uuid.NullUUID
+	Accessible  bool
 }
 
 const insertSectionInventory = `-- name: InsertSectionInventory :execrows
@@ -198,7 +199,7 @@ func (q *Queries) ListHolds(ctx context.Context, arg ListHoldsParams) ([]ListHol
 }
 
 const listSeats = `-- name: ListSeats :many
-SELECT seat_ref, price_amount, currency, state, hold_id, order_id
+SELECT seat_ref, price_amount, currency, state, hold_id, order_id, accessible
 FROM ticketing.seats WHERE show_id = $1 AND section = $2 ORDER BY position
 `
 
@@ -214,6 +215,7 @@ type ListSeatsRow struct {
 	State       string
 	HoldID      uuid.NullUUID
 	OrderID     uuid.NullUUID
+	Accessible  bool
 }
 
 func (q *Queries) ListSeats(ctx context.Context, arg ListSeatsParams) ([]ListSeatsRow, error) {
@@ -232,6 +234,7 @@ func (q *Queries) ListSeats(ctx context.Context, arg ListSeatsParams) ([]ListSea
 			&i.State,
 			&i.HoldID,
 			&i.OrderID,
+			&i.Accessible,
 		); err != nil {
 			return nil, err
 		}
@@ -287,7 +290,7 @@ func (q *Queries) ListSectionInventories(ctx context.Context, showID uuid.UUID) 
 }
 
 const listShowSeats = `-- name: ListShowSeats :many
-SELECT s.seat_ref, s.price_amount, s.currency, s.state
+SELECT s.seat_ref, s.price_amount, s.currency, s.state, s.accessible
 FROM ticketing.seats s
 JOIN ticketing.section_inventories i ON i.show_id = s.show_id AND i.section = s.section
 WHERE s.show_id = $1
@@ -299,6 +302,7 @@ type ListShowSeatsRow struct {
 	PriceAmount int64
 	Currency    string
 	State       string
+	Accessible  bool
 }
 
 func (q *Queries) ListShowSeats(ctx context.Context, showID uuid.UUID) ([]ListShowSeatsRow, error) {
@@ -315,6 +319,7 @@ func (q *Queries) ListShowSeats(ctx context.Context, showID uuid.UUID) ([]ListSh
 			&i.PriceAmount,
 			&i.Currency,
 			&i.State,
+			&i.Accessible,
 		); err != nil {
 			return nil, err
 		}

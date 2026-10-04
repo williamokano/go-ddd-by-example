@@ -34,7 +34,7 @@ func (q *SeatQueries) ListSeats(ctx context.Context, showID domain.ShowID) ([]ap
 	}
 	rows := make([]application.SeatRow, len(seats))
 	for i, s := range seats {
-		rows[i] = application.SeatRow{Ref: s.SeatRef, State: s.State, Amount: s.PriceAmount, Currency: s.Currency}
+		rows[i] = application.SeatRow{Ref: s.SeatRef, State: s.State, Amount: s.PriceAmount, Currency: s.Currency, Accessible: s.Accessible}
 	}
 	return rows, nil
 }

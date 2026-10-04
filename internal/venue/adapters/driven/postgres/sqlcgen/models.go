@@ -102,6 +102,7 @@ type TicketingSeat struct {
 	HoldID      pgtype.UUID
 	OrderID     pgtype.UUID
 	Section     string
+	Accessible  bool
 }
 
 type TicketingSectionInventory struct {

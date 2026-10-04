@@ -152,3 +152,19 @@ func TestHoldSeats_OneCustomerCanHoldInTwoSections(t *testing.T) {
 	f.holdSeats(t, show, customer, "ORCH/A/1")
 	f.holdSeats(t, show, customer, "FLOOR/GA/0001")
 }
+
+func TestOpenInventory_KeepsAccessibleSeats(t *testing.T) {
+	f := newFixture(t)
+	show := f.openShow(t)
+	id, _ := domain.ParseShowID(show)
+
+	orch, err := f.inventories.Get(f.ctx, id, "ORCH")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range orch.Seats() {
+		if s.Accessible != (s.Ref.String() == "ORCH/A/2") {
+			t.Errorf("%s accessible = %v", s.Ref, s.Accessible)
+		}
+	}
+}

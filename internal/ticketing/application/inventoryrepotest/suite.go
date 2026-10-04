@@ -162,7 +162,7 @@ func Layout(t *testing.T) domain.InventoryLayout {
 	p45, _ := sharedkernel.NewMoney(4500, eur)
 	p25, _ := sharedkernel.NewMoney(2500, eur)
 	return domain.InventoryLayout{Sections: []domain.InventorySection{
-		{Code: "ORCH", Kind: domain.KindSeated, Rows: []domain.InventoryRow{{Label: "A", Seats: 2}}, Price: p45},
+		{Code: "ORCH", Kind: domain.KindSeated, Rows: []domain.InventoryRow{{Label: "A", Seats: 2, Accessible: []int{2}}}, Price: p45},
 		{Code: "FLOOR", Kind: domain.KindGA, Capacity: 3, Price: p25},
 	}}
 }

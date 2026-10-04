@@ -32,10 +32,11 @@ type SectionInventory struct {
 }
 
 type seat struct {
-	price   sharedkernel.Money
-	state   SeatState
-	holdID  HoldID
-	orderID OrderID
+	accessible bool
+	price      sharedkernel.Money
+	state      SeatState
+	holdID     HoldID
+	orderID    OrderID
 }
 
 // OpenInventory opens the inventory of a published show from its layout
@@ -76,6 +77,9 @@ func openSection(showID ShowID, s InventorySection, position int, startsAt, now 
 			for n := 1; n <= row.Seats; n++ {
 				if err := inv.addSeat(s.Code, row.Label, n, s.Price); err != nil {
 					return nil, err
+				}
+				if slices.Contains(row.Accessible, n) {
+					inv.seats[inv.order[len(inv.order)-1]].accessible = true
 				}
 			}
 		}
@@ -322,7 +326,7 @@ func (inv *SectionInventory) Seats() []SeatView {
 	out := make([]SeatView, 0, len(inv.order))
 	for _, ref := range inv.order {
 		s := inv.seats[ref]
-		out = append(out, SeatView{Ref: ref, Price: s.price, State: s.state, HoldID: s.holdID, OrderID: s.orderID})
+		out = append(out, SeatView{Ref: ref, Price: s.price, State: s.state, HoldID: s.holdID, OrderID: s.orderID, Accessible: s.accessible})
 	}
 	return out
 }

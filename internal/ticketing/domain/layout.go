@@ -25,6 +25,7 @@ type InventorySection struct {
 
 // InventoryRow is one row of seats, numbered 1..Seats.
 type InventoryRow struct {
-	Label string
-	Seats int
+	Label      string
+	Seats      int
+	Accessible []int // seat numbers with step-free access
 }
