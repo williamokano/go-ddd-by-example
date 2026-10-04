@@ -22,6 +22,7 @@ func TestLoad(t *testing.T) {
 		want := config.Config{
 			HTTPAddr: ":8080", DatabaseURL: "postgres://x", LogLevel: slog.LevelInfo,
 			KafkaBrokers: []string{"localhost:9092"}, OutboxPollInterval: 200 * time.Millisecond,
+			HoldTTL: 10 * time.Minute,
 		}
 		if diff := cmp.Diff(want, got); diff != "" {
 			t.Errorf("config mismatch (-want +got):\n%s", diff)
@@ -31,13 +32,13 @@ func TestLoad(t *testing.T) {
 	t.Run("overrides", func(t *testing.T) {
 		got, err := config.Load(env(map[string]string{
 			"DATABASE_URL": "postgres://x", "HTTP_ADDR": ":9000", "LOG_LEVEL": "debug",
-			"KAFKA_BROKERS": "k1:9092, k2:9092", "OUTBOX_POLL_INTERVAL": "1s",
+			"KAFKA_BROKERS": "k1:9092, k2:9092", "OUTBOX_POLL_INTERVAL": "1s", "HOLD_TTL": "30s",
 		}))
 
 		if err != nil {
 			t.Fatalf("Load() error = %v", err)
 		}
-		if got.HTTPAddr != ":9000" || got.LogLevel != slog.LevelDebug || got.OutboxPollInterval != time.Second {
+		if got.HTTPAddr != ":9000" || got.LogLevel != slog.LevelDebug || got.OutboxPollInterval != time.Second || got.HoldTTL != 30*time.Second {
 			t.Errorf("config = %+v", got)
 		}
 		if diff := cmp.Diff([]string{"k1:9092", "k2:9092"}, got.KafkaBrokers); diff != "" {

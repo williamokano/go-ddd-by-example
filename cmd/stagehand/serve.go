@@ -22,6 +22,12 @@ import (
 	showconsumer "github.com/williamokano/go-ddd-by-example/internal/show/adapters/driving/consumer"
 	showhttp "github.com/williamokano/go-ddd-by-example/internal/show/adapters/driving/httpapi"
 	showapp "github.com/williamokano/go-ddd-by-example/internal/show/application"
+	showcontracts "github.com/williamokano/go-ddd-by-example/internal/show/contracts"
+	ticketingids "github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/driven/ids"
+	ticketingpg "github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/driven/postgres"
+	ticketingconsumer "github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/driving/consumer"
+	ticketinghttp "github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/driving/httpapi"
+	ticketingapp "github.com/williamokano/go-ddd-by-example/internal/ticketing/application"
 	"github.com/williamokano/go-ddd-by-example/internal/venue/adapters/driven/ids"
 	venuepg "github.com/williamokano/go-ddd-by-example/internal/venue/adapters/driven/postgres"
 	"github.com/williamokano/go-ddd-by-example/internal/venue/adapters/driving/httpapi"
@@ -53,7 +59,7 @@ func serve(ctx context.Context) error {
 	// Background work, tied to the root context: stops on SIGINT/SIGTERM.
 	var background sync.WaitGroup
 	defer background.Wait()
-	for _, schema := range []string{"venue", "show"} {
+	for _, schema := range []string{"venue", "show", "ticketing"} {
 		background.Go(func() { outbox.NewRelay(pool, schema, producer, logger).Run(ctx, cfg.OutboxPollInterval) })
 	}
 
@@ -89,7 +95,21 @@ func serve(ctx context.Context) error {
 	)
 	consume(ctx, &background, cfg, "show", []string{venuecontracts.Topic}, venueEvents.Handle, logger)
 
+	// Ticketing: the inventory, its API, and its consumer of show.events.
+	inventories := ticketingpg.NewInventoryRepository(pool)
+	ticketingIDs := ticketingids.New(idgen.UUIDv7{})
+	ticketingAPI := ticketinghttp.Routes(ticketinghttp.UseCases{
+		Hold:    ticketingapp.NewHoldSeatsHandler(inventories, ticketingIDs, clk, cfg.HoldTTL),
+		Release: ticketingapp.NewReleaseHoldHandler(inventories, clk),
+		Seats:   ticketingpg.NewSeatQueries(pool),
+	}, logger)
+	showEvents := ticketingconsumer.NewShowConsumer(ticketingapp.NewOpenInventoryHandler(inventories, clk), logger)
+	consume(ctx, &background, cfg, "ticketing", []string{showcontracts.Topic}, showEvents.Handle, logger)
+
 	mux := http.NewServeMux()
+	for _, pattern := range ticketinghttp.Patterns {
+		mux.Handle(pattern, ticketingAPI)
+	}
 	mux.Handle("/venues", venueAPI)
 	mux.Handle("/venues/", venueAPI)
 	mux.Handle("/shows", showAPI)

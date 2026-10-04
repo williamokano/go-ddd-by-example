@@ -18,6 +18,7 @@ type Config struct {
 
 	KafkaBrokers       []string      // KAFKA_BROKERS, comma-separated; default localhost:9092
 	OutboxPollInterval time.Duration // OUTBOX_POLL_INTERVAL, default 200ms
+	HoldTTL            time.Duration // HOLD_TTL, default 10m (TKT-4); shorten it in e2e tests
 }
 
 // Load builds the Config from getenv (os.Getenv in main, a map in tests).
@@ -37,6 +38,9 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	var err error
 	if cfg.OutboxPollInterval, err = duration(getenv, "OUTBOX_POLL_INTERVAL", "200ms"); err != nil {
+		return Config{}, err
+	}
+	if cfg.HoldTTL, err = duration(getenv, "HOLD_TTL", "10m"); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil
