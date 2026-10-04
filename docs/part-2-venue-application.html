@@ -44,7 +44,7 @@
 </ul>
 <!-- snippet: lesson-2.1 internal/venue/application/ports.go -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/c37331a44f3a/internal/venue/application/ports.go"><code>internal/venue/application/ports.go</code></a> at <code>lesson-2.1</code></div>
-<pre><code>package application
+<pre><code class="language-go">package application
 
 import (
 	"context"
@@ -109,7 +109,7 @@ type IDGenerator interface {
 </ul>
 <!-- snippet: lesson-2.2 internal/venue/adapters/driven/memory/venue_repository.go#VenueRepository.Save -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/1ad744a15a64/internal/venue/adapters/driven/memory/venue_repository.go"><code>internal/venue/adapters/driven/memory/venue_repository.go</code></a> at <code>lesson-2.2</code></div>
-<pre><code>// Save implements application.VenueRepository. Like the Postgres adapter, it
+<pre><code class="language-go">// Save implements application.VenueRepository. Like the Postgres adapter, it
 // accepts the save only if the stored version is the one the venue was loaded
 // at (0 for a new venue), then stores the next version (ADR-011).
 func (r *VenueRepository) Save(_ context.Context, v *domain.Venue) error {
@@ -127,7 +127,7 @@ func (r *VenueRepository) Save(_ context.Context, v *domain.Venue) error {
 <!-- /snippet -->
 <!-- snippet: lesson-2.2 internal/platform/clock/clock.go -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/1ad744a15a64/internal/platform/clock/clock.go"><code>internal/platform/clock/clock.go</code></a> at <code>lesson-2.2</code></div>
-<pre><code>// Package clock implements the Clock driven port of every context: the real
+<pre><code class="language-go">// Package clock implements the Clock driven port of every context: the real
 // clock for production and a fixed, hand-advanced one for tests.
 package clock
 
@@ -198,7 +198,7 @@ func (h *RegisterVenueHandler) Handle(ctx context.Context, cmd RegisterVenue) (d
 </ul>
 <!-- snippet: lesson-2.3 internal/venue/application/register_venue.go#RegisterVenueHandler.Handle -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/4ff32b6a83de/internal/venue/application/register_venue.go"><code>internal/venue/application/register_venue.go</code></a> at <code>lesson-2.3</code></div>
-<pre><code>// Handle registers the venue and returns its new ID. Errors are wrapped with
+<pre><code class="language-go">// Handle registers the venue and returns its new ID. Errors are wrapped with
 // the use case's name; errors.Is still finds the domain error underneath.
 func (h *RegisterVenueHandler) Handle(ctx context.Context, cmd RegisterVenue) (domain.VenueID, error) {
 	addr, err := domain.NewAddress(cmd.Street, cmd.City, cmd.Country)
@@ -240,7 +240,7 @@ func (h *RegisterVenueHandler) Handle(ctx context.Context, cmd RegisterVenue) (d
 </ul>
 <!-- snippet: lesson-2.4 internal/venue/application/add_section.go#AddSectionHandler.Handle,newSection -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/7c194c890b9c/internal/venue/application/add_section.go"><code>internal/venue/application/add_section.go</code></a> at <code>lesson-2.4</code></div>
-<pre><code>// Handle adds the section: parse → load → one domain call → save.
+<pre><code class="language-go">// Handle adds the section: parse → load → one domain call → save.
 func (h *AddSectionHandler) Handle(ctx context.Context, cmd AddSection) error {
 	id, err := domain.ParseVenueID(cmd.VenueID)
 	if err != nil {
@@ -312,7 +312,7 @@ func newSection(cmd AddSection) (domain.Section, error) {
 </ul>
 <!-- snippet: lesson-2.5 internal/venue/application/queries.go -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/77a35a494922/internal/venue/application/queries.go"><code>internal/venue/application/queries.go</code></a> at <code>lesson-2.5</code></div>
-<pre><code>package application
+<pre><code class="language-go">package application
 
 import (
 	"context"
@@ -382,7 +382,7 @@ type RowView struct {
 </ul>
 <!-- snippet: lesson-2.6 internal/venue/application/venuerepotest/suite.go#Run -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/b26f10e0919c/internal/venue/application/venuerepotest/suite.go"><code>internal/venue/application/venuerepotest/suite.go</code></a> at <code>lesson-2.6</code></div>
-<pre><code>// Run runs the contract against repositories built by newRepo. Each test uses
+<pre><code class="language-go">// Run runs the contract against repositories built by newRepo. Each test uses
 // fresh random IDs, so implementations may share storage between tests.
 func Run(t *testing.T, newRepo func(t *testing.T) application.VenueRepository) {
 	t.Helper()
@@ -525,7 +525,7 @@ func Run(t *testing.T, newRepo func(t *testing.T) application.VenueRepository) {
 <!-- /snippet -->
 <!-- snippet: lesson-2.6 .golangci.yml -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/b26f10e0919c/.golangci.yml"><code>.golangci.yml</code></a> at <code>lesson-2.6</code></div>
-<pre><code>version: "2"
+<pre><code class="language-yaml">version: "2"
 
 linters:
   default: standard

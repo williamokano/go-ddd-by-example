@@ -28,7 +28,7 @@
 <!-- /resume -->
 <!-- snippet: lesson-3.1 docker-compose.yml -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/fc7d8184ca77/docker-compose.yml"><code>docker-compose.yml</code></a> at <code>lesson-3.1</code></div>
-<pre><code>services:
+<pre><code class="language-yaml">services:
   postgres:
     image: postgres:18
     environment:
@@ -69,7 +69,7 @@ volumes:
 </ul>
 <!-- snippet: lesson-3.2 db/migrations/00002_venue_tables.sql -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/37efe23da1b3/db/migrations/00002_venue_tables.sql"><code>db/migrations/00002_venue_tables.sql</code></a> at <code>lesson-3.2</code></div>
-<pre><code>-- +goose Up
+<pre><code class="language-sql">-- +goose Up
 CREATE TABLE venue.venues (
     id         UUID        PRIMARY KEY,
     name       TEXT        NOT NULL,
@@ -120,7 +120,7 @@ DROP TABLE venue.venues;</code></pre>
 </ul>
 <!-- snippet: lesson-3.3 db/queries/venue/venues.sql -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/ef190657eb71/db/queries/venue/venues.sql"><code>db/queries/venue/venues.sql</code></a> at <code>lesson-3.3</code></div>
-<pre><code>-- name: GetVenue :one
+<pre><code class="language-sql">-- name: GetVenue :one
 SELECT id, name, street, city, country, status, version
 FROM venue.venues
 WHERE id = $1;
@@ -175,7 +175,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7);</code></pre>
 </ul>
 <!-- snippet: lesson-3.4 internal/platform/postgres/pgtest/pgtest.go#Main,New -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/80d2a9cc25e7/internal/platform/postgres/pgtest/pgtest.go"><code>internal/platform/postgres/pgtest/pgtest.go</code></a> at <code>lesson-3.4</code></div>
-<pre><code>// Main starts the container, migrates it up, runs the tests and stops it.
+<pre><code class="language-go">// Main starts the container, migrates it up, runs the tests and stops it.
 func Main(m *testing.M) int {
 	ctx := context.Background()
 	container, err := tcpostgres.Run(ctx, "postgres:18",
@@ -246,7 +246,7 @@ func New(t *testing.T) *pgxpool.Pool {
 </ul>
 <!-- snippet: lesson-3.5 internal/venue/adapters/driven/postgres/venue_repository.go#VenueRepository.Save -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/62cfad1f01cc/internal/venue/adapters/driven/postgres/venue_repository.go"><code>internal/venue/adapters/driven/postgres/venue_repository.go</code></a> at <code>lesson-3.5</code></div>
-<pre><code>// Save implements application.VenueRepository: one transaction writes the
+<pre><code class="language-go">// Save implements application.VenueRepository: one transaction writes the
 // venue row (insert, or update guarded by the version) and replaces its
 // sections. Replacing is fine: layouts only change while the venue is a draft.
 func (r *VenueRepository) Save(ctx context.Context, v *domain.Venue) (err error) {
@@ -316,7 +316,7 @@ func (r *VenueRepository) Save(ctx context.Context, v *domain.Venue) (err error)
 </ul>
 <!-- snippet: lesson-3.6 internal/venue/application/retry.go#RetryOnConflict -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/39586a616a70/internal/venue/application/retry.go"><code>internal/venue/application/retry.go</code></a> at <code>lesson-3.6</code></div>
-<pre><code>// RetryOnConflict runs fn up to attempts times while it fails with
+<pre><code class="language-go">// RetryOnConflict runs fn up to attempts times while it fails with
 // ErrConcurrentModification.
 //
 // fn must be the whole load → decide → save cycle. Retrying only the save
@@ -359,7 +359,7 @@ func RetryOnConflict(ctx context.Context, attempts int, fn func(context.Context)
 </ul>
 <!-- snippet: lesson-3.7 internal/venue/adapters/driven/postgres/venue_queries.go#VenueQueries.List -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/9b1ccba1f524/internal/venue/adapters/driven/postgres/venue_queries.go"><code>internal/venue/adapters/driven/postgres/venue_queries.go</code></a> at <code>lesson-3.7</code></div>
-<pre><code>// List implements application.VenueQueries.
+<pre><code class="language-go">// List implements application.VenueQueries.
 func (q *VenueQueries) List(ctx context.Context, status string) ([]application.VenueView, error) {
 	db := sqlcgen.New(q.pool)
 	rows, err := db.ListVenueViewsByStatus(ctx, status)
@@ -394,7 +394,7 @@ func (q *VenueQueries) List(ctx context.Context, status string) ([]application.V
 <!-- /snippet -->
 <!-- snippet: lesson-3.7 db/queries/venue/views.sql -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/9b1ccba1f524/db/queries/venue/views.sql"><code>db/queries/venue/views.sql</code></a> at <code>lesson-3.7</code></div>
-<pre><code>-- The read side: flat views straight from SQL, never through the aggregate.
+<pre><code class="language-sql">-- The read side: flat views straight from SQL, never through the aggregate.
 
 -- name: GetVenueView :one
 SELECT v.id, v.name, v.street, v.city, v.country, v.status,

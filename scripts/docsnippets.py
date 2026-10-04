@@ -20,6 +20,10 @@ A resume line says where a lesson starts and where its finished code is:
 
 Links use commit SHAs, so they never move even if a tag is re-pointed.
 
+Each block is tagged with its language (class="language-go", ...), so
+docs/assets/course.js can syntax-highlight it; a Markdown note is
+rendered as formatted text instead (class="snippet-md"), excerpts included.
+
 The code is read with `git show <tag>:<path>`, so the tags of the solution
 branch must exist locally:
 
@@ -45,6 +49,16 @@ RESUME = re.compile(
     r"(?P<open><!-- resume: (?P<start>\S+) (?P<end>\S+) -->).*?(?P<close><!-- /resume -->)",
     re.S,
 )
+
+
+LANGUAGES = {".go": "go", ".sql": "sql", ".yml": "yaml", ".yaml": "yaml", ".toml": "ini",
+             ".json": "json", ".sh": "bash", ".md": "markdown", ".mod": "go"}
+FILENAMES = {"Makefile": "makefile", "Dockerfile": "dockerfile"}
+
+
+def language(path: str) -> str:
+    p = pathlib.PurePosixPath(path)
+    return FILENAMES.get(p.name) or LANGUAGES.get(p.suffix, "plaintext")
 
 
 def git(*args: str) -> str:
@@ -101,11 +115,13 @@ def render(m: re.Match) -> str:
     src = git_show(tag, path)
     code = extract(src, sel) if sel else src.rstrip("\n")
     link = f"{REPO_URL}/blob/{sha(tag)}/{path}"
+    lang = language(path)
+    md = ' class="snippet-md"' if lang == "markdown" else ""
     return (
         f"{m['open']}\n"
         f'<div class="snippet-src"><a href="{link}"><code>{html.escape(path)}</code></a>'
         f" at <code>{html.escape(tag)}</code></div>\n"
-        f"<pre><code>{html.escape(code, quote=False)}</code></pre>\n"
+        f'<pre{md}><code class="language-{lang}">{html.escape(code, quote=False)}</code></pre>\n'
         f"{m['close']}"
     )
 
