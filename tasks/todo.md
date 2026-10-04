@@ -3,7 +3,7 @@
 Source of truth for *where we are* in the course. Lessons live in `docs/part-*.html`.
 Tick a lesson when its "Done when" checks pass; add a one-line note (date, anything notable).
 
-**Current lesson:** 7.1 — Extract the shared kernel
+**Current lesson:** 8.1 — All six scenarios end to end
 
 ## Part 0 — Orientation & setup (`docs/part-0-orientation.html`)
 - [x] 0.1 Event storming on paper
@@ -78,16 +78,21 @@ Tick a lesson when its "Done when" checks pass; add a one-line note (date, anyth
   - Authorisation (only the drafting promoter) is an application rule: ErrNotPromoter → 403.
 
 ## Part 7 — Ticketing: the core domain (`docs/part-7-ticketing-core.html`)
-- [ ] 7.1 Extract the shared kernel
-- [ ] 7.2 Design workshop: aggregate boundaries
-- [ ] 7.3 ShowInventory: opening and holding seats
-- [ ] 7.4 Time-based behaviour: release, expire, confirm, sold out, close
-- [ ] 7.5 Inventory application, persistence, HTTP, and reacting to Show
-- [ ] 7.6 The race for the last seat (S6)
-- [ ] 7.7 The Order aggregate and the payment port
-- [ ] 7.8 Checkout and the saga
-- [ ] 7.9 A scheduler is a driving adapter too
-- [ ] 7.10 Closing the loops with Show
+- [x] 7.1 Extract the shared kernel
+  - Money, Currency, DomainEvent and Events moved to `internal/sharedkernel`; a goimports pass followed in 7.10.
+- [x] 7.2 Design workshop: aggregate boundaries
+  - `notes/aggregate-design.md`: one ShowInventory per show, Order separate, Ticket separate.
+- [x] 7.3 ShowInventory: opening and holding seats
+- [x] 7.4 Time-based behaviour: release, expire, confirm, sold out, close
+- [x] 7.5 Inventory application, persistence, HTTP, and reacting to Show
+- [x] 7.6 The race for the last seat (S6)
+  - 200 concurrent holds on one seat: 3 succeeded before retries ran out, 594 conflicts, p50 812ms (measured in `notes/aggregate-design.md`). Exactly one ends up holding the seat.
+- [x] 7.7 The Order aggregate and the payment port
+- [x] 7.8 Checkout and the saga
+  - Choreographed saga on `ticketing.internal`: OrderPaid → ConfirmHold → SeatsSold → IssueTickets; HoldConfirmationFailed → RefundOrder.
+- [x] 7.9 A scheduler is a driving adapter too
+- [x] 7.10 Closing the loops with Show
+  - Show's consumer group reads venue.events and ticketing.events, routed by event-type prefix.
 
 ## Part 8 — End-to-end & hardening (`docs/part-8-end-to-end.html`)
 - [ ] 8.1 All acceptance scenarios
