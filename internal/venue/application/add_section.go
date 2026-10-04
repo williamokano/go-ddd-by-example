@@ -54,12 +54,15 @@ func (h *AddSectionHandler) Handle(ctx context.Context, cmd AddSection) error {
 	err = RetryOnConflict(ctx, conflictAttempts, func(ctx context.Context) error {
 		venue, err := h.venues.Get(ctx, id)
 		if err != nil {
-			return err
+			return fmt.Errorf("load: %w", err)
 		}
 		if err := venue.AddSection(section, h.clock.Now()); err != nil {
 			return err
 		}
-		return h.venues.Save(ctx, venue)
+		if err := h.venues.Save(ctx, venue); err != nil {
+			return fmt.Errorf("save: %w", err)
+		}
+		return nil
 	})
 	if err != nil {
 		return fmt.Errorf("add section: %w", err)
