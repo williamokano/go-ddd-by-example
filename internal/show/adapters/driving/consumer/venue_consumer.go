@@ -44,13 +44,19 @@ func (c *VenueConsumer) Handle(ctx context.Context, env kafka.Envelope) error {
 		if err := json.Unmarshal(env.Payload, &e); err != nil {
 			return fmt.Errorf("decode %s: %w", env.EventType, err)
 		}
-		return c.activated.Handle(ctx, toOnVenueActivated(e))
+		if err := c.activated.Handle(ctx, toOnVenueActivated(e)); err != nil {
+			return fmt.Errorf("%s: %w", env.EventType, err)
+		}
+		return nil
 	case contracts.TypeVenueRetiredV1:
 		var e contracts.VenueRetiredV1
 		if err := json.Unmarshal(env.Payload, &e); err != nil {
 			return fmt.Errorf("decode %s: %w", env.EventType, err)
 		}
-		return c.retired.Handle(ctx, application.OnVenueRetired{VenueID: e.VenueID})
+		if err := c.retired.Handle(ctx, application.OnVenueRetired{VenueID: e.VenueID}); err != nil {
+			return fmt.Errorf("%s: %w", env.EventType, err)
+		}
+		return nil
 	default:
 		c.logger.InfoContext(ctx, "show: skipping unknown venue event", "event_type", env.EventType, "event_id", env.EventID)
 		return nil
