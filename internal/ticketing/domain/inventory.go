@@ -246,6 +246,20 @@ func (inv *ShowInventory) freeSeats(h Hold) {
 	}
 }
 
+// HoldView returns a read-only copy of an active hold with its seats'
+// prices, for placing an order.
+func (inv *ShowInventory) HoldView(id HoldID) (HoldView, error) {
+	h, ok := inv.holds[id]
+	if !ok {
+		return HoldView{}, fmt.Errorf("%w: %s", ErrHoldNotFound, id)
+	}
+	view := HoldView{HoldID: id, ShowID: inv.showID, Customer: h.customer, ExpiresAt: h.expiresAt}
+	for _, ref := range h.seats {
+		view.Lines = append(view.Lines, OrderLine{Seat: ref, Price: inv.seats[ref].price})
+	}
+	return view, nil
+}
+
 // ShowID returns the show this inventory sells.
 func (inv *ShowInventory) ShowID() ShowID { return inv.showID }
 

@@ -22,6 +22,12 @@ var (
 	ErrNotHoldOwner = errors.New("ticketing: the hold belongs to another customer")
 	ErrHoldExpired  = errors.New("ticketing: hold expired")
 
+	// TKT-6: an order needs a valid contact email (and a live, owned hold).
+	ErrInvalidContactEmail = errors.New("ticketing: invalid contact email")
+
+	// TKT-7: the order lifecycle.
+	ErrInvalidOrderTransition = errors.New("ticketing: invalid order transition")
+
 	// TKT-12: no new holds on a closed inventory or after the show's start.
 	ErrSalesClosed = errors.New("ticketing: sales are closed")
 )

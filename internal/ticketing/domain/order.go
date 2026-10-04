@@ -1,0 +1,226 @@
+package domain
+
+import (
+	"fmt"
+	"slices"
+	"time"
+
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
+)
+
+// OrderStatus is where an order is in its lifecycle (TKT-7).
+type OrderStatus uint8
+
+// The order lifecycle: Pending → Paid → Fulfilled, Pending → PaymentFailed,
+// Paid or Fulfilled → Refunded.
+const (
+	Pending OrderStatus = iota + 1
+	Paid
+	PaymentFailed
+	Fulfilled
+	Refunded
+)
+
+var orderStatusNames = map[OrderStatus]string{
+	Pending: "pending", Paid: "paid", PaymentFailed: "payment_failed", Fulfilled: "fulfilled", Refunded: "refunded",
+}
+
+// String returns the stored name of the status.
+func (s OrderStatus) String() string {
+	if name, ok := orderStatusNames[s]; ok {
+		return name
+	}
+	return "unknown"
+}
+
+// OrderLine is one seat of an order, at the price it was sold for.
+type OrderLine struct {
+	Seat  SeatRef
+	Price sharedkernel.Money
+}
+
+// HoldView is a read-only copy of a hold with its seats' prices: what an
+// order needs to know about the inventory, without touching it.
+type HoldView struct {
+	HoldID    HoldID
+	ShowID    ShowID
+	Customer  CustomerID
+	ExpiresAt time.Time
+	Lines     []OrderLine
+}
+
+// Order is the aggregate root of one checkout of one hold (TKT-6, TKT-7).
+type Order struct {
+	id         OrderID
+	showID     ShowID
+	holdID     HoldID
+	customer   CustomerID
+	email      ContactEmail
+	lines      []OrderLine
+	total      sharedkernel.Money
+	status     OrderStatus
+	paymentRef PaymentRef
+	version    int
+
+	events sharedkernel.Events
+}
+
+// PlaceOrder starts a checkout for the customer's own, live hold (TKT-6). The
+// total is the sum of the lines, in one currency.
+func PlaceOrder(id OrderID, customer CustomerID, email ContactEmail, hold HoldView, now time.Time) (*Order, error) {
+	if id.IsZero() || customer.IsZero() {
+		return nil, fmt.Errorf("%w: zero order or customer id", ErrInvalidID)
+	}
+	if email == (ContactEmail{}) {
+		return nil, fmt.Errorf("%w: no contact email", ErrInvalidContactEmail)
+	}
+	if hold.Customer != customer {
+		return nil, fmt.Errorf("%w: hold %s", ErrNotHoldOwner, hold.HoldID)
+	}
+	if !now.Before(hold.ExpiresAt) {
+		return nil, fmt.Errorf("%w: hold %s", ErrHoldExpired, hold.HoldID)
+	}
+	if len(hold.Lines) == 0 {
+		return nil, fmt.Errorf("%w: hold %s has no seats", ErrHoldNotFound, hold.HoldID)
+	}
+	total := hold.Lines[0].Price
+	for _, l := range hold.Lines[1:] {
+		var err error
+		if total, err = total.Add(l.Price); err != nil {
+			return nil, err
+		}
+	}
+	o := &Order{
+		id: id, showID: hold.ShowID, holdID: hold.HoldID, customer: customer, email: email,
+		lines: slices.Clone(hold.Lines), total: total, status: Pending,
+	}
+	o.events.Record(OrderPlaced{OrderID: id, ShowID: hold.ShowID, HoldID: hold.HoldID, CustomerID: customer, Total: total, At: now})
+	return o, nil
+}
+
+// MarkPaid records the payment provider's successful charge.
+func (o *Order) MarkPaid(ref PaymentRef, now time.Time) error {
+	switch o.status {
+	case Paid:
+		return nil
+	case Pending:
+		o.status, o.paymentRef = Paid, ref
+		o.events.Record(OrderPaid{OrderID: o.id, ShowID: o.showID, HoldID: o.holdID, At: now})
+		return nil
+	default:
+		return o.illegal("mark paid")
+	}
+}
+
+// MarkPaymentFailed records a declined charge. The hold stays: the customer
+// may try again with a new order.
+func (o *Order) MarkPaymentFailed(reason string, now time.Time) error {
+	switch o.status {
+	case PaymentFailed:
+		return nil
+	case Pending:
+		o.status = PaymentFailed
+		o.events.Record(OrderPaymentFailed{OrderID: o.id, Reason: reason, At: now})
+		return nil
+	default:
+		return o.illegal("mark payment failed")
+	}
+}
+
+// MarkFulfilled records that the tickets were issued (TKT-9).
+func (o *Order) MarkFulfilled(now time.Time) error {
+	switch o.status {
+	case Fulfilled:
+		return nil
+	case Paid:
+		o.status = Fulfilled
+		o.events.Record(OrderFulfilled{OrderID: o.id, At: now})
+		return nil
+	default:
+		return o.illegal("mark fulfilled")
+	}
+}
+
+// MarkRefunded records that the money went back: compensation when the hold
+// could not be confirmed (TKT-8), or a cancelled show (TKT-11).
+func (o *Order) MarkRefunded(now time.Time) error {
+	switch o.status {
+	case Refunded:
+		return nil
+	case Paid, Fulfilled:
+		o.status = Refunded
+		o.events.Record(OrderRefunded{
+			OrderID: o.id, ShowID: o.showID, CustomerID: o.customer, ContactEmail: o.email, Total: o.total, At: now,
+		})
+		return nil
+	default:
+		return o.illegal("refund")
+	}
+}
+
+func (o *Order) illegal(what string) error {
+	return fmt.Errorf("%w: cannot %s a %s order", ErrInvalidOrderTransition, what, o.status)
+}
+
+// ID returns the order's identity.
+func (o *Order) ID() OrderID { return o.id }
+
+// ShowID returns the show the order is for.
+func (o *Order) ShowID() ShowID { return o.showID }
+
+// HoldID returns the hold the order checks out.
+func (o *Order) HoldID() HoldID { return o.holdID }
+
+// Customer returns who placed the order.
+func (o *Order) Customer() CustomerID { return o.customer }
+
+// ContactEmail returns where tickets and notices go.
+func (o *Order) ContactEmail() ContactEmail { return o.email }
+
+// Lines returns a copy of the order's lines.
+func (o *Order) Lines() []OrderLine { return slices.Clone(o.lines) }
+
+// Total returns the sum of the lines.
+func (o *Order) Total() sharedkernel.Money { return o.total }
+
+// Status returns where the order is in its lifecycle.
+func (o *Order) Status() OrderStatus { return o.status }
+
+// PaymentRef returns the provider's charge reference (zero until paid).
+func (o *Order) PaymentRef() PaymentRef { return o.paymentRef }
+
+// Version is the version the order was loaded at (ADR-011).
+func (o *Order) Version() int { return o.version }
+
+// PullEvents returns the recorded events and forgets them.
+func (o *Order) PullEvents() []sharedkernel.DomainEvent { return o.events.PullEvents() }
+
+// OrderState is everything a repository stores about an order.
+type OrderState struct {
+	ID         OrderID
+	ShowID     ShowID
+	HoldID     HoldID
+	Customer   CustomerID
+	Email      ContactEmail
+	Lines      []OrderLine
+	Total      sharedkernel.Money
+	Status     OrderStatus
+	PaymentRef PaymentRef
+	Version    int
+}
+
+// OrderStateOf reads an order out for storage.
+func OrderStateOf(o *Order) OrderState {
+	return OrderState{
+		ID: o.id, ShowID: o.showID, HoldID: o.holdID, Customer: o.customer, Email: o.email,
+		Lines: o.Lines(), Total: o.total, Status: o.status, PaymentRef: o.paymentRef, Version: o.version,
+	}
+}
+
+// RehydrateOrder rebuilds an order from storage: no rules, no events.
+func RehydrateOrder(s OrderState) *Order {
+	return &Order{
+		id: s.ID, showID: s.ShowID, holdID: s.HoldID, customer: s.Customer, email: s.Email,
+		lines: slices.Clone(s.Lines), total: s.Total, status: s.Status, paymentRef: s.PaymentRef, version: s.Version,
+	}
+}

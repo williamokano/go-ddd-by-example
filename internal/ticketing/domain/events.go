@@ -1,6 +1,10 @@
 package domain
 
-import "time"
+import (
+	"time"
+
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
+)
 
 // InventoryOpened records that a published show's inventory opened (TKT-1).
 type InventoryOpened struct {
@@ -98,3 +102,74 @@ func (InventoryClosed) EventName() string { return "ticketing.InventoryClosed" }
 
 // OccurredAt implements DomainEvent.
 func (e InventoryClosed) OccurredAt() time.Time { return e.At }
+
+// OrderPlaced records that a customer checked out a hold (TKT-6).
+type OrderPlaced struct {
+	OrderID    OrderID
+	ShowID     ShowID
+	HoldID     HoldID
+	CustomerID CustomerID
+	Total      sharedkernel.Money
+	At         time.Time
+}
+
+// EventName implements DomainEvent.
+func (OrderPlaced) EventName() string { return "ticketing.OrderPlaced" }
+
+// OccurredAt implements DomainEvent.
+func (e OrderPlaced) OccurredAt() time.Time { return e.At }
+
+// OrderPaid records a successful charge: the saga confirms the hold next.
+type OrderPaid struct {
+	OrderID OrderID
+	ShowID  ShowID
+	HoldID  HoldID
+	At      time.Time
+}
+
+// EventName implements DomainEvent.
+func (OrderPaid) EventName() string { return "ticketing.OrderPaid" }
+
+// OccurredAt implements DomainEvent.
+func (e OrderPaid) OccurredAt() time.Time { return e.At }
+
+// OrderPaymentFailed records a declined charge.
+type OrderPaymentFailed struct {
+	OrderID OrderID
+	Reason  string
+	At      time.Time
+}
+
+// EventName implements DomainEvent.
+func (OrderPaymentFailed) EventName() string { return "ticketing.OrderPaymentFailed" }
+
+// OccurredAt implements DomainEvent.
+func (e OrderPaymentFailed) OccurredAt() time.Time { return e.At }
+
+// OrderFulfilled records that the order's tickets were issued.
+type OrderFulfilled struct {
+	OrderID OrderID
+	At      time.Time
+}
+
+// EventName implements DomainEvent.
+func (OrderFulfilled) EventName() string { return "ticketing.OrderFulfilled" }
+
+// OccurredAt implements DomainEvent.
+func (e OrderFulfilled) OccurredAt() time.Time { return e.At }
+
+// OrderRefunded records that the money went back; it carries where to tell the customer.
+type OrderRefunded struct {
+	OrderID      OrderID
+	ShowID       ShowID
+	CustomerID   CustomerID
+	ContactEmail ContactEmail
+	Total        sharedkernel.Money
+	At           time.Time
+}
+
+// EventName implements DomainEvent.
+func (OrderRefunded) EventName() string { return "ticketing.OrderRefunded" }
+
+// OccurredAt implements DomainEvent.
+func (e OrderRefunded) OccurredAt() time.Time { return e.At }
