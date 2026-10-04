@@ -28,7 +28,7 @@ func (c *checkoutStub) Handle(_ context.Context, cmd application.Checkout) (appl
 type orderQueriesStub struct{}
 
 func (orderQueriesStub) Get(context.Context, domain.OrderID) (application.OrderView, error) {
-	return application.OrderView{ID: "o1", Status: "fulfilled", Amount: 9000, Currency: "EUR",
+	return application.OrderView{ID: "o1", Status: "fulfilled", Amount: 10494, Subtotal: 9000, Fee: 900, VAT: 594, Currency: "EUR",
 		Tickets: []application.TicketView{{Seat: "ORCH/A/1", Code: "ABCD-EFGH-IJKL", Status: "valid"}}}, nil
 }
 
@@ -65,7 +65,8 @@ func TestPlaceOrder_Errors(t *testing.T) {
 func TestGetOrder(t *testing.T) {
 	w := do(ordersHandler(&checkoutStub{}), http.MethodGet, "/orders/0192f5e0-0000-7000-8000-0000000000d1", "")
 
-	want := `{"id":"o1","showId":"","status":"fulfilled","total":{"amount":9000,"currency":"EUR"},"tickets":[{"seat":"ORCH/A/1","code":"ABCD-EFGH-IJKL","status":"valid"}]}` + "\n"
+	want := `{"id":"o1","showId":"","status":"fulfilled","total":{"amount":10494,"currency":"EUR"},` +
+		`"subtotal":{"amount":9000,"currency":"EUR"},"fee":{"amount":900,"currency":"EUR"},"vat":{"amount":594,"currency":"EUR"},"tickets":[{"seat":"ORCH/A/1","code":"ABCD-EFGH-IJKL","status":"valid"}]}` + "\n"
 	if w.Code != http.StatusOK || w.Body.String() != want {
 		t.Errorf("status %d, body %s", w.Code, w.Body)
 	}

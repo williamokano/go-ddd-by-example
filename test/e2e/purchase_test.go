@@ -124,8 +124,9 @@ func TestS1_HappyPurchase(t *testing.T) {
 		mustStatus(t, c.do(http.MethodGet, "/orders/"+placed.ID, nil), http.StatusOK).decode(t, &order)
 		return order.Status == "fulfilled" && len(order.Tickets) == 2
 	})
-	if order.Total.Amount != 9000 || order.Total.Currency != "EUR" {
-		t.Errorf("total = %+v, want EUR 90.00", order.Total)
+	// TKT-15: EUR 90.00 of seats + 10% fee + 6% VAT in Portugal.
+	if order.Total.Amount != 10494 || order.Total.Currency != "EUR" {
+		t.Errorf("total = %+v, want EUR 104.94", order.Total)
 	}
 	if order.Tickets[0].Code == order.Tickets[1].Code {
 		t.Errorf("ticket codes are not unique: %+v (TKT-9)", order.Tickets)

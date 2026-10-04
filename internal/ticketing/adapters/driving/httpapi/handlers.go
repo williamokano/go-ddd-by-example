@@ -110,7 +110,11 @@ func (h *handlers) getOrder(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, r, err)
 		return
 	}
-	resp := orderResponse{ID: v.ID, ShowID: v.ShowID, Status: v.Status, Total: priceDTO{Amount: v.Amount, Currency: v.Currency}, Tickets: []ticketResponse{}}
+	resp := orderResponse{
+		ID: v.ID, ShowID: v.ShowID, Status: v.Status, Total: priceDTO{Amount: v.Amount, Currency: v.Currency},
+		Subtotal: priceDTO{Amount: v.Subtotal, Currency: v.Currency}, Fee: priceDTO{Amount: v.Fee, Currency: v.Currency},
+		VAT: priceDTO{Amount: v.VAT, Currency: v.Currency}, Tickets: []ticketResponse{},
+	}
 	for _, t := range v.Tickets {
 		resp.Tickets = append(resp.Tickets, ticketResponse{Seat: t.Seat, Code: t.Code, Status: t.Status})
 	}

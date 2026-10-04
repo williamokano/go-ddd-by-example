@@ -45,11 +45,14 @@ type placeOrderResponse struct {
 }
 
 type orderResponse struct {
-	ID      string           `json:"id"`
-	ShowID  string           `json:"showId"`
-	Status  string           `json:"status"`
-	Total   priceDTO         `json:"total"`
-	Tickets []ticketResponse `json:"tickets"`
+	ID       string           `json:"id"`
+	ShowID   string           `json:"showId"`
+	Status   string           `json:"status"`
+	Total    priceDTO         `json:"total"`
+	Subtotal priceDTO         `json:"subtotal"`
+	Fee      priceDTO         `json:"fee"`
+	VAT      priceDTO         `json:"vat"`
+	Tickets  []ticketResponse `json:"tickets"`
 }
 
 type ticketResponse struct {
