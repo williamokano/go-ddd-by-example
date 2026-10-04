@@ -54,6 +54,14 @@ type ShowVenueLayout struct {
 	UpdatedAt time.Time
 }
 
+type TicketingCheckoutProcess struct {
+	OrderID   uuid.UUID
+	ShowID    uuid.UUID
+	State     string
+	Version   int32
+	UpdatedAt time.Time
+}
+
 type TicketingHold struct {
 	HoldID     uuid.UUID
 	ShowID     uuid.UUID

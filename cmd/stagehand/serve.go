@@ -125,13 +125,20 @@ func serve(ctx context.Context) error {
 		CheckIn:  ticketingapp.NewCheckInHandler(tickets, ticketingpg.NewShowSchedule(pool), clk),
 	}, logger)
 	refund := ticketingapp.NewRefundOrderHandler(orders, gateway, clk)
-	saga := ticketingconsumer.NewSagaConsumer(ticketingconsumer.SagaSteps{
+	steps := ticketingconsumer.SagaSteps{
 		Confirm: ticketingapp.NewConfirmHoldHandler(inventories, clk),
 		Issue:   ticketingapp.NewIssueTicketsHandler(orders, tickets, ticketingIDs, clk),
 		Refund:  refund,
 		Closed:  ticketingapp.NewOnInventoryClosedHandler(tickets, orders, refund, clk),
 		SoldOut: ticketingapp.NewOnSectionSoldOutHandler(inventories, ticketingpg.NewEventPublisher(pool), clk),
-	}, logger)
+	}
+	if cfg.SagaStyle == "orchestration" {
+		// The same steps, driven by the CheckoutProcess (9.4) instead of
+		// each one knowing what follows it (ADR-010).
+		o := ticketingapp.NewCheckoutOrchestrator(ticketingpg.NewCheckoutProcessRepository(pool), steps.Confirm, steps.Issue, refund, clk)
+		steps.Confirm, steps.Issue, steps.Refund = o.Confirm(), o.Issue(), o.Refund()
+	}
+	saga := ticketingconsumer.NewSagaConsumer(steps, logger)
 	consume(ctx, &background, cfg, "ticketing-saga", []string{sagamsg.Topic}, saga.Handle, logger)
 
 	// A scheduler drives the application too: expire lapsed holds (TKT-4).

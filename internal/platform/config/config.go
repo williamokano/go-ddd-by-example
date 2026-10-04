@@ -21,6 +21,7 @@ type Config struct {
 	HoldTTL            time.Duration // HOLD_TTL, default 10m (TKT-4); shorten it in e2e tests
 	PaymentFakeMode    string        // PAYMENT_FAKE_MODE: approve | decline | delay:3s; default approve
 	HoldSweepInterval  time.Duration // HOLD_SWEEP_INTERVAL, default 5s: how often holds are expired
+	SagaStyle          string        // SAGA_STYLE: orchestration (default, 9.4) | choreography (ADR-010)
 }
 
 // Load builds the Config from getenv (os.Getenv in main, a map in tests).
@@ -29,6 +30,10 @@ func Load(getenv func(string) string) (Config, error) {
 		HTTPAddr:        or(getenv("HTTP_ADDR"), ":8080"),
 		DatabaseURL:     getenv("DATABASE_URL"),
 		PaymentFakeMode: or(getenv("PAYMENT_FAKE_MODE"), "approve"),
+		SagaStyle:       or(getenv("SAGA_STYLE"), "orchestration"),
+	}
+	if cfg.SagaStyle != "orchestration" && cfg.SagaStyle != "choreography" {
+		return Config{}, fmt.Errorf("config: SAGA_STYLE %q: want orchestration or choreography", cfg.SagaStyle)
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, errors.New("config: DATABASE_URL is required")

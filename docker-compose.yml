@@ -73,6 +73,7 @@ services:
       KAFKA_BROKERS: kafka:19092
       HOLD_TTL: ${HOLD_TTL:-10m}
       HOLD_SWEEP_INTERVAL: ${HOLD_SWEEP_INTERVAL:-5s}
+      SAGA_STYLE: ${SAGA_STYLE:-orchestration}
     depends_on:
       migrate: { condition: service_completed_successfully }
       kafka-init: { condition: service_completed_successfully }
