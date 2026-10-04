@@ -3,25 +3,29 @@
 Source of truth for *where we are* in the course. Lessons live in `docs/part-*.html`.
 Tick a lesson when its "Done when" checks pass; add a one-line note (date, anything notable).
 
-**Current lesson:** 0.1 — Event storming on paper
+**Current lesson:** 2.1 — Create the application package and declare the driven ports
 
 ## Part 0 — Orientation & setup (`docs/part-0-orientation.html`)
-- [ ] 0.1 Event storming on paper
-- [ ] 0.2 Read the reference chapters
-- [ ] 0.3 Go module, Makefile, linter
-- [ ] 0.4 Working agreement: branches, commits, CI
+- [x] 0.1 Event storming on paper
+- [x] 0.2 Read the reference chapters
+- [x] 0.3 Go module, Makefile, linter
+  - `make test` exits 1 with "no packages to test" until 1.1 adds the first package; golangci-lint runs in CI.
+- [x] 0.4 Working agreement: branches, commits, CI
 
 ## Part 1 — The Venue domain model (`docs/part-1-venue-domain.html`)
-- [ ] 1.1 Create the domain package and a typed ID
-- [ ] 1.2 Value object: Address
-- [ ] 1.3 Value objects: SectionCode and Row
-- [ ] 1.4 Entity: Section
-- [ ] 1.5 The aggregate root: registering a Venue
-- [ ] 1.6 Behaviour through the root: AddSection and capacity
-- [ ] 1.7 Lifecycle: Activate and Retire
-- [ ] 1.8 Domain events
-- [ ] 1.9 Reconstitution and version
-- [ ] 1.10 Checkpoint: read your domain as a domain expert would
+- [x] 1.1 Create the domain package and a typed ID
+- [x] 1.2 Value object: Address
+- [x] 1.3 Value objects: SectionCode and Row
+- [x] 1.4 Entity: Section
+- [x] 1.5 The aggregate root: registering a Venue
+  - `now` and the `newDraftVenue` builder arrive when a test needs them (1.8 and 1.6).
+- [x] 1.6 Behaviour through the root: AddSection and capacity
+- [x] 1.7 Lifecycle: Activate and Retire
+- [x] 1.8 Domain events
+  - Events recorder is a named field, not embedded, so `Record` is not promoted onto `*Venue`.
+- [x] 1.9 Reconstitution and version
+- [x] 1.10 Checkpoint: read your domain as a domain expert would
+  - 100% coverage; imports: stdlib + uuid only.
 
 ## Part 2 — The application layer: use cases and ports (`docs/part-2-venue-application.html`)
 - [ ] 2.1 Create the application package and declare the driven ports
