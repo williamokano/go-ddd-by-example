@@ -75,3 +75,72 @@ func TestVenue_Retire_RecordsVenueRetired(t *testing.T) {
 		t.Errorf("events mismatch (-want +got):\n%s", diff)
 	}
 }
+
+func TestVenue_FailedCommandsRecordNothing(t *testing.T) {
+	tests := []struct {
+		name    string
+		venue   func(t *testing.T) *domain.Venue
+		command func(t *testing.T, v *domain.Venue) error
+	}{
+		{"duplicate section (VEN-2)", newDraftVenueWithSection, func(t *testing.T, v *domain.Venue) error {
+			return v.AddSection(gaSection(t, "FLOOR", 10), fixedNow)
+		}},
+		{"section on an active venue (VEN-4)", newActiveVenue, func(t *testing.T, v *domain.Venue) error {
+			return v.AddSection(gaSection(t, "BALCONY", 10), fixedNow)
+		}},
+		{"activate without sections (VEN-5)", func(t *testing.T) *domain.Venue { return newDraftVenue(t) },
+			func(_ *testing.T, v *domain.Venue) error { return v.Activate(fixedNow) }},
+		{"retire a draft (VEN-6)", newDraftVenueWithSection,
+			func(_ *testing.T, v *domain.Venue) error { return v.Retire(fixedNow) }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			venue := tt.venue(t)
+			venue.PullEvents()
+
+			if err := tt.command(t, venue); err == nil {
+				t.Fatal("command succeeded, want an error")
+			}
+
+			if got := venue.PullEvents(); len(got) != 0 {
+				t.Errorf("recorded %v, want no events", got)
+			}
+		})
+	}
+}
+
+func TestVenue_PullEvents(t *testing.T) {
+	venue := newDraftVenue(t, withSection(gaSection(t, "FLOOR", 500)))
+
+	first := venue.PullEvents()
+	second := venue.PullEvents()
+
+	wantNames := []string{"venue.VenueRegistered", "venue.SectionAdded"}
+	if diff := cmp.Diff(wantNames, eventNames(first)); diff != "" {
+		t.Errorf("first pull mismatch (-want +got):\n%s", diff)
+	}
+	if len(second) != 0 {
+		t.Errorf("second pull = %v, want nothing", second)
+	}
+}
+
+func TestDomainEvents_OccurredAt(t *testing.T) {
+	for _, ev := range []domain.DomainEvent{
+		domain.VenueRegistered{At: fixedNow},
+		domain.SectionAdded{At: fixedNow},
+		domain.VenueActivated{At: fixedNow},
+		domain.VenueRetired{At: fixedNow},
+	} {
+		if got := ev.OccurredAt(); !got.Equal(fixedNow) {
+			t.Errorf("%s.OccurredAt() = %v, want %v", ev.EventName(), got, fixedNow)
+		}
+	}
+}
+
+func eventNames(events []domain.DomainEvent) []string {
+	names := make([]string, len(events))
+	for i, ev := range events {
+		names[i] = ev.EventName()
+	}
+	return names
+}
