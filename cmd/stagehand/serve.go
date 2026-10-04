@@ -21,6 +21,7 @@ import (
 	"github.com/williamokano/go-ddd-by-example/internal/platform/kafka"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/outbox"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/postgres"
+	"github.com/williamokano/go-ddd-by-example/internal/platform/trace"
 	showids "github.com/williamokano/go-ddd-by-example/internal/show/adapters/driven/ids"
 	showpg "github.com/williamokano/go-ddd-by-example/internal/show/adapters/driven/postgres"
 	showconsumer "github.com/williamokano/go-ddd-by-example/internal/show/adapters/driving/consumer"
@@ -50,7 +51,7 @@ func serve(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
+	logger := slog.New(trace.NewHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel})))
 
 	pool, err := postgres.NewPool(ctx, cfg.DatabaseURL)
 	if err != nil {
@@ -163,7 +164,7 @@ func serve(ctx context.Context) error {
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpx.Chain(mux, httpx.RequestID, httpx.Recover(logger), httpx.AccessLog(logger), fakegateway.ModeHeader),
+		Handler:           httpx.Chain(mux, httpx.RequestID, httpx.Correlation, httpx.Recover(logger), httpx.AccessLog(logger), fakegateway.ModeHeader),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	return runServer(ctx, server, logger)
