@@ -44,7 +44,11 @@ The course lives in `docs/` (static HTML). Serve it with `make docs` → http://
   (VEN/SHW/TKT-x) in `docs/01-the-domain.html`, topics and delivery rules in `04`, layout in `03`, env vars,
   Compose and make targets in `06`, test levels in `05`, a new ADR in `07`, and a hint in the lesson brief
   when the learner would otherwise hit the problem blind.
-- Doc changes go to `main` via a docs branch; never merge `solution` into `main`.
+- **`main` is the published course and always has the latest docs.** Every change to `docs/`, `CLAUDE.md`,
+  `scripts/` or course tooling is made on a docs branch off `main` and merged into `main` first, then `main` is
+  merged into `solution` (a merge commit, no rebase), so `solution` = `main`'s docs + the reference code.
+  Never edit `docs/` on `solution`, and never merge `solution` into `main`. `tasks/todo.md` is the exception:
+  on `solution` it records the reference build's progress; on `main` it stays the learner's blank checklist.
 
 ## Fixed technical choices
 
