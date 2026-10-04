@@ -1,6 +1,9 @@
 package domain
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // SectionKind says whether a section has seats or is general admission.
 type SectionKind uint8
@@ -22,6 +25,9 @@ type Section struct {
 
 // NewSeatedSection builds a section of numbered seats, laid out in rows (VEN-3).
 func NewSeatedSection(code SectionCode, name string, rows []Row) (Section, error) {
+	if len(rows) == 0 {
+		return Section{}, fmt.Errorf("%w: seated section %s has no rows", ErrInvalidSection, code)
+	}
 	return Section{code: code, name: strings.TrimSpace(name), kind: Seated, rows: rows}, nil
 }
 

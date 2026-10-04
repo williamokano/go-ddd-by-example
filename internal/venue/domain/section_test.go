@@ -1,6 +1,7 @@
 package domain_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/williamokano/go-ddd-by-example/internal/venue/domain"
@@ -20,6 +21,14 @@ func TestNewSeatedSection(t *testing.T) {
 		}
 		if got, want := section.Kind(), domain.Seated; got != want {
 			t.Errorf("Kind() = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("needs at least one row (VEN-3)", func(t *testing.T) {
+		_, err := domain.NewSeatedSection(mustCode(t, "ORCH"), "Orchestra", nil)
+
+		if !errors.Is(err, domain.ErrInvalidSection) {
+			t.Errorf("NewSeatedSection() error = %v, want %v", err, domain.ErrInvalidSection)
 		}
 	})
 }
