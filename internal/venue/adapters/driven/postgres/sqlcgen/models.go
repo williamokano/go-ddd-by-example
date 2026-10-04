@@ -46,6 +46,46 @@ type ShowVenueLayout struct {
 	UpdatedAt time.Time
 }
 
+type TicketingHold struct {
+	HoldID     uuid.UUID
+	ShowID     uuid.UUID
+	CustomerID uuid.UUID
+	Seats      []string
+	ExpiresAt  time.Time
+}
+
+type TicketingInventory struct {
+	ShowID    uuid.UUID
+	StartsAt  time.Time
+	Closed    bool
+	SoldOut   bool
+	Version   int32
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+type TicketingOutbox struct {
+	ID          int64
+	EventID     uuid.UUID
+	Topic       string
+	MsgKey      string
+	EventType   string
+	Payload     []byte
+	OccurredAt  time.Time
+	PublishedAt pgtype.Timestamptz
+}
+
+type TicketingSeat struct {
+	ShowID      uuid.UUID
+	SeatRef     string
+	Position    int32
+	PriceAmount int64
+	Currency    string
+	State       string
+	HoldID      pgtype.UUID
+	OrderID     pgtype.UUID
+}
+
 type VenueOutbox struct {
 	ID          int64
 	EventID     uuid.UUID

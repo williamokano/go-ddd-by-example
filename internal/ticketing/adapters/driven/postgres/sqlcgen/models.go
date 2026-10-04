@@ -82,8 +82,8 @@ type TicketingSeat struct {
 	PriceAmount int64
 	Currency    string
 	State       string
-	HoldID      pgtype.UUID
-	OrderID     pgtype.UUID
+	HoldID      uuid.NullUUID
+	OrderID     uuid.NullUUID
 }
 
 type VenueOutbox struct {
