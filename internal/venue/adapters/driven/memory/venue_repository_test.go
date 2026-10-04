@@ -43,6 +43,33 @@ func TestVenueRepository_SaveThenGet(t *testing.T) {
 	}
 }
 
+func TestVenueRepository_ChangesWithoutSaveAreNotVisible(t *testing.T) {
+	ctx := context.Background()
+	repo := memory.NewVenueRepository()
+	venue := newDraftVenue(t)
+	if err := repo.Save(ctx, venue); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := repo.Get(ctx, venue.ID())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	floor, _ := domain.NewSectionCode("FLOOR")
+	section, _ := domain.NewGeneralAdmissionSection(floor, "Floor", 500)
+	if err := loaded.AddSection(section, fixedNow); err != nil { // mutate, but never Save
+		t.Fatal(err)
+	}
+
+	again, err := repo.Get(ctx, venue.ID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(again.Sections()); got != 0 {
+		t.Errorf("unsaved change is visible: %d sections, want 0", got)
+	}
+}
+
 var (
 	fixedNow     = time.Date(2026, 11, 1, 20, 0, 0, 0, time.UTC)
 	domainValues = cmp.AllowUnexported(

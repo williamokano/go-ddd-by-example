@@ -13,31 +13,47 @@ import (
 )
 
 // VenueRepository is an in-memory application.VenueRepository.
+//
+// It stores a copy of each venue's state, never the *domain.Venue pointer:
+// with the pointer, a use case that forgets to call Save would still pass its
+// tests, because the stored venue would see the mutation.
 type VenueRepository struct {
 	mu     sync.Mutex
-	venues map[domain.VenueID]*domain.Venue
+	venues map[domain.VenueID]domain.VenueState
 }
 
 // NewVenueRepository returns an empty repository.
 func NewVenueRepository() *VenueRepository {
-	return &VenueRepository{venues: make(map[domain.VenueID]*domain.Venue)}
+	return &VenueRepository{venues: make(map[domain.VenueID]domain.VenueState)}
 }
 
 // Get implements application.VenueRepository.
 func (r *VenueRepository) Get(_ context.Context, id domain.VenueID) (*domain.Venue, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	v, ok := r.venues[id]
+	state, ok := r.venues[id]
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", application.ErrVenueNotFound, id)
 	}
-	return v, nil
+	return domain.RehydrateVenue(state), nil
 }
 
 // Save implements application.VenueRepository.
 func (r *VenueRepository) Save(_ context.Context, v *domain.Venue) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.venues[v.ID()] = v
+	r.venues[v.ID()] = stateOf(v)
 	return nil
+}
+
+// stateOf reads the venue back through its getters.
+func stateOf(v *domain.Venue) domain.VenueState {
+	return domain.VenueState{
+		ID:       v.ID(),
+		Name:     v.Name(),
+		Address:  v.Address(),
+		Status:   v.Status(),
+		Sections: v.Sections(),
+		Version:  v.Version(),
+	}
 }
