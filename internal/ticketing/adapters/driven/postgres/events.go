@@ -1,15 +1,50 @@
 package postgres
 
 import (
+	"encoding/json"
+	"fmt"
+
 	"github.com/google/uuid"
 
 	"github.com/williamokano/go-ddd-by-example/internal/platform/outbox"
 	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
+	"github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/sagamsg"
+	"github.com/williamokano/go-ddd-by-example/internal/ticketing/domain"
 )
 
-// ToOutboxMessages translates Ticketing's domain events into messages for
-// the outbox. (Nothing leaves the context yet: the saga's internal events
-// and the public contracts arrive in 7.8 and 7.10.)
-func ToOutboxMessages(_ []sharedkernel.DomainEvent, _ func() uuid.UUID) ([]outbox.Message, error) {
-	return nil, nil
+// ToOutboxMessages translates Ticketing's domain events into messages: the
+// saga's private steps on ticketing.internal (keyed by order, so one order's
+// steps stay in order).
+func ToOutboxMessages(events []sharedkernel.DomainEvent, newID func() uuid.UUID) ([]outbox.Message, error) {
+	var msgs []outbox.Message
+	add := func(topic, key, eventType string, payload any, ev sharedkernel.DomainEvent) error {
+		b, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("%s: %w", eventType, err)
+		}
+		msgs = append(msgs, outbox.Message{EventID: newID(), Topic: topic, Key: key, Type: eventType, Payload: b, OccurredAt: ev.OccurredAt()})
+		return nil
+	}
+	for _, ev := range events {
+		var err error
+		switch e := ev.(type) {
+		case domain.OrderPaid:
+			err = add(sagamsg.Topic, e.OrderID.String(), sagamsg.TypeOrderPaid,
+				sagamsg.OrderPaid{OrderID: e.OrderID.String(), ShowID: e.ShowID.String(), HoldID: e.HoldID.String()}, ev)
+		case domain.SeatsSold:
+			seats := make([]string, len(e.Seats))
+			for i, s := range e.Seats {
+				seats[i] = s.String()
+			}
+			err = add(sagamsg.Topic, e.OrderID.String(), sagamsg.TypeSeatsSold,
+				sagamsg.SeatsSold{OrderID: e.OrderID.String(), ShowID: e.ShowID.String(), Seats: seats}, ev)
+		case domain.HoldConfirmationFailed:
+			err = add(sagamsg.Topic, e.OrderID.String(), sagamsg.TypeHoldConfirmationFailed,
+				sagamsg.HoldConfirmationFailed{OrderID: e.OrderID.String(), ShowID: e.ShowID.String(), Reason: e.Reason}, ev)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	return msgs, nil
 }

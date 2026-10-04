@@ -1,0 +1,40 @@
+package postgres_test
+
+import (
+	"encoding/json"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
+	"github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/driven/postgres"
+	"github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/sagamsg"
+	"github.com/williamokano/go-ddd-by-example/internal/ticketing/domain"
+)
+
+func TestToOutboxMessages_SagaSteps(t *testing.T) {
+	at := time.Date(2026, 11, 1, 20, 0, 0, 0, time.UTC)
+	show, hold, order := domain.NewShowID(uuid.New()), domain.NewHoldID(uuid.New()), domain.NewOrderID(uuid.New())
+	seat, _ := domain.ParseSeatRef("ORCH/A/1")
+
+	msgs, err := postgres.ToOutboxMessages([]sharedkernel.DomainEvent{
+		domain.SeatsHeld{ShowID: show, At: at}, // internal fact: not a message
+		domain.OrderPaid{OrderID: order, ShowID: show, HoldID: hold, At: at},
+		domain.SeatsSold{ShowID: show, HoldID: hold, OrderID: order, Seats: []domain.SeatRef{seat}, At: at},
+		domain.HoldConfirmationFailed{ShowID: show, HoldID: hold, OrderID: order, Reason: "expired", At: at},
+	}, uuid.New)
+
+	if err != nil || len(msgs) != 3 {
+		t.Fatalf("got %d messages, %v; want 3", len(msgs), err)
+	}
+	for i, want := range []string{sagamsg.TypeOrderPaid, sagamsg.TypeSeatsSold, sagamsg.TypeHoldConfirmationFailed} {
+		if msgs[i].Type != want || msgs[i].Topic != sagamsg.Topic || msgs[i].Key != order.String() {
+			t.Errorf("message %d = %s on %s keyed %s; want %s on %s keyed by the order", i, msgs[i].Type, msgs[i].Topic, msgs[i].Key, want, sagamsg.Topic)
+		}
+	}
+	var sold sagamsg.SeatsSold
+	if err := json.Unmarshal(msgs[1].Payload, &sold); err != nil || len(sold.Seats) != 1 || sold.Seats[0] != "ORCH/A/1" {
+		t.Errorf("seats sold payload = %+v, %v", sold, err)
+	}
+}
