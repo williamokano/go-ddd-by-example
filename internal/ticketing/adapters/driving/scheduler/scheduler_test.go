@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/williamokano/go-ddd-by-example/internal/platform/trace"
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/driving/scheduler"
 )
 
@@ -37,5 +38,26 @@ func TestRun_CallsTheUseCaseOncePerTickAndStopsOnCancel(t *testing.T) {
 	}
 	if calls.Load() != 3 {
 		t.Errorf("calls = %d, want 3 (one per tick)", calls.Load())
+	}
+}
+
+// A tick is a flow of its own: what it causes shares one correlation ID (8.3).
+func TestRun_EachTickStartsANewFlow(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	ticks := make(chan time.Time)
+	ids := make(chan string)
+	go scheduler.Run(ctx, ticks, func(ctx context.Context) error {
+		ids <- trace.CorrelationID(ctx)
+		return nil
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	defer cancel()
+
+	ticks <- time.Now()
+	first := <-ids
+	ticks <- time.Now()
+	second := <-ids
+
+	if first == "" || second == "" || first == second {
+		t.Errorf("correlation IDs %q and %q; want two different, non-empty IDs", first, second)
 	}
 }
