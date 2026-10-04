@@ -61,3 +61,13 @@ func (v *Venue) AddSection(s Section) error {
 
 // Sections returns the venue's sections, in the order they were added.
 func (v *Venue) Sections() []Section { return v.sections }
+
+// Capacity returns the venue's total number of places: the seats in seated
+// sections plus the capacity of general admission sections (VEN-7).
+func (v *Venue) Capacity() int {
+	total := 0
+	for _, s := range v.sections {
+		total += s.Capacity()
+	}
+	return total
+}

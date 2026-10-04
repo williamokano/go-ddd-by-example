@@ -103,3 +103,14 @@ func TestVenue_AddSection(t *testing.T) {
 		}
 	})
 }
+
+func TestVenue_Capacity(t *testing.T) {
+	venue := newDraftVenue(t,
+		withSection(seatedSection(t, "ORCH", mustRow(t, "A", 10), mustRow(t, "B", 12))),
+		withSection(gaSection(t, "FLOOR", 500)),
+	)
+
+	if got, want := venue.Capacity(), 522; got != want {
+		t.Errorf("Capacity() = %d, want %d (VEN-7)", got, want)
+	}
+}
