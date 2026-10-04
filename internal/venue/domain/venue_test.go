@@ -1,0 +1,34 @@
+package domain_test
+
+import (
+	"testing"
+
+	"github.com/google/uuid"
+
+	"github.com/williamokano/go-ddd-by-example/internal/venue/domain"
+)
+
+func TestRegisterVenue(t *testing.T) {
+	t.Run("registers a draft venue (VEN-1)", func(t *testing.T) {
+		id := domain.NewVenueID(uuid.MustParse("0192f5e0-7c1a-7b3e-9d2a-3f4b5c6d7e8f"))
+		addr := mustAddress(t)
+
+		venue, err := domain.RegisterVenue(id, "  Coliseu dos Recreios ", addr)
+
+		if err != nil {
+			t.Fatalf("RegisterVenue() error = %v", err)
+		}
+		if venue.ID() != id {
+			t.Errorf("ID() = %v, want %v", venue.ID(), id)
+		}
+		if got, want := venue.Name(), "Coliseu dos Recreios"; got != want {
+			t.Errorf("Name() = %q, want %q", got, want)
+		}
+		if venue.Address() != addr {
+			t.Errorf("Address() = %+v, want %+v", venue.Address(), addr)
+		}
+		if got, want := venue.Status(), domain.Draft; got != want {
+			t.Errorf("Status() = %v, want %v", got, want)
+		}
+	})
+}

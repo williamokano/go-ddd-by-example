@@ -23,3 +23,12 @@ func mustRow(t *testing.T, label string, seats int) domain.Row {
 	}
 	return row
 }
+
+func mustAddress(t *testing.T) domain.Address {
+	t.Helper()
+	addr, err := domain.NewAddress("Rua Portas de Santo Antão 96", "Lisboa", "PT")
+	if err != nil {
+		t.Fatalf("NewAddress() error = %v", err)
+	}
+	return addr
+}
