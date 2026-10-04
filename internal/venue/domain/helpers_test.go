@@ -98,3 +98,13 @@ func sectionCodes(sections []domain.Section) []string {
 	}
 	return codes
 }
+
+// newActiveVenue returns an active venue with one general admission section.
+func newActiveVenue(t *testing.T, opts ...venueOption) *domain.Venue {
+	t.Helper()
+	venue := newDraftVenue(t, append([]venueOption{withSection(gaSection(t, "FLOOR", 500))}, opts...)...)
+	if err := venue.Activate(); err != nil {
+		t.Fatalf("Activate() error = %v", err)
+	}
+	return venue
+}

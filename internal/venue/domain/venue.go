@@ -85,3 +85,9 @@ func (v *Venue) Activate() error {
 	v.status = Active
 	return nil
 }
+
+// Retire closes the venue for good.
+func (v *Venue) Retire() error {
+	v.status = Retired
+	return nil
+}

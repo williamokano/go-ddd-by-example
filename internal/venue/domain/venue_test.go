@@ -163,3 +163,18 @@ func TestVenue_Activate(t *testing.T) {
 		}
 	})
 }
+
+func TestVenue_Retire(t *testing.T) {
+	t.Run("an active venue becomes retired (VEN-6)", func(t *testing.T) {
+		venue := newActiveVenue(t)
+
+		err := venue.Retire()
+
+		if err != nil {
+			t.Fatalf("Retire() error = %v", err)
+		}
+		if got, want := venue.Status(), domain.Retired; got != want {
+			t.Errorf("Status() = %v, want %v", got, want)
+		}
+	})
+}
