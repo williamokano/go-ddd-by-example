@@ -36,7 +36,7 @@
 </ul>
 <!-- snippet: lesson-7.1 internal/sharedkernel/events.go -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/441b28ac89f4/internal/sharedkernel/events.go"><code>internal/sharedkernel/events.go</code></a> at <code>lesson-7.1</code></div>
-<pre><code>package sharedkernel
+<pre><code class="language-go">package sharedkernel
 
 import "time"
 
@@ -87,7 +87,7 @@ func (e *Events) PullEvents() []DomainEvent {
 </ul>
 <!-- snippet: lesson-7.2 notes/aggregate-design.md#L1-L40 -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/95fc287c0f5f/notes/aggregate-design.md"><code>notes/aggregate-design.md</code></a> at <code>lesson-7.2</code></div>
-<pre><code># Ticketing: aggregate boundaries (lesson 7.2)
+<pre class="snippet-md"><code class="language-markdown"># Ticketing: aggregate boundaries (lesson 7.2)
 
 ## Which data must be consistent *immediately* for each rule?
 
@@ -155,7 +155,7 @@ Part 9.1 re-cuts it per section.
 </ul>
 <!-- snippet: lesson-7.3 internal/ticketing/domain/inventory.go#ShowInventory.Hold -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/1f20326e1a4f/internal/ticketing/domain/inventory.go"><code>internal/ticketing/domain/inventory.go</code></a> at <code>lesson-7.3</code></div>
-<pre><code>// Hold claims 1–8 available seats for a customer until now+ttl (TKT-2, TKT-4),
+<pre><code class="language-go">// Hold claims 1–8 available seats for a customer until now+ttl (TKT-2, TKT-4),
 // all or nothing. A customer has at most one active hold (TKT-3); no holds
 // once the show has started (TKT-12). Holds that lapsed but weren't swept yet
 // are expired first, so their seats are free again.
@@ -229,7 +229,7 @@ func (inv *ShowInventory) Hold(id HoldID, customer CustomerID, seats []SeatRef, 
 </ul>
 <!-- snippet: lesson-7.4 internal/ticketing/domain/inventory.go#ShowInventory.ConfirmHold -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/d12d48222c20/internal/ticketing/domain/inventory.go"><code>internal/ticketing/domain/inventory.go</code></a> at <code>lesson-7.4</code></div>
-<pre><code>// ConfirmHold sells the seats of a paid order's hold (TKT-8). A hold that
+<pre><code class="language-go">// ConfirmHold sells the seats of a paid order's hold (TKT-8). A hold that
 // lapsed, even if not swept yet, or that was released, can't be confirmed:
 // the order must be refunded (the saga's compensation). Confirming the same
 // order again is a no-op, because the saga may redeliver. Selling the last
@@ -282,7 +282,7 @@ func (inv *ShowInventory) ConfirmHold(id HoldID, order OrderID, now time.Time) e
 </ul>
 <!-- snippet: lesson-7.5 internal/ticketing/adapters/driven/postgres/inventory_repository.go#changedSeats -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/ecac32752de7/internal/ticketing/adapters/driven/postgres/inventory_repository.go"><code>internal/ticketing/adapters/driven/postgres/inventory_repository.go</code></a> at <code>lesson-7.5</code></div>
-<pre><code>// changedSeats lists the seats the pending events touched.
+<pre><code class="language-go">// changedSeats lists the seats the pending events touched.
 func changedSeats(events []sharedkernel.DomainEvent) map[domain.SeatRef]bool {
 	changed := map[domain.SeatRef]bool{}
 	mark := func(refs []domain.SeatRef) {
@@ -309,7 +309,7 @@ func changedSeats(events []sharedkernel.DomainEvent) map[domain.SeatRef]bool {
 <!-- /snippet -->
 <!-- snippet: lesson-7.5 internal/ticketing/application/inventory.go#HoldSeatsHandler.Handle -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/ecac32752de7/internal/ticketing/application/inventory.go"><code>internal/ticketing/application/inventory.go</code></a> at <code>lesson-7.5</code></div>
-<pre><code>// Handle holds the seats. On a hot show every hold races for the same
+<pre><code class="language-go">// Handle holds the seats. On a hot show every hold races for the same
 // inventory version, so a lost race is retried a few times before the
 // customer gets a conflict.
 func (h *HoldSeatsHandler) Handle(ctx context.Context, cmd HoldSeats) (HoldResult, error) {
@@ -373,7 +373,7 @@ func (h *HoldSeatsHandler) Handle(ctx context.Context, cmd HoldSeats) (HoldResul
 </ul>
 <!-- snippet: lesson-7.6 internal/ticketing/adapters/driven/postgres/race_test.go#TestS6_RaceForTheLastSeat -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/cb038f6b47be/internal/ticketing/adapters/driven/postgres/race_test.go"><code>internal/ticketing/adapters/driven/postgres/race_test.go</code></a> at <code>lesson-7.6</code></div>
-<pre><code>// S6 — 1 available seat, 50 concurrent holds: exactly 1 wins (TKT-5).
+<pre><code class="language-go">// S6 — 1 available seat, 50 concurrent holds: exactly 1 wins (TKT-5).
 func TestS6_RaceForTheLastSeat(t *testing.T) {
 	repo := postgres.NewInventoryRepository(pgtest.New(t))
 	showID := openShow(t, repo, 1)
@@ -435,7 +435,7 @@ func TestS6_RaceForTheLastSeat(t *testing.T) {
 </ul>
 <!-- snippet: lesson-7.7 internal/ticketing/application/ports.go#PaymentGateway -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/c9b81b245fde/internal/ticketing/application/ports.go"><code>internal/ticketing/application/ports.go</code></a> at <code>lesson-7.7</code></div>
-<pre><code>// PaymentGateway charges and refunds money through an external provider.
+<pre><code class="language-go">// PaymentGateway charges and refunds money through an external provider.
 // It speaks our language (Charge, Refund), not the provider's (intents,
 // captures, webhooks): the port is an anti-corruption layer, and a real
 // adapter does the translation.
@@ -451,7 +451,7 @@ type PaymentGateway interface {
 <!-- /snippet -->
 <!-- snippet: lesson-7.7 internal/ticketing/domain/order.go#PlaceOrder -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/c9b81b245fde/internal/ticketing/domain/order.go"><code>internal/ticketing/domain/order.go</code></a> at <code>lesson-7.7</code></div>
-<pre><code>// PlaceOrder starts a checkout for the customer's own, live hold (TKT-6). The
+<pre><code class="language-go">// PlaceOrder starts a checkout for the customer's own, live hold (TKT-6). The
 // total is the sum of the lines, in one currency.
 func PlaceOrder(id OrderID, customer CustomerID, email ContactEmail, hold HoldView, now time.Time) (*Order, error) {
 	if id.IsZero() || customer.IsZero() {
@@ -512,7 +512,7 @@ func PlaceOrder(id OrderID, customer CustomerID, email ContactEmail, hold HoldVi
 </ul>
 <!-- snippet: lesson-7.8 internal/ticketing/application/checkout.go#CheckoutHandler.Handle -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/e83071892236/internal/ticketing/application/checkout.go"><code>internal/ticketing/application/checkout.go</code></a> at <code>lesson-7.8</code></div>
-<pre><code>// Handle places the order (tx1), charges it outside any transaction, and
+<pre><code class="language-go">// Handle places the order (tx1), charges it outside any transaction, and
 // records the outcome (tx2). It only reads the inventory: confirming the hold
 // is the saga's next step, driven by OrderPaid. A declined card leaves the
 // hold in place, so the customer can try again.
@@ -571,7 +571,7 @@ func (h *CheckoutHandler) Handle(ctx context.Context, cmd Checkout) (CheckoutRes
 <!-- /snippet -->
 <!-- snippet: lesson-7.8 internal/ticketing/application/saga.go#ConfirmHoldHandler.Handle -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/e83071892236/internal/ticketing/application/saga.go"><code>internal/ticketing/application/saga.go</code></a> at <code>lesson-7.8</code></div>
-<pre><code>// Handle confirms the hold. If it lapsed or is gone, the inventory records
+<pre><code class="language-go">// Handle confirms the hold. If it lapsed or is gone, the inventory records
 // HoldConfirmationFailed instead and the saga compensates with a refund
 // (TKT-8). Redelivery is a no-op: the domain knows the order is confirmed.
 func (h *ConfirmHoldHandler) Handle(ctx context.Context, cmd ConfirmHold) error {
@@ -633,7 +633,7 @@ func (h *ConfirmHoldHandler) Handle(ctx context.Context, cmd ConfirmHold) error 
 </ul>
 <!-- snippet: lesson-7.9 internal/ticketing/adapters/driving/scheduler/scheduler.go#Run -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/d46da400a9e6/internal/ticketing/adapters/driving/scheduler/scheduler.go"><code>internal/ticketing/adapters/driving/scheduler/scheduler.go</code></a> at <code>lesson-7.9</code></div>
-<pre><code>// Run calls job once per tick until ctx is done. Errors are logged; the next
+<pre><code class="language-go">// Run calls job once per tick until ctx is done. Errors are logged; the next
 // tick tries again. Production passes time.NewTicker(d).C; tests pass their
 // own channel, so nothing sleeps.
 func Run(ctx context.Context, ticks &lt;-chan time.Time, job func(context.Context) error, logger *slog.Logger) {
@@ -651,7 +651,7 @@ func Run(ctx context.Context, ticks &lt;-chan time.Time, job func(context.Contex
 <!-- /snippet -->
 <!-- snippet: lesson-7.9 internal/ticketing/application/expire_holds.go#ExpireHoldsHandler.Handle -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/d46da400a9e6/internal/ticketing/application/expire_holds.go"><code>internal/ticketing/application/expire_holds.go</code></a> at <code>lesson-7.9</code></div>
-<pre><code>// Handle sweeps every show with lapsed holds, one inventory transaction each.
+<pre><code class="language-go">// Handle sweeps every show with lapsed holds, one inventory transaction each.
 func (h *ExpireHoldsHandler) Handle(ctx context.Context) error {
 	now := h.clock.Now()
 	shows, err := h.expired.ShowsWithExpiredHolds(ctx, now)
@@ -705,7 +705,7 @@ func (h *ExpireHoldsHandler) Handle(ctx context.Context) error {
 </ul>
 <!-- snippet: lesson-7.10 internal/ticketing/application/cancellation.go#OnInventoryClosedHandler.Handle -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/6a6d16fd0f89/internal/ticketing/application/cancellation.go"><code>internal/ticketing/application/cancellation.go</code></a> at <code>lesson-7.10</code></div>
-<pre><code>// Handle voids and refunds. Re-running it finds nothing left to do.
+<pre><code class="language-go">// Handle voids and refunds. Re-running it finds nothing left to do.
 func (h *OnInventoryClosedHandler) Handle(ctx context.Context, cmd OnInventoryClosed) error {
 	showID, err := domain.ParseShowID(cmd.ShowID)
 	if err != nil {
@@ -742,7 +742,7 @@ func (h *OnInventoryClosedHandler) Handle(ctx context.Context, cmd OnInventoryCl
 <!-- /snippet -->
 <!-- snippet: lesson-7.10 cmd/stagehand/serve.go#byEventPrefix -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/6a6d16fd0f89/cmd/stagehand/serve.go"><code>cmd/stagehand/serve.go</code></a> at <code>lesson-7.10</code></div>
-<pre><code>// byEventPrefix routes one consumer group's records to the consumer of the
+<pre><code class="language-go">// byEventPrefix routes one consumer group's records to the consumer of the
 // topic they came from: a context has one group, whatever it listens to.
 func byEventPrefix(routes map[string]kafka.Handler) kafka.Handler {
 	return func(ctx context.Context, env kafka.Envelope) error {

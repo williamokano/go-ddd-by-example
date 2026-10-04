@@ -37,7 +37,7 @@
 </ul>
 <!-- snippet: lesson-6.1 test/e2e/show_test.go#TestShow_DraftPriceAndPublish -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/caebcb2278fe/test/e2e/show_test.go"><code>test/e2e/show_test.go</code></a> at <code>lesson-6.1</code></div>
-<pre><code>func TestShow_DraftPriceAndPublish(t *testing.T) {
+<pre><code class="language-go">func TestShow_DraftPriceAndPublish(t *testing.T) {
 	c := newClient(t)
 	promoter := uuid.NewString()
 	venue := c.activeVenue()
@@ -78,7 +78,7 @@
 </ul>
 <!-- snippet: lesson-6.2 internal/show/domain/schedule.go#NewSchedule,Schedule.Overlaps -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/09fb7c0490e4/internal/show/domain/schedule.go"><code>internal/show/domain/schedule.go</code></a> at <code>lesson-6.2</code></div>
-<pre><code>// NewSchedule builds a schedule with doorsOpen ≤ startsAt &lt; endsAt, running
+<pre><code class="language-go">// NewSchedule builds a schedule with doorsOpen ≤ startsAt &lt; endsAt, running
 // at most 12 hours (SHW-2). Times are stored in UTC.
 func NewSchedule(doorsOpen, startsAt, endsAt time.Time) (Schedule, error) {
 	switch {
@@ -102,7 +102,7 @@ func (s Schedule) Overlaps(other Schedule) bool {
 <!-- /snippet -->
 <!-- snippet: lesson-6.2 internal/show/domain/price_list.go#PriceList.CoversExactly -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/09fb7c0490e4/internal/show/domain/price_list.go"><code>internal/show/domain/price_list.go</code></a> at <code>lesson-6.2</code></div>
-<pre><code>// CoversExactly checks the list prices every given section and nothing else
+<pre><code class="language-go">// CoversExactly checks the list prices every given section and nothing else
 // (SHW-4).
 func (p PriceList) CoversExactly(sectionCodes []string) error {
 	want := make(map[string]bool, len(sectionCodes))
@@ -146,7 +146,7 @@ func (p PriceList) CoversExactly(sectionCodes []string) error {
 </ul>
 <!-- snippet: lesson-6.3 internal/show/domain/show.go#Show.Publish,Show.MarkSoldOut -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/e5831c37ff3c/internal/show/domain/show.go"><code>internal/show/domain/show.go</code></a> at <code>lesson-6.3</code></div>
-<pre><code>// Publish puts the show on sale. It needs a complete price list (SHW-5) and a
+<pre><code class="language-go">// Publish puts the show on sale. It needs a complete price list (SHW-5) and a
 // start in the future (SHW-2). The recorded ShowPublished carries a snapshot
 // of the layout and prices, so Ticketing never has to ask anyone.
 func (s *Show) Publish(venue VenueLayout, now time.Time) error {
@@ -212,7 +212,7 @@ func (s *Show) MarkSoldOut(now time.Time) error {
 </ul>
 <!-- snippet: lesson-6.4 internal/show/domain/scheduling_policy.go -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/6c8f1ecb0568/internal/show/domain/scheduling_policy.go"><code>internal/show/domain/scheduling_policy.go</code></a> at <code>lesson-6.4</code></div>
-<pre><code>package domain
+<pre><code class="language-go">package domain
 
 import "fmt"
 
@@ -265,7 +265,7 @@ func (SchedulingPolicy) EnsureNoOverlap(id ShowID, candidate Schedule, existing 
 </ul>
 <!-- snippet: lesson-6.5 internal/show/adapters/driving/consumer/venue_consumer.go#VenueConsumer.Handle -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/0d53e3892fc7/internal/show/adapters/driving/consumer/venue_consumer.go"><code>internal/show/adapters/driving/consumer/venue_consumer.go</code></a> at <code>lesson-6.5</code></div>
-<pre><code>// Handle is a kafka.Handler.
+<pre><code class="language-go">// Handle is a kafka.Handler.
 func (c *VenueConsumer) Handle(ctx context.Context, env kafka.Envelope) error {
 	switch env.EventType {
 	case contracts.TypeVenueActivatedV1:
@@ -294,7 +294,7 @@ func (c *VenueConsumer) Handle(ctx context.Context, env kafka.Envelope) error {
 <!-- /snippet -->
 <!-- snippet: lesson-6.5 internal/show/application/venue_events.go#OnVenueRetiredHandler.Handle -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/0d53e3892fc7/internal/show/application/venue_events.go"><code>internal/show/application/venue_events.go</code></a> at <code>lesson-6.5</code></div>
-<pre><code>// Handle marks the venue inactive in the projection, then cancels every open
+<pre><code class="language-go">// Handle marks the venue inactive in the projection, then cancels every open
 // show there that hasn't started yet, one aggregate (one transaction) per
 // show. Re-running it is harmless: cancelled shows are no longer open.
 func (h *OnVenueRetiredHandler) Handle(ctx context.Context, cmd OnVenueRetired) error {
@@ -376,7 +376,7 @@ func (h *OnVenueRetiredHandler) Handle(ctx context.Context, cmd OnVenueRetired) 
 </ul>
 <!-- snippet: lesson-6.6 internal/show/adapters/driven/postgres/events.go#pricedSections -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/5ce61829f424/internal/show/adapters/driven/postgres/events.go"><code>internal/show/adapters/driven/postgres/events.go</code></a> at <code>lesson-6.6</code></div>
-<pre><code>func pricedSections(layout domain.VenueLayout, prices domain.PriceList) []contracts.SectionV1 {
+<pre><code class="language-go">func pricedSections(layout domain.VenueLayout, prices domain.PriceList) []contracts.SectionV1 {
 	out := make([]contracts.SectionV1, 0, len(layout.Sections))
 	for _, s := range layout.Sections {
 		price, _ := prices.Price(s.Code)
@@ -394,7 +394,7 @@ func (h *OnVenueRetiredHandler) Handle(ctx context.Context, cmd OnVenueRetired) 
 <!-- /snippet -->
 <!-- snippet: lesson-6.6 internal/show/application/show_commands.go#withShow -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/5ce61829f424/internal/show/application/show_commands.go"><code>internal/show/application/show_commands.go</code></a> at <code>lesson-6.6</code></div>
-<pre><code>// withShow runs the load → authorise → decide → save recipe, retried on a
+<pre><code class="language-go">// withShow runs the load → authorise → decide → save recipe, retried on a
 // conflict. promoterID "" skips the promoter check (system-driven commands).
 func withShow(ctx context.Context, shows ShowRepository, useCase, showID, promoterID string, decide func(*domain.Show) error) error {
 	id, err := domain.ParseShowID(showID)

@@ -33,7 +33,7 @@
 </ul>
 <!-- snippet: lesson-8.1 internal/ticketing/adapters/driven/payment/fakegateway/header.go#ModeHeader -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/61f93ad065ae/internal/ticketing/adapters/driven/payment/fakegateway/header.go"><code>internal/ticketing/adapters/driven/payment/fakegateway/header.go</code></a> at <code>lesson-8.1</code></div>
-<pre><code>// ModeHeader is HTTP middleware that reads HeaderName into the request's
+<pre><code class="language-go">// ModeHeader is HTTP middleware that reads HeaderName into the request's
 // context, so e2e scenarios share one app instance (8.1).
 func ModeHeader(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -53,7 +53,7 @@ func ModeHeader(next http.Handler) http.Handler {
 <!-- /snippet -->
 <!-- snippet: lesson-8.1 test/e2e/scenarios_test.go#TestS3_LatePaymentIsRefunded -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/61f93ad065ae/test/e2e/scenarios_test.go"><code>test/e2e/scenarios_test.go</code></a> at <code>lesson-8.1</code></div>
-<pre><code>// S3 — Late payment: the provider approves after the hold expired, so the
+<pre><code class="language-go">// S3 — Late payment: the provider approves after the hold expired, so the
 // saga cannot confirm the seats and compensates with a refund (TKT-7).
 func TestS3_LatePaymentIsRefunded(t *testing.T) {
 	c := newClient(t)
@@ -98,7 +98,7 @@ func TestS3_LatePaymentIsRefunded(t *testing.T) {
 </ul>
 <!-- snippet: lesson-8.2 internal/notifications/application/send.go#SendTicketsHandler.Handle -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/c8d661a63e34/internal/notifications/application/send.go"><code>internal/notifications/application/send.go</code></a> at <code>lesson-8.2</code></div>
-<pre><code>// Handle sends one email listing every ticket.
+<pre><code class="language-go">// Handle sends one email listing every ticket.
 func (h *SendTicketsHandler) Handle(ctx context.Context, cmd SendTickets) error {
 	var b strings.Builder
 	fmt.Fprintf(&amp;b, "Your tickets for order %s (show %s):\n\n", cmd.OrderID, cmd.ShowID)
@@ -138,7 +138,7 @@ func (h *SendTicketsHandler) Handle(ctx context.Context, cmd SendTickets) error 
 </ul>
 <!-- snippet: lesson-8.3 internal/platform/outbox/writer.go#Write -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/1aee850cf756/internal/platform/outbox/writer.go"><code>internal/platform/outbox/writer.go</code></a> at <code>lesson-8.3</code></div>
-<pre><code>// Write inserts msgs into &lt;schema&gt;.outbox inside tx, the transaction that also
+<pre><code class="language-go">// Write inserts msgs into &lt;schema&gt;.outbox inside tx, the transaction that also
 // saves the aggregate: both commit, or neither does. Messages without trace
 // IDs get the ones in ctx, so the domain never sees them (8.3).
 func Write(ctx context.Context, tx pgx.Tx, schema string, msgs []Message) error {
@@ -163,7 +163,7 @@ func Write(ctx context.Context, tx pgx.Tx, schema string, msgs []Message) error 
 <!-- /snippet -->
 <!-- snippet: lesson-8.3 internal/platform/kafka/consumer.go#withTrace -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/1aee850cf756/internal/platform/kafka/consumer.go"><code>internal/platform/kafka/consumer.go</code></a> at <code>lesson-8.3</code></div>
-<pre><code>// withTrace continues the event's flow: its correlation ID (or the event
+<pre><code class="language-go">// withTrace continues the event's flow: its correlation ID (or the event
 // itself, for an event published without one), and the event as the cause of
 // whatever the handler does next (8.3).
 func withTrace(ctx context.Context, env Envelope) context.Context {
@@ -198,7 +198,7 @@ func withTrace(ctx context.Context, env Envelope) context.Context {
 </ul>
 <!-- snippet: lesson-8.4 internal/platform/postgres/tx.go#TxManager.WithinTx,Begin,Inbox.Claim -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/7631aed4c175/internal/platform/postgres/tx.go"><code>internal/platform/postgres/tx.go</code></a> at <code>lesson-8.4</code></div>
-<pre><code>// WithinTx runs fn in a transaction carried by its context: it commits if fn
+<pre><code class="language-go">// WithinTx runs fn in a transaction carried by its context: it commits if fn
 // returns nil and rolls back otherwise. Inside an ambient transaction, it
 // simply joins it.
 func (m *TxManager) WithinTx(ctx context.Context, fn func(ctx context.Context) error) (err error) {
@@ -258,7 +258,7 @@ func (i *Inbox) Claim(ctx context.Context, eventID string) (bool, error) {
 <!-- /snippet -->
 <!-- snippet: lesson-8.4 internal/notifications/application/send.go#script.sendOnce -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/7631aed4c175/internal/notifications/application/send.go"><code>internal/notifications/application/send.go</code></a> at <code>lesson-8.4</code></div>
-<pre><code>func (s script) sendOnce(ctx context.Context, eventID string, e Email) error {
+<pre><code class="language-go">func (s script) sendOnce(ctx context.Context, eventID string, e Email) error {
 	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		first, err := s.inbox.Claim(ctx, eventID)
 		if err != nil || !first {
@@ -294,7 +294,7 @@ func (i *Inbox) Claim(ctx context.Context, eventID string) (bool, error) {
 </ul>
 <!-- snippet: lesson-8.5 internal/platform/kafka/consumer.go#Permanent,process -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/f626de98fc5d/internal/platform/kafka/consumer.go"><code>internal/platform/kafka/consumer.go</code></a> at <code>lesson-8.5</code></div>
-<pre><code>// Permanent marks err as poison: a message that will never be handled, such as
+<pre><code class="language-go">// Permanent marks err as poison: a message that will never be handled, such as
 // a payload that does not decode. The runner parks it in the DLQ at once.
 // Anything else is transient (a database outage, a timeout) and is retried
 // until it succeeds (8.5).
@@ -349,7 +349,7 @@ func process(ctx context.Context, client *kgo.Client, cfg ConsumerConfig, handle
 <!-- /resume -->
 <!-- snippet: lesson-8.6 notes/retrospective.md#L1-L30 -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/4d78867b0b31/notes/retrospective.md"><code>notes/retrospective.md</code></a> at <code>lesson-8.6</code></div>
-<pre><code># Retrospective (8.6)
+<pre class="snippet-md"><code class="language-markdown"># Retrospective (8.6)
 
 Parts 0–8 are built: four contexts, six acceptance scenarios, four failure
 drills. Below is what I would explain differently now, then the stretch goals.

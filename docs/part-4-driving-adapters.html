@@ -35,7 +35,7 @@
 </ul>
 <!-- snippet: lesson-4.1 internal/platform/httpx/middleware.go#Chain,Recover -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/1d7d3b38d4e8/internal/platform/httpx/middleware.go"><code>internal/platform/httpx/middleware.go</code></a> at <code>lesson-4.1</code></div>
-<pre><code>// Chain applies middleware so the first one listed is the outermost.
+<pre><code class="language-go">// Chain applies middleware so the first one listed is the outermost.
 func Chain(h http.Handler, mws ...Middleware) http.Handler {
 	for i := len(mws) - 1; i &gt;= 0; i-- {
 		h = mws[i](h)
@@ -61,7 +61,7 @@ func Recover(logger *slog.Logger) Middleware {
 <!-- /snippet -->
 <!-- snippet: lesson-4.1 internal/platform/httpx/problem.go#WriteProblem -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/1d7d3b38d4e8/internal/platform/httpx/problem.go"><code>internal/platform/httpx/problem.go</code></a> at <code>lesson-4.1</code></div>
-<pre><code>// WriteProblem writes a problem response.
+<pre><code class="language-go">// WriteProblem writes a problem response.
 func WriteProblem(w http.ResponseWriter, status int, title, detail string) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(status)
@@ -105,7 +105,7 @@ func WriteProblem(w http.ResponseWriter, status int, title, detail string) {
 </ul>
 <!-- snippet: lesson-4.2 internal/venue/adapters/driving/httpapi/errors.go#errorStatuses -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/22c342ba5136/internal/venue/adapters/driving/httpapi/errors.go"><code>internal/venue/adapters/driving/httpapi/errors.go</code></a> at <code>lesson-4.2</code></div>
-<pre><code>// errorStatuses is the one place that maps core errors to HTTP: invalid
+<pre><code class="language-go">// errorStatuses is the one place that maps core errors to HTTP: invalid
 // input → 422, not found → 404, state or conflict → 409. Anything else is a
 // bug or an outage: 500, logged, details hidden.
 var errorStatuses = []struct {
@@ -130,7 +130,7 @@ var errorStatuses = []struct {
 <!-- /snippet -->
 <!-- snippet: lesson-4.2 internal/venue/adapters/driving/httpapi/routes.go#Routes -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/22c342ba5136/internal/venue/adapters/driving/httpapi/routes.go"><code>internal/venue/adapters/driving/httpapi/routes.go</code></a> at <code>lesson-4.2</code></div>
-<pre><code>// Routes returns the Venue API:
+<pre><code class="language-go">// Routes returns the Venue API:
 //
 //	POST /venues                     RegisterVenue   201 + Location
 //	POST /venues/{id}/sections       AddSection      204
@@ -174,7 +174,7 @@ func Routes(uc UseCases, logger *slog.Logger) http.Handler {
 </ul>
 <!-- snippet: lesson-4.3 cmd/stagehand/serve.go#serve -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/86d42df17468/cmd/stagehand/serve.go"><code>cmd/stagehand/serve.go</code></a> at <code>lesson-4.3</code></div>
-<pre><code>// serve is the composition root: the only place that knows every concrete
+<pre><code class="language-go">// serve is the composition root: the only place that knows every concrete
 // type. Plain constructor injection, top to bottom, no container.
 func serve(ctx context.Context) error {
 	cfg, err := config.Load(os.Getenv)
@@ -218,7 +218,7 @@ func serve(ctx context.Context) error {
 <!-- /snippet -->
 <!-- snippet: lesson-4.3 internal/platform/config/config.go#Load -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/86d42df17468/internal/platform/config/config.go"><code>internal/platform/config/config.go</code></a> at <code>lesson-4.3</code></div>
-<pre><code>// Load builds the Config from getenv (os.Getenv in main, a map in tests).
+<pre><code class="language-go">// Load builds the Config from getenv (os.Getenv in main, a map in tests).
 func Load(getenv func(string) string) (Config, error) {
 	cfg := Config{
 		HTTPAddr:    or(getenv("HTTP_ADDR"), ":8080"),
@@ -253,7 +253,7 @@ func Load(getenv func(string) string) (Config, error) {
 </ul>
 <!-- snippet: lesson-4.4 Dockerfile -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/b77e8393c39a/Dockerfile"><code>Dockerfile</code></a> at <code>lesson-4.4</code></div>
-<pre><code># One static binary, two subcommands: serve and migrate.
+<pre><code class="language-dockerfile"># One static binary, two subcommands: serve and migrate.
 FROM golang:1.27 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -289,7 +289,7 @@ CMD ["serve"]</code></pre>
 </ul>
 <!-- snippet: lesson-4.5 test/e2e/venue_test.go -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/09581df20b39/test/e2e/venue_test.go"><code>test/e2e/venue_test.go</code></a> at <code>lesson-4.5</code></div>
-<pre><code>//go:build e2e
+<pre><code class="language-go">//go:build e2e
 
 package e2e_test
 
@@ -358,7 +358,7 @@ func TestVenue_ActivateWithoutSections(t *testing.T) {
 </ul>
 <!-- snippet: lesson-4.6 internal/archtest/archtest_test.go#TestDependencyRules -->
 <div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/86d1dcc58524/internal/archtest/archtest_test.go"><code>internal/archtest/archtest_test.go</code></a> at <code>lesson-4.6</code></div>
-<pre><code>func TestDependencyRules(t *testing.T) {
+<pre><code class="language-go">func TestDependencyRules(t *testing.T) {
 	rules := []struct {
 		name      string
 		applies   func(pkg string) bool
