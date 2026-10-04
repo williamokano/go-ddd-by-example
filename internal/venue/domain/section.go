@@ -17,10 +17,11 @@ const (
 // Section is a named area of a venue. It is an entity whose identity, its
 // SectionCode, only has to be unique within its venue (VEN-2).
 type Section struct {
-	code SectionCode
-	name string
-	kind SectionKind
-	rows []Row
+	code       SectionCode
+	name       string
+	kind       SectionKind
+	rows       []Row
+	gaCapacity int
 }
 
 // NewSeatedSection builds a section of numbered seats, laid out in rows (VEN-3).
@@ -38,11 +39,27 @@ func NewSeatedSection(code SectionCode, name string, rows []Row) (Section, error
 	return Section{code: code, name: strings.TrimSpace(name), kind: Seated, rows: rows}, nil
 }
 
+// NewGeneralAdmissionSection builds a standing section with a capacity instead
+// of seats (VEN-3).
+func NewGeneralAdmissionSection(code SectionCode, name string, capacity int) (Section, error) {
+	if capacity < 1 {
+		return Section{}, fmt.Errorf("%w: general admission section %s has capacity %d", ErrInvalidSection, code, capacity)
+	}
+	return Section{code: code, name: strings.TrimSpace(name), kind: GeneralAdmission, gaCapacity: capacity}, nil
+}
+
 // Kind returns whether the section is seated or general admission.
 func (s Section) Kind() SectionKind { return s.kind }
 
-// Capacity returns the number of places in the section (VEN-7).
+// Rows returns the rows of a seated section; a general admission section has none.
+func (s Section) Rows() []Row { return s.rows }
+
+// Capacity returns the number of places in the section: its seats, or its
+// general admission capacity (VEN-7).
 func (s Section) Capacity() int {
+	if s.kind == GeneralAdmission {
+		return s.gaCapacity
+	}
 	total := 0
 	for _, r := range s.rows {
 		total += r.Seats()

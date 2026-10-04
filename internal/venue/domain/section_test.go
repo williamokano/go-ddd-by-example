@@ -42,3 +42,30 @@ func TestNewSeatedSection(t *testing.T) {
 		}
 	})
 }
+
+func TestNewGeneralAdmissionSection(t *testing.T) {
+	t.Run("has a capacity and no rows (VEN-3, VEN-7)", func(t *testing.T) {
+		section, err := domain.NewGeneralAdmissionSection(mustCode(t, "FLOOR"), "Floor", 500)
+
+		if err != nil {
+			t.Fatalf("NewGeneralAdmissionSection() error = %v", err)
+		}
+		if got, want := section.Capacity(), 500; got != want {
+			t.Errorf("Capacity() = %d, want %d", got, want)
+		}
+		if got := section.Rows(); len(got) != 0 {
+			t.Errorf("Rows() = %v, want none", got)
+		}
+		if got, want := section.Kind(), domain.GeneralAdmission; got != want {
+			t.Errorf("Kind() = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("needs a capacity of at least one (VEN-3)", func(t *testing.T) {
+		_, err := domain.NewGeneralAdmissionSection(mustCode(t, "FLOOR"), "Floor", 0)
+
+		if !errors.Is(err, domain.ErrInvalidSection) {
+			t.Errorf("NewGeneralAdmissionSection() error = %v, want %v", err, domain.ErrInvalidSection)
+		}
+	})
+}
