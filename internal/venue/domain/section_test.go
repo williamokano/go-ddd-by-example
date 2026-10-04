@@ -69,3 +69,18 @@ func TestNewGeneralAdmissionSection(t *testing.T) {
 		}
 	})
 }
+
+func TestSection_Rows_ReturnsACopy(t *testing.T) {
+	section, err := domain.NewSeatedSection(mustCode(t, "ORCH"), "Orchestra", []domain.Row{mustRow(t, "A", 10)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rows := section.Rows()
+	rows[0] = mustRow(t, "Z", 99)
+	_ = append(rows, mustRow(t, "B", 12))
+
+	if got, want := section.Capacity(), 10; got != want {
+		t.Errorf("Capacity() = %d after mutating Rows(), want %d", got, want)
+	}
+}

@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -51,8 +52,9 @@ func NewGeneralAdmissionSection(code SectionCode, name string, capacity int) (Se
 // Kind returns whether the section is seated or general admission.
 func (s Section) Kind() SectionKind { return s.kind }
 
-// Rows returns the rows of a seated section; a general admission section has none.
-func (s Section) Rows() []Row { return s.rows }
+// Rows returns a copy of the rows of a seated section; a general admission
+// section has none.
+func (s Section) Rows() []Row { return slices.Clone(s.rows) }
 
 // Capacity returns the number of places in the section: its seats, or its
 // general admission capacity (VEN-7).
