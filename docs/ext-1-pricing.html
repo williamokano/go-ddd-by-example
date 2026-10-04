@@ -263,7 +263,7 @@ PriceBreakdown
   <li>Compare three designs: (a) a <code>Promotion</code> aggregate with a redemption count, reserved <em>before</em> placing the order and released if the order fails (a small saga); (b) count redemptions after the fact and accept a small overrun; (c) a unique constraint on <code>(code, customer)</code> plus a counter row updated with optimistic concurrency.</li>
   <li>For each: what happens with 500 customers redeeming the last 10 uses in the same second? Which is "wrong" in a way the business would actually mind?</li>
   <li>Implement the one you chose, test-first, with the 7.6 race test as a template.</li>
-  <li>Record the decision as ADR-E16 in the <a href="ext-decisions.html">extension log</a>.</li>
+  <li>Record the decision as a new ADR in the <a href="ext-decisions.html">extension log</a>.</li>
 </ol></div>
 </section>
 </main>

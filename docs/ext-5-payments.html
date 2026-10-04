@@ -9,9 +9,9 @@
 <body>
 <main class="content">
 <header>
-  <div class="kicker">Extension track · E5 · needs Part 8 (and E2 for E5.9–E5.10)</div>
+  <div class="kicker">Extension track · E5 · needs Part 8 (and E2 for E5.9–E5.12)</div>
   <h1>Payments: modelling a messy outside world</h1>
-  <p class="lead">In Part 7 payment was a two-method port with a fake behind it. Real payments are a whole subdomain: authorize, capture, void, refund, declines, unknown outcomes, webhooks, disputes and reconciliation. You'll grow that port into a <strong>Payments bounded context</strong>, put a real Stripe sandbox adapter behind it, and then add two features to the existing domain: <strong>customer refunds</strong> and <strong>chargebacks</strong>. The lesson isn't Stripe. It's keeping Stripe <em>out of your language</em>.</p>
+  <p class="lead">In Part 7 payment was a two-method port with a fake behind it. Real payments are a whole subdomain: authorize, capture, void, refund, declines, unknown outcomes, webhooks, disputes and reconciliation. You'll grow that port into a <strong>Payments bounded context</strong>, put a real Stripe sandbox adapter behind it, and then add features to the existing domain: <strong>customer refunds</strong>, <strong>chargebacks</strong>, and a small <strong>Denylist</strong> context that stops a charged-back customer from buying again. The lesson isn't Stripe. It's keeping Stripe <em>out of your language</em>.</p>
 </header>
 
 <div class="callout warn"><span class="label">What changes in the main course's story</span><p><a href="01-the-domain.html">Chapter 1</a> classifies Payments as <em>generic: buy it, here a fake adapter</em>, and lists a real provider as a non-goal. We still <strong>buy</strong> the card processing, but the part that decides <em>what a payment is, what states it has, and what we do on a dispute</em> is ours, and it's rich enough to deserve its own context. This is recorded as <a href="ext-decisions.html#adr-e10">ADR-E10</a>; the chapter is left as is.</p></div>
@@ -42,7 +42,7 @@
   <tr><td><code>pm_…</code> / token from the browser SDK</td><td><code>PaymentMethodToken</code> (opaque)</td><td>Card numbers never reach Stagehand. The browser sends them to the provider and gives us a token.</td></tr>
   <tr><td><code>Idempotency-Key</code> header</td><td>The <code>AttemptKey</code> of a payment operation</td><td>Derived from our ids, so a retry is the <em>same</em> request.</td></tr>
   <tr><td><code>Refund</code> object</td><td><code>Refund</code> entity inside <code>Payment</code></td><td>See E5.2.</td></tr>
-  <tr><td><code>Dispute</code> (<code>charge.dispute.*</code> events)</td><td><code>Dispute</code> aggregate</td><td>Driven by the outside world, so it gets its own lifecycle (E5.10).</td></tr>
+  <tr><td><code>Dispute</code> (<code>charge.dispute.*</code> events)</td><td><code>Dispute</code> aggregate</td><td>Driven by the outside world, so it gets its own lifecycle (E5.10; defending one is the E5.14 stretch).</td></tr>
   <tr><td>webhook event + signature</td><td><code>ProviderNotification</code> (our sealed set of types)</td><td>Parsed in the driving adapter; the application layer never sees JSON.</td></tr>
 </table></div>
 
@@ -50,13 +50,14 @@
 <div class="table-wrap"><table class="rules">
   <tr><th>Id</th><th>Rule</th></tr>
   <tr><td>PAY-1</td><td>A payment is created for one order attempt, in one currency, for one amount &gt; 0. Creating it twice for the same order and attempt is idempotent (returns the existing payment). A declined payment is final; the customer's retry is a new attempt, so a new payment.</td></tr>
-  <tr><td>PAY-2</td><td>Lifecycle: Initiated → (AuthenticationRequired →) Authorized → Captured; or Initiated/Authorized → Declined/Voided. From Captured, refunds lead to PartiallyRefunded and Refunded (E5.2), and a dispute marks the payment Disputed (E5.10); nothing else leaves Captured.</td></tr>
+  <tr><td>PAY-2</td><td>Lifecycle: Initiated → (AuthenticationRequired →) Authorized → Captured; or Initiated/Authorized → Declined/Voided. From Captured, refunds lead to PartiallyRefunded and Refunded (E5.2), and an accepted dispute makes the payment ChargedBack (E5.10); nothing else leaves Captured.</td></tr>
   <tr><td>PAY-3</td><td>Capture amount ≤ authorized amount. (Capturing less releases the rest; capturing more is rejected.)</td></tr>
   <tr><td>PAY-4</td><td><strong>Σ successful and pending refunds ≤ captured amount.</strong> (The core invariant of this context, the analogue of TKT-5.)</td></tr>
   <tr><td>PAY-5</td><td>Every provider call carries an idempotency key derived from the payment id, the operation, and the attempt number. A timeout is an <em>unknown outcome</em>, never a decline, and is resolved by re-asking with the same key or by reconciliation.</td></tr>
   <tr><td>PAY-6</td><td>A provider notification is applied at most once (de-duplicated by provider event id), may arrive out of order, and may arrive for a payment we haven't finished saving.</td></tr>
   <tr><td>PAY-7</td><td>An authorization that wasn't captured within the provider's window (default 7 days for cards, configurable) is treated as expired and moved to Voided by reconciliation.</td></tr>
-  <tr><td>PAY-8</td><td>A dispute is Opened with a response deadline. Each dispute is Won, Lost or Accepted exactly once. A Lost or Accepted dispute removes the disputed amount from what may be refunded (PAY-4 extended).</td></tr>
+  <tr><td>PAY-8</td><td><strong>For now, every dispute is accepted on arrival:</strong> we tell the provider we accept it and never submit evidence. An accepted dispute is final, the payment becomes <code>ChargedBack</code>, and the disputed amount can no longer be refunded (PAY-4 extended). Defending disputes is the E5.14 stretch.</td></tr>
+  <tr><td>PAY-9</td><td>An authorization is refused, without calling the provider's authorize endpoint, when the payment method's fingerprint is denylisted (DNY-4). The decline reason is the generic <code>PaymentMethodNotAccepted</code>.</td></tr>
 </table></div>
 
 <section class="lesson" id="le5-1">
@@ -114,6 +115,11 @@ type PaymentProvider interface {
     Capture(ctx context.Context, r CaptureRequest) (CaptureResult, error)
     Void(ctx context.Context, r VoidRequest) error
     Refund(ctx context.Context, r RefundRequest) (RefundResult, error)
+    AcceptDispute(ctx context.Context, r AcceptDisputeRequest) error
+    // A stable, provider-scoped fingerprint of the card behind a one-time
+    // token, plus display hints (brand, last 4). Used by E5.12 and E6.
+    DescribePaymentMethod(ctx context.Context, t PaymentMethodToken) (
+        PaymentMethodInfo, error)
 }
 // Every request carries an AttemptKey. Every result is a sealed set:
 //   Authorized | Declined{Reason} | AuthenticationRequired | Pending.
@@ -143,7 +149,7 @@ type ProviderNotification interface{ isNotification() }
   <li><code>AuthorizePayment</code>: creates or loads the <code>Payment</code> (PAY-1), <strong>saves it first</strong>, then calls the provider with a key derived from <code>paymentID/authorize/attempt</code>, then applies the result and saves again. Why save <em>before</em> the call?</li>
   <li>Provider returns Declined → payment Declined, <code>PaymentDeclined{reason}</code> recorded. The customer may retry: a new attempt, a new key.</li>
   <li><code>ErrUnknownOutcome</code> → the payment stays <code>Initiated</code> with an "attempt in flight" marker and the use case returns a distinct "pending" result. A <em>retry with the same key</em> then resolves it (fake scripts it).</li>
-  <li><code>CapturePayment</code> when the capture call times out → unknown outcome again; the reconciler (E5.11) will settle it.</li>
+  <li><code>CapturePayment</code> when the capture call times out → unknown outcome again; the reconciler (E5.13) will settle it.</li>
   <li><code>RefundPayment</code> → <code>RequestRefund</code> on the aggregate (PAY-4 checked <em>before</em> any provider call), then the provider call, then success/failure applied.</li>
   <li>An optimistic-concurrency conflict on save retries the <em>use case</em>, but never the provider call without its key.</li>
 </ol></div>
@@ -158,7 +164,7 @@ type ProviderNotification interface{ isNotification() }
 </dl>
 <div class="callout do"><span class="label">Your turn</span><ol>
   <li>Same moves as Part 3: migration, sqlc, repository contract suite (fake + Postgres), optimistic concurrency, outbox in the same transaction.</li>
-  <li>Publish versioned events with golden tests: <code>payments.payment_authorized.v1</code>, <code>payment_declined.v1</code>, <code>payment_captured.v1</code>, <code>payment_voided.v1</code>, <code>refund_succeeded.v1</code>, <code>refund_failed.v1</code>, <code>dispute_opened.v1</code>, <code>dispute_closed.v1</code>. Payloads use <em>our</em> terms and carry the <code>orderRef</code> so consumers don't need payment ids.</li>
+  <li>Publish versioned events with golden tests: <code>payments.payment_authorized.v1</code>, <code>payment_declined.v1</code>, <code>payment_captured.v1</code>, <code>payment_voided.v1</code>, <code>refund_succeeded.v1</code>, <code>refund_failed.v1</code>, <code>dispute_opened.v1</code>, <code>dispute_accepted.v1</code>. Payloads use <em>our</em> terms and carry the <code>orderRef</code> so consumers don't need payment ids.</li>
   <li>Add the <strong>Open Host Service</strong>: <code>payments/contracts.Client</code> with <code>Authorize</code>, <code>Capture</code>, <code>Void</code>, <code>RefundOrder</code> taking and returning plain DTOs. A tiny driving adapter in <code>payments</code> implements it by calling the use cases. Other contexts depend on the interface and DTOs in <code>contracts</code> only.</li>
   <li>Update the architecture test (ADR-E10): a context may import another's <code>contracts</code> package only. Add an explicit rule: <code>payments/domain</code> and <code>payments/application</code> import no provider package.</li>
 </ol></div>
@@ -225,7 +231,7 @@ type ProviderNotification interface{ isNotification() }
   <li>Use the Stripe CLI's <code>stripe listen --forward-to localhost:8080/webhooks/stripe</code> to deliver sandbox events to your running app.</li>
   <li>Make the fake provider also deliver through the <em>same</em> endpoint shape so e2e tests exercise the real adapter path without Stripe.</li>
 </ol></div>
-<div class="callout warn"><span class="label">Pitfall</span><p>Webhooks are <em>advice from the outside</em>, not the source of truth. When in doubt about a payment's state, ask the provider (E5.11) rather than trusting arrival order.</p></div>
+<div class="callout warn"><span class="label">Pitfall</span><p>Webhooks are <em>advice from the outside</em>, not the source of truth. When in doubt about a payment's state, ask the provider (E5.13) rather than trusting arrival order.</p></div>
 </section>
 
 <section class="lesson" id="le5-9">
@@ -252,40 +258,121 @@ type ProviderNotification interface{ isNotification() }
 </section>
 
 <section class="lesson" id="le5-10">
-<h3><span class="lesson-id">E5.10</span> Feature: chargebacks (disputes)</h3>
+<h3><span class="lesson-id">E5.10</span> Feature: chargebacks, accepted on arrival</h3>
 <dl class="meta">
-  <dt>Goal</dt><dd>Model something that happens <em>to</em> us on someone else's schedule: a bank reverses a payment and gives us a deadline to respond.</dd>
-  <dt>Rules</dt><dd>PAY-8, TKT-17 (new)</dd>
-  <dt>Creates</dt><dd><code>payments/domain/dispute*.go</code>, webhook mappings, <code>ticketing</code> reaction, a deadline scheduler</dd>
+  <dt>Goal</dt><dd>Model something that happens <em>to</em> us on someone else's schedule, with the simplest policy that's safe: accept every dispute, cancel the tickets, and remember who did it.</dd>
+  <dt>Rules</dt><dd>PAY-8, TKT-17 (new); ADR-E16</dd>
+  <dt>Creates</dt><dd><code>payments/domain/dispute*.go</code>, webhook mappings for disputes, <code>AcceptDisputeOnArrival</code> policy, Ticketing's reaction, <code>ticketing.order_charged_back.v1</code></dd>
 </dl>
 <div class="table-wrap"><table class="rules">
   <tr><th>Id</th><th>Rule</th></tr>
-  <tr><td>TKT-17</td><td>When a payment for an order is disputed, the order is flagged <code>Disputed</code>, its tickets are voided (a gate scan must fail, 9.2), and Staff are notified. A <em>won</em> dispute reinstates the order and tickets if the show hasn't happened; a <em>lost</em> one makes it <code>ChargedBack</code>.</td></tr>
+  <tr><td>TKT-17</td><td>When Payments reports a chargeback for an order, the order becomes <code>ChargedBack</code> and its tickets are voided for good (a gate scan must fail, 9.2). <strong>Nothing is refunded</strong>: the bank has already taken the money back. Ticketing publishes <code>ticketing.order_charged_back.v1</code> with the order, the customer and the payment method's fingerprint.</td></tr>
 </table></div>
 <div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
-  <li><code>OpenDispute(paymentID, amount, reasonCode, respondBy, now)</code> only for a captured payment (possibly partly or fully refunded); the dispute amount can't exceed what was captured. Records <code>DisputeOpened</code>.</li>
-  <li>States: <code>Open → EvidenceSubmitted → Won | Lost</code>, or <code>Open → Accepted</code> (we give up). Closing twice is a no-op (PAY-6).</li>
-  <li>Deadline logic is a pure function of the injected time: <code>dispute.IsOverdue(now)</code>. A scheduler (a driving adapter, like 7.9) emits <code>dispute_response_due.v1</code> a day before the deadline.</li>
-  <li><strong>Eventual consistency with the payment:</strong> <code>DisputeOpened</code> → a handler in the same context marks the payment <code>Disputed</code> and tightens PAY-4 (no refunds while disputed, or refunds reduce the disputed amount; choose and document, because the real world allows both).</li>
-  <li><strong>Reaction in Ticketing</strong> from <code>dispute_opened.v1</code> (TKT-17), idempotent.</li>
-  <li>Stretch: <code>SubmitEvidence</code>. Payments asks Ticketing for facts (order, ticket scan log) by event and assembles a bundle. Notice that Payments has no business knowing what a ticket is, so Ticketing owns the <em>content</em>, Payments owns the <em>process</em>.</li>
+  <li><code>OpenDispute(disputeID, paymentID, amount, reasonCode, respondBy, now)</code> only for a captured payment (possibly partly or fully refunded); the amount can't exceed what was captured. Records <code>DisputeOpened</code>.</li>
+  <li><code>Accept(now)</code> moves Open → Accepted exactly once; a second call is a no-op (PAY-6). Won/Lost states exist in the type but nothing produces them yet (that's E5.14).</li>
+  <li>Policy <code>AcceptDisputeOnArrival</code> (an application-level reaction to <code>DisputeOpened</code>): calls <code>PaymentProvider.AcceptDispute</code> with an idempotency key, then accepts the dispute and marks the payment <code>ChargedBack</code>. A provider timeout leaves the dispute Open for the reconciler (E5.13).</li>
+  <li><code>payments.dispute_accepted.v1</code> carries the <code>orderRef</code>, the amount and the payment method's fingerprint.</li>
+  <li>Ticketing consumes it (TKT-17): order <code>ChargedBack</code>, tickets voided, <strong>no call to <code>RefundOrder</code></strong>. Write that test explicitly: refunding a charged-back order would lose the money twice.</li>
+  <li>A chargeback on an order that was already refunded (E5.9) still voids nothing new and refunds nothing; it's recorded, and staff are alerted, because the customer got their money back twice.</li>
 </ol></div>
-<div class="callout discuss"><span class="label">Discuss</span><p>A chargeback can arrive up to ~120 days after the sale, after the show, after the seats are gone, and after you've refunded. What's the state of the system, and which of your rules still hold? (TKT-8 cannot "un-sell" a seat.) What's the business policy?</p></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>A chargeback can arrive up to ~120 days after the sale, after the show, after the seats are gone. What does "void the tickets" mean then, and which of your rules still hold? (TKT-8 cannot "un-sell" a seat.) Why is "accept everything" a reasonable starting policy for a ticketing business, and what number on the dashboard would make you build E5.14?</p></div>
 </section>
 
 <section class="lesson" id="le5-11">
-<h3><span class="lesson-id">E5.11</span> Reconciliation and failure drills</h3>
+<h3><span class="lesson-id">E5.11</span> The Denylist context</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>A small, generic domain that answers one question: "is any of these identifiers blocked?", for whatever kinds of identifier we decide to block.</dd>
+  <dt>Rules</dt><dd>DNY-1 … DNY-5</dd>
+  <dt>Concepts</dt><dd><a href="02-ddd-building-blocks.html#value-object">Value objects</a> with normalisation, a small <a href="02-ddd-building-blocks.html#aggregate">aggregate</a>, generic subdomain</dd>
+  <dt>Creates</dt><dd><code>internal/denylist/{domain,application,contracts}</code>, <code>db/migrations/0000N_denylist.sql</code>, Postgres adapter</dd>
+</dl>
+<div class="table-wrap"><table class="rules">
+  <tr><th>Id</th><th>Rule</th></tr>
+  <tr><td>DNY-1</td><td>An identifier is a <code>(kind, value)</code> pair. Kinds are a closed list that grows on purpose: <code>customer</code>, <code>email</code>, <code>payment_method</code> (a provider-scoped card fingerprint, never a token or a number); E6 may add <code>device</code>. Each kind normalises its value (emails are trimmed and lower-cased), and an unknown kind is rejected.</td></tr>
+  <tr><td>DNY-2</td><td>There is at most one active entry per identifier. Blocking an already blocked identifier is idempotent and only adds the new reason and source (for example, a second chargeback).</td></tr>
+  <tr><td>DNY-3</td><td>Every entry records why (<code>chargeback</code>, <code>fraud_confirmed</code>, <code>manual</code>), its source reference (the dispute id), when, and who (a user or <code>system:chargebacks</code>). Entries are never deleted: lifting one records who lifted it, when and why, and requires <code>denylist:manage</code>.</td></tr>
+  <tr><td>DNY-4</td><td>A check takes a set of identifiers and says <em>blocked</em> if any of them has an active entry. The answer names the matched kinds for staff and audit; the customer only ever sees a generic refusal.</td></tr>
+  <tr><td>DNY-5</td><td>The list holds no raw personal data it doesn't need: emails are stored as a keyed hash (HMAC with a secret from config), so lookups still work but the table isn't a list of addresses.</td></tr>
+</table></div>
+<div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
+  <li><code>NewIdentifier(kind, value)</code>: <code>" Ana@Example.com "</code> and <code>"ana@example.com"</code> are the same email identifier; an empty value or unknown kind → error.</li>
+  <li><code>Block(identifier, reason, source, by, now)</code> on a new identifier creates an active <code>Entry</code> and records <code>IdentifierBlocked</code>; on an active one it adds the reason/source and records nothing else (DNY-2).</li>
+  <li><code>Lift(by, why, now)</code> deactivates the entry and records <code>IdentifierLifted</code>; lifting twice is a no-op; blocking a lifted identifier reactivates it with the new reason, keeping the history.</li>
+  <li>Application: <code>Check(identifiers)</code> returns <code>Verdict{Blocked, MatchedKinds}</code>, reading active entries only (a query, as in 2.5: no aggregate load).</li>
+  <li>The email hasher is a driven port; the fake hashes deterministically so tests stay readable.</li>
+  <li>Publish the check as an Open Host Service, <code>denylist/contracts.Client.Check(...)</code>, with DTOs only, exactly like Payments in E5.5.</li>
+</ol></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>Should <code>a.n.a+tickets@gmail.com</code> match <code>ana@gmail.com</code>? Provider-specific normalisation catches evasion but can block innocent people. Which context owns that rule, and where does a mistake get corrected?</p></div>
+</section>
+
+<section class="lesson" id="le5-12">
+<h3><span class="lesson-id">E5.12</span> Block on chargeback, enforce at purchase</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>A charged-back customer can't buy anything again: not with the same account, not with the same email on a new account, and not with the same card on any account.</dd>
+  <dt>Rules</dt><dd>TKT-19 (new), PAY-9, DNY-4</dd>
+  <dt>Touches</dt><dd>Denylist (a policy and a projection), Ticketing (<code>HoldSeats</code>, <code>Checkout</code>), Payments (<code>AuthorizePayment</code>), Identity's published contract (E2)</dd>
+</dl>
+<div class="table-wrap"><table class="rules">
+  <tr><th>Id</th><th>Rule</th></tr>
+  <tr><td>TKT-19</td><td>A customer whose account or email is denylisted can't hold seats or place orders. The refusal is the same generic error for every reason, and it happens before any seat is touched.</td></tr>
+</table></div>
+<pre><code>ticketing.order_charged_back.v1
+   {orderRef, customerId, paymentMethodFingerprint}
+        │
+        ▼
+Denylist policy BlockOnChargeback
+   block customer:&lt;id&gt;
+   block email:&lt;hash&gt;        ◄── projection customerId → email
+   block payment_method:&lt;fp&gt;     (from identity.user_* events, E2)
+
+Enforcement: each context checks the identifiers it owns
+   Ticketing  HoldSeats, Checkout
+              └─► Check({customer})            TKT-19
+                  (Denylist also checks that customer's email)
+   Payments   AuthorizePayment
+              └─► DescribePaymentMethod
+              └─► Check({payment_method})      PAY-9</code></pre>
+<div class="callout tdd"><span class="label">TDD script (outside-in)</span><ol class="tests">
+  <li><strong>Acceptance (red):</strong> a customer buys, the fake provider opens a dispute → the order is ChargedBack, tickets are void, and then: (a) the same account can't hold seats; (b) a <em>new</em> account with the same email can't hold seats; (c) a different, clean account paying with the same card is declined with <code>PaymentMethodNotAccepted</code>; (d) a clean account with a different card buys normally.</li>
+  <li>Policy <code>BlockOnChargeback</code>: one event → three entries, each with reason <code>chargeback</code> and the dispute as source. Redelivery adds nothing (DNY-2 + inbox).</li>
+  <li>Projection: Denylist keeps <code>customerId → email hash</code> from Identity's events (publish <code>identity.user_registered.v1</code> and <code>identity.user_email_changed.v1</code> from E2 if you haven't). A check for <code>customer:X</code> also checks X's email, which is how (b) is caught.</li>
+  <li>Ticketing: <code>HoldSeats</code> and <code>Checkout</code> call the denylist before touching the inventory; blocked → <code>ErrPurchaseNotAllowed</code> → 403 with a generic body. With E2, the customer id comes from the principal, so it can't be spoofed.</li>
+  <li>Payments: <code>AuthorizePayment</code> calls <code>DescribePaymentMethod</code> (the fake returns a fingerprint per test token, Stripe returns the card's fingerprint), checks it, and refuses without authorizing (PAY-9). The fingerprint is stored on the payment, which is where E5.10's event gets it.</li>
+  <li>Staff with <code>denylist:manage</code> can lift an entry through <code>DELETE /denylist/{kind}/{value}</code> with a mandatory reason; with E4, both the block and the lift are in the audit trail.</li>
+  <li>The denylist being unavailable fails the purchase (fail closed): it's our own database, so if it's down, so is checkout. Contrast with the fraud vendor in E6.4.</li>
+</ol></div>
+<div class="callout why"><span class="label">Why a context of its own, and why not block the token?</span><p>Blocking is a policy many contexts will use (chargebacks today, confirmed fraud in E6, a staff decision tomorrow) about identifiers that belong to different contexts (Identity owns emails, Payments owns card fingerprints, Ticketing owns customers). Putting the list in any one of them would make the others depend on its model. A tiny generic context with a published <code>Check</code> keeps the dependency pointing the right way (ADR-E17). The token is useless to block: the browser gets a new one every time. The provider's card fingerprint is stable across tokens for the same card, so that's the identifier.</p></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>A family shares one card; one member charges back. Everyone is now blocked. Is that the business you want? What would you change (expiry, staff review, blocking only the card), and in which rule?</p></div>
+</section>
+
+<section class="lesson" id="le5-13">
+<h3><span class="lesson-id">E5.13</span> Reconciliation and failure drills</h3>
 <dl class="meta">
   <dt>Goal</dt><dd>Assume every message and every call can be lost, duplicated or late, and build the net underneath.</dd>
   <dt>Rules</dt><dd>PAY-5, PAY-7</dd>
 </dl>
 <div class="callout do"><span class="label">Your turn</span><ol>
-  <li>A <code>reconcile</code> scheduler (a driving adapter) finds payments stuck in <code>Initiated</code> with an attempt in flight, or <code>Authorized</code> past their window, and asks the provider for the truth, <em>re-using the original idempotency key</em> for the operations that support it. It applies the answer through the same use case the webhook uses.</li>
+  <li>A <code>reconcile</code> scheduler (a driving adapter) finds payments stuck in <code>Initiated</code> with an attempt in flight, <code>Authorized</code> past their window, or disputes still <code>Open</code> because accepting them timed out, and asks the provider for the truth, <em>re-using the original idempotency key</em> for the operations that support it. It applies the answer through the same use case the webhook uses.</li>
   <li>Expose a <code>payments_stuck{state}</code> gauge and the age of the oldest stuck payment (E3). A reconciler that never finds anything is the goal; a graph that shows it is the proof.</li>
   <li>Drills with the fake provider (put them in a table): (a) provider times out after succeeding; (b) provider fails <em>before</em> succeeding; (c) webhook arrives before the API response; (d) webhook delivered five times; (e) provider down for ten minutes; (f) capture succeeds but our save fails. For each write down the state of the system at every step and the test that proves it converges.</li>
-  <li>Finish: run the full S1–S6 acceptance suite plus the new refund and dispute scenarios against the <strong>fake</strong>, then run S1 by hand against the <strong>Stripe sandbox</strong> with the CLI forwarding webhooks, and watch every event in Kafka UI.</li>
+  <li>Finish: run the full S1–S6 acceptance suite plus the new refund, chargeback and denylist scenarios against the <strong>fake</strong>, then run S1 by hand against the <strong>Stripe sandbox</strong> with the CLI forwarding webhooks, and watch every event in Kafka UI.</li>
 </ol></div>
 <div class="callout discuss"><span class="label">Discuss</span><p>What's the difference between <em>reconciliation</em> (making our state match the provider's) and <em>settlement reconciliation</em> (matching payouts to the bank)? Which one did you build, and which would a finance team ask for next?</p></div>
+</section>
+<section class="lesson" id="le5-14">
+<h3><span class="lesson-id">E5.14</span> Stretch: defend disputes instead of accepting them</h3>
+<dl class="meta">
+  <dt>Goal</dt><dd>Replace "accept on arrival" with a real defence, for the learner to design and build.</dd>
+  <dt>Concepts</dt><dd>Process ownership across contexts, deadlines as domain time (ADR-008), schedulers as driving adapters (7.9)</dd>
+</dl>
+<div class="callout do"><span class="label">Your turn (design first)</span><ol>
+  <li>Extend PAY-8: <code>Open → EvidenceSubmitted → Won | Lost</code>, or <code>Open → Accepted</code>. Decide which disputes are worth fighting (amount, reason code, whether the ticket was scanned at the gate) as a <code>DisputePolicy</code> domain service, and keep "accept" as its default.</li>
+  <li>Deadlines: <code>dispute.IsOverdue(now)</code> is a pure function. A scheduler emits <code>payments.dispute_response_due.v1</code> a day before the deadline and auto-accepts at the deadline.</li>
+  <li>Evidence: Payments owns the <em>process</em>, Ticketing owns the <em>facts</em> (order, ticket scans, emails sent). Design the conversation: Payments asks by event, Ticketing answers with an evidence bundle by event. Payments must never learn what a ticket is.</li>
+  <li>A <em>won</em> dispute: money comes back. Do the tickets come back? (If the show hasn't happened, maybe.) Does the denylist entry get lifted automatically, or only by staff? Write it as rules first.</li>
+  <li>Record your decisions as new ADRs, starting at ADR-E18.</li>
+</ol></div>
 </section>
 </main>
 <script src="assets/course.js"></script>

@@ -58,8 +58,11 @@ E2 → E5 → E6.
 - [ ] E5.7 The Stripe adapter (sandbox)
 - [ ] E5.8 Webhooks
 - [ ] E5.9 Feature: customer refunds
-- [ ] E5.10 Feature: chargebacks
-- [ ] E5.11 Reconciliation and failure drills
+- [ ] E5.10 Feature: chargebacks, accepted on arrival
+- [ ] E5.11 The Denylist context
+- [ ] E5.12 Block on chargeback, enforce at purchase
+- [ ] E5.13 Reconciliation and failure drills
+- [ ] E5.14 Stretch: defend disputes
 
 ## E6 — Fraud screening (`docs/ext-6-fraud.html`)
 - [ ] E6.1 Model first

@@ -92,8 +92,19 @@
 <p><strong>Decision:</strong> Events are translated into <code>TransactionOutcome</code>s and stored in a queue table (written with the consumer's inbox row), then delivered by a worker with retry, backoff, per-transaction ordering, idempotent ids and a dead-letter state. Reporting never sits in a customer-facing request path.</p>
 <p><strong>Consequences:</strong> (+) A vendor outage costs nothing but delay. (+) Same reliability story as the outbox. (−) One more worker and table to operate; dead-letters need an owner.</p>
 
+<h2 id="adr-e16">ADR-E16 — Every chargeback is accepted on arrival; defence is deferred</h2>
+<p><strong>Status:</strong> accepted (revisit when chargeback losses justify a defence, E5.14).</p>
+<p><strong>Decision:</strong> When a dispute opens, Payments accepts it with the provider, marks the payment <code>ChargedBack</code>, and publishes <code>dispute_accepted.v1</code>. Ticketing voids the order's tickets and refunds nothing. The customer's identifiers are denylisted (ADR-E17).</p>
+<p><strong>Consequences:</strong> (+) No evidence workflow, no deadlines to miss, and a much smaller first version. (+) The <code>Dispute</code> aggregate already has the states a defence will need. (−) We lose every dispute, including the ones we would have won. (−) A customer who is wrongly blocked needs staff to lift the entry.</p>
+
+<h2 id="adr-e17">ADR-E17 — A Denylist context; each context checks the identifiers it owns</h2>
+<p><strong>Status:</strong> accepted.</p>
+<p><strong>Context:</strong> A chargeback must stop the customer from buying again by account, email and card, and those identifiers belong to Ticketing, Identity and Payments respectively.</p>
+<p><strong>Decision:</strong> A small generic <code>denylist</code> context stores blocked <code>(kind, value)</code> identifiers with reasons and history, and publishes a synchronous <code>Check</code> (an Open Host Service, as in ADR-E10). It fills itself from events (<code>order_charged_back</code>; later confirmed fraud) and keeps a customer → email projection. Ticketing checks the customer before holding seats; Payments checks the card fingerprint before authorizing. Card tokens are never blocked, only provider fingerprints. Emails are stored as keyed hashes.</p>
+<p><strong>Consequences:</strong> (+) New identifier kinds and new reasons to block don't touch the contexts that check. (+) No context depends on another's model. (−) One more synchronous dependency on the purchase path, which fails closed. (−) Blocking by card or email can catch innocent people who share them; lifting is a manual, audited staff action.</p>
+
 <h2>Template</h2>
-<p>Use the same shape as the main log's template: Status, Context, Decision, Consequences, Alternatives. Number new extension decisions <code>ADR-E16</code> onward.</p>
+<p>Use the same shape as the main log's template: Status, Context, Decision, Consequences, Alternatives. Number new extension decisions <code>ADR-E18</code> onward.</p>
 </main>
 <script src="assets/course.js"></script>
 </body>

@@ -28,7 +28,7 @@
   <div class="card"><h4><a href="ext-2-identity.html">E2 · Identity &amp; access</a> <span class="tag">cross-cutting</span></h4><p>Who is calling, and what may they do? Local user/password <em>and</em> pluggable SSO providers side by side. RBAC around the use cases, ownership rules from the domain.</p></div>
   <div class="card"><h4><a href="ext-3-observability.html">E3 · Observability</a> <span class="tag">cross-cutting</span></h4><p>Prometheus metrics and Grafana dashboards in an optional Compose profile. Instrument through decorators and adapters, never the domain.</p></div>
   <div class="card"><h4><a href="ext-4-audit.html">E4 · Audit trail</a> <span class="tag">cross-cutting</span></h4><p>Now that we know the caller, record who did what: command-level attempts plus actor-enriched events, in an append-only log.</p></div>
-  <div class="card"><h4><a href="ext-5-payments.html">E5 · Payments</a> <span class="tag core">new context</span></h4><p>A real Stripe sandbox integration that never leaks Stripe into our language. Authorize/capture, <strong>refunds</strong> as a feature added to an existing domain, and <strong>chargebacks</strong> from the outside world.</p></div>
+  <div class="card"><h4><a href="ext-5-payments.html">E5 · Payments</a> <span class="tag core">new context</span></h4><p>A real Stripe sandbox integration that never leaks Stripe into our language. Authorize/capture, <strong>refunds</strong> as a feature added to an existing domain, <strong>chargebacks</strong> from the outside world, and a <strong>denylist</strong> so a charged-back customer can't buy again.</p></div>
   <div class="card"><h4><a href="ext-6-fraud.html">E6 · Fraud screening</a> <span class="tag core">new context</span></h4><p>A third-party risk vendor we call synchronously before payment and feed asynchronously afterwards. We only ever use a fake; the architecture is the lesson.</p></div>
 </div>
 
@@ -39,7 +39,7 @@
   <tr><td>E2 identity</td><td>Part 4 (HTTP, composition root, architecture test); E2.7 needs Part 1's <code>Venue</code></td><td>nothing</td></tr>
   <tr><td>E3 observability</td><td>Part 5 (outbox, consumers); E3.3 is richer after Part 7</td><td>nothing; labels by role are nicer after E2</td></tr>
   <tr><td>E4 audit</td><td>Part 8 (8.3 correlation ids, 8.4 inbox and <code>TxManager</code>)</td><td>E2 (the actor)</td></tr>
-  <tr><td>E5 payments</td><td>Part 8 (8.4 inbox for webhooks)</td><td>E2 for E5.9–E5.10 (refund and dispute permissions); E1 makes E5.9's amounts richer but isn't required</td></tr>
+  <tr><td>E5 payments</td><td>Part 8 (8.4 inbox for webhooks)</td><td>E2 for E5.9–E5.12 (refund and denylist permissions, and the customer's email for the denylist); E1 makes E5.9's amounts richer but isn't required</td></tr>
   <tr><td>E6 fraud</td><td>Part 8</td><td>E5 (it screens before payments and learns from them); E2 for manual review</td></tr>
 </table></div>
 <pre><code>E1 pricing                           (independent: domain only)
@@ -56,7 +56,7 @@ E2 ──► E5 payments ──► E6 fraud      (fraud screens before, and lear
   <tr><td>E2 identity</td><td>Cross-cutting concern</td><td>HTTP middleware, composition root (decorators), a new <code>identity</code> context, one field on <code>Venue</code></td><td>The bodies of existing use cases (one exception in E2.7, discussed there)</td></tr>
   <tr><td>E3 observability</td><td>Cross-cutting concern</td><td>Platform packages, decorators, adapters, Compose</td><td>Domain and application code</td></tr>
   <tr><td>E4 audit</td><td>Cross-cutting concern with a data requirement</td><td>Outbox envelope (an additive field), decorators, a new <code>audit</code> context</td><td>Domain event payloads</td></tr>
-  <tr><td>E5 payments</td><td>Replace a stub with a real subdomain; add features to an existing aggregate and saga</td><td>A new context; the adapter behind Ticketing's <code>PaymentGateway</code>; <code>Order</code> gains states</td><td>Seat inventory logic, Show, Venue</td></tr>
+  <tr><td>E5 payments</td><td>Replace a stub with a real subdomain; add features to an existing aggregate and saga</td><td>Two new contexts (Payments and a small Denylist); the adapter behind Ticketing's <code>PaymentGateway</code>; <code>Order</code> gains states; one guard in <code>HoldSeats</code> and <code>Checkout</code></td><td>Seat inventory logic, Show, Venue</td></tr>
   <tr><td>E6 fraud</td><td>Insert a step into an existing saga; reliable outbound feeds</td><td>A new context; one saga step and two <code>Order</code> states in Ticketing</td><td>Payments internals</td></tr>
 </table></div>
 
@@ -76,7 +76,8 @@ E2 ──► E5 payments ──► E6 fraud      (fraud screens before, and lear
   <tr><td>Capture</td><td>Collect previously authorized funds.</td></tr>
   <tr><td>Void</td><td>Release an authorization that was never captured. Cheaper and faster than a refund.</td></tr>
   <tr><td>Refund</td><td>Return captured money to the customer, fully or partly.</td></tr>
-  <tr><td>Dispute (chargeback)</td><td>The cardholder's bank reverses a captured payment and asks us to prove it was legitimate, within a deadline.</td></tr>
+  <tr><td>Dispute (chargeback)</td><td>The cardholder's bank reverses a captured payment and asks us to prove it was legitimate, within a deadline. For now Stagehand accepts every dispute (E5.10).</td></tr>
+  <tr><td>Denylist / blocked identifier</td><td>A customer account, email or card fingerprint that may no longer buy. Added automatically on a chargeback, lifted only by staff, never deleted.</td></tr>
   <tr><td>Screening</td><td>Asking a fraud vendor to assess a prospective transaction <em>before</em> we try to take money.</td></tr>
   <tr><td>Risk decision</td><td><em>Our</em> verdict (Allow / Review / Block), derived from vendor signals plus our own policy.</td></tr>
   <tr><td>Issuer fraud report</td><td>The cardholder's bank reporting a transaction as fraud (Visa TC40, Mastercard SAFE). A risk signal only: no dispute, no deadline.</td></tr>
@@ -85,7 +86,7 @@ E2 ──► E5 payments ──► E6 fraud      (fraud screens before, and lear
 </table></div>
 
 <h2>New rule ids</h2>
-<p>Numbering continues the main course's scheme so review comments stay unambiguous. <code>PRC-*</code>, <code>AUTH-*</code>, <code>AUD-*</code>, <code>PAY-*</code> and <code>FRD-*</code> are new families. The existing contexts get <code>VEN-8</code> (E2) and <code>TKT-13…TKT-18</code> (E5 and E6). Each rule is defined in the lesson that introduces it.</p>
+<p>Numbering continues the main course's scheme so review comments stay unambiguous. <code>PRC-*</code>, <code>AUTH-*</code>, <code>AUD-*</code>, <code>PAY-*</code>, <code>DNY-*</code> and <code>FRD-*</code> are new families. The existing contexts get <code>VEN-8</code> (E2) and <code>TKT-13…TKT-19</code> (E5 and E6). Each rule is defined in the lesson that introduces it.</p>
 
 <h2>Ground rules for every lesson in this track</h2>
 <ol>

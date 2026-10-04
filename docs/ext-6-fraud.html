@@ -192,9 +192,10 @@ type OutcomeReporter interface { // async: we retry; the vendor may be down
   <li>A policy decision <em>in Payments</em> (not Fraud): on an alert for a Captured payment, <strong>proactively refund</strong> when the alert says it will otherwise become a dispute and the amount is under a threshold. This is cheaper than a chargeback fee. Fraud only <em>tells</em>; Payments <em>decides</em> what to do with its money. Test both sides separately.</li>
   <li>Ticketing must cope with a refund it didn't ask for: its <code>refund_succeeded</code> consumer (E5.9) moves a Paid or Fulfilled order to Refunded and voids its tickets even when the order wasn't <code>RefundPending</code>.</li>
   <li>The matching outcome (<code>FraudReported</code> / <code>Chargeback</code>) is queued for the vendor via E6.7, so it learns the transaction was bad. Check that the feed contains a fraud-coded chargeback <em>and</em> keeps the earlier <code>Captured</code> first.</li>
-  <li>A customer who was charged back is now a risk signal: add <code>PriorChargeback</code> and <code>PriorFraudReport</code> flags to the screening request, fed by a small local projection built from <code>dispute_opened</code> and <code>fraud_reported</code> events (a read model, as in 6.5).</li>
+  <li>A charged-back customer never reaches screening: the denylist (E5.12) refuses them first. A fraud report doesn't block anyone, but it is a risk signal: add a <code>PriorFraudReport</code> flag to the screening request, fed by a small local projection built from <code>fraud_reported</code> events (a read model, as in 6.5).</li>
+  <li>Policy decision to make and test: when the vendor's review or a staff member <em>confirms</em> fraud, Fraud asks the denylist to block the customer, email, card and device (a new <code>device</code> kind, DNY-1) with reason <code>fraud_confirmed</code>. Fraud decides; Denylist only stores and answers.</li>
 </ol></div>
-<div class="callout discuss"><span class="label">Discuss</span><p>The same customer-level fact ("this person charged back before") is useful to three contexts. Which context owns it, and how do the others learn it without a shared table?</p></div>
+<div class="callout discuss"><span class="label">Discuss</span><p>The denylist and the fraud vendor both judge customers. When should a decision be a hard block in our own list, and when only a signal to the vendor? Which one would you trust with a customer who has spent thousands with you?</p></div>
 </section>
 
 <section class="lesson" id="le6-9">
