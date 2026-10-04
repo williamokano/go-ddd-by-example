@@ -23,6 +23,8 @@ var errorStatuses = []struct {
 	{domain.ErrDuplicateSeat, http.StatusUnprocessableEntity, "Duplicate seat"},
 	{domain.ErrUnknownSeat, http.StatusUnprocessableEntity, "Unknown seat"},
 	{sharedkernel.ErrInvalidMoney, http.StatusUnprocessableEntity, "Invalid money"},
+	{domain.ErrInvalidContactEmail, http.StatusUnprocessableEntity, "Invalid contact email"},
+	{application.ErrOrderNotFound, http.StatusNotFound, "Order not found"},
 	{domain.ErrNotHoldOwner, http.StatusForbidden, "Not your hold"},
 	{application.ErrInventoryNotFound, http.StatusNotFound, "Inventory not found"},
 	{application.ErrHoldNotFound, http.StatusNotFound, "Hold not found"},

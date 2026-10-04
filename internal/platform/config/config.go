@@ -19,13 +19,15 @@ type Config struct {
 	KafkaBrokers       []string      // KAFKA_BROKERS, comma-separated; default localhost:9092
 	OutboxPollInterval time.Duration // OUTBOX_POLL_INTERVAL, default 200ms
 	HoldTTL            time.Duration // HOLD_TTL, default 10m (TKT-4); shorten it in e2e tests
+	PaymentFakeMode    string        // PAYMENT_FAKE_MODE: approve | decline | delay:3s; default approve
 }
 
 // Load builds the Config from getenv (os.Getenv in main, a map in tests).
 func Load(getenv func(string) string) (Config, error) {
 	cfg := Config{
-		HTTPAddr:    or(getenv("HTTP_ADDR"), ":8080"),
-		DatabaseURL: getenv("DATABASE_URL"),
+		HTTPAddr:        or(getenv("HTTP_ADDR"), ":8080"),
+		DatabaseURL:     getenv("DATABASE_URL"),
+		PaymentFakeMode: or(getenv("PAYMENT_FAKE_MODE"), "approve"),
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, errors.New("config: DATABASE_URL is required")

@@ -56,3 +56,37 @@ func (h *handlers) seats(w http.ResponseWriter, r *http.Request) {
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }
+
+func (h *handlers) placeOrder(w http.ResponseWriter, r *http.Request) {
+	var req placeOrderRequest
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	res, err := h.uc.Checkout.Handle(r.Context(), application.Checkout{
+		HoldID: req.HoldID, CustomerID: req.CustomerID, ContactEmail: req.ContactEmail,
+	})
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	w.Header().Set("Location", "/orders/"+res.OrderID.String())
+	httpx.WriteJSON(w, http.StatusCreated, placeOrderResponse{ID: res.OrderID.String(), Status: res.Status.String()})
+}
+
+func (h *handlers) getOrder(w http.ResponseWriter, r *http.Request) {
+	id, err := domain.ParseOrderID(r.PathValue("id"))
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	v, err := h.uc.Orders.Get(r.Context(), id)
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	resp := orderResponse{ID: v.ID, ShowID: v.ShowID, Status: v.Status, Total: priceDTO{Amount: v.Amount, Currency: v.Currency}, Tickets: []ticketResponse{}}
+	for _, t := range v.Tickets {
+		resp.Tickets = append(resp.Tickets, ticketResponse{Seat: t.Seat, Code: t.Code, Status: t.Status})
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}

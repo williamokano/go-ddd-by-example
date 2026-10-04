@@ -24,9 +24,11 @@ import (
 	showapp "github.com/williamokano/go-ddd-by-example/internal/show/application"
 	showcontracts "github.com/williamokano/go-ddd-by-example/internal/show/contracts"
 	ticketingids "github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/driven/ids"
+	"github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/driven/payment/fakegateway"
 	ticketingpg "github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/driven/postgres"
 	ticketingconsumer "github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/driving/consumer"
 	ticketinghttp "github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/driving/httpapi"
+	"github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/sagamsg"
 	ticketingapp "github.com/williamokano/go-ddd-by-example/internal/ticketing/application"
 	"github.com/williamokano/go-ddd-by-example/internal/venue/adapters/driven/ids"
 	venuepg "github.com/williamokano/go-ddd-by-example/internal/venue/adapters/driven/postgres"
@@ -96,13 +98,28 @@ func serve(ctx context.Context) error {
 	consume(ctx, &background, cfg, "show", []string{venuecontracts.Topic}, venueEvents.Handle, logger)
 
 	// Ticketing: the inventory, its API, and its consumer of show.events.
+	paymentMode, err := fakegateway.ParseMode(cfg.PaymentFakeMode)
+	if err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
+	gateway := fakegateway.New(paymentMode)
 	inventories := ticketingpg.NewInventoryRepository(pool)
+	orders := ticketingpg.NewOrderRepository(pool)
+	tickets := ticketingpg.NewTicketRepository(pool)
 	ticketingIDs := ticketingids.New(idgen.UUIDv7{})
 	ticketingAPI := ticketinghttp.Routes(ticketinghttp.UseCases{
-		Hold:    ticketingapp.NewHoldSeatsHandler(inventories, ticketingIDs, clk, cfg.HoldTTL),
-		Release: ticketingapp.NewReleaseHoldHandler(inventories, clk),
-		Seats:   ticketingpg.NewSeatQueries(pool),
+		Hold:     ticketingapp.NewHoldSeatsHandler(inventories, ticketingIDs, clk, cfg.HoldTTL),
+		Release:  ticketingapp.NewReleaseHoldHandler(inventories, clk),
+		Seats:    ticketingpg.NewSeatQueries(pool),
+		Checkout: ticketingapp.NewCheckoutHandler(inventories, orders, gateway, ticketingIDs, clk),
+		Orders:   ticketingapp.NewOrderQueries(orders, tickets),
 	}, logger)
+	saga := ticketingconsumer.NewSagaConsumer(ticketingconsumer.SagaSteps{
+		Confirm: ticketingapp.NewConfirmHoldHandler(inventories, clk),
+		Issue:   ticketingapp.NewIssueTicketsHandler(orders, tickets, ticketingIDs, clk),
+		Refund:  ticketingapp.NewRefundOrderHandler(orders, gateway, clk),
+	}, logger)
+	consume(ctx, &background, cfg, "ticketing-saga", []string{sagamsg.Topic}, saga.Handle, logger)
 	showEvents := ticketingconsumer.NewShowConsumer(ticketingapp.NewOpenInventoryHandler(inventories, clk), logger)
 	consume(ctx, &background, cfg, "ticketing", []string{showcontracts.Topic}, showEvents.Handle, logger)
 
