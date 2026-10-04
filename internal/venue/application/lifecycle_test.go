@@ -12,46 +12,48 @@ import (
 
 func TestActivateVenue(t *testing.T) {
 	t.Run("activates a draft venue with a section (VEN-5)", func(t *testing.T) {
-		ctx, repo, id, addSection := setupAddSection(t)
-		if err := addSection.Handle(ctx, application.AddSection{VenueID: id.String(), Code: "FLOOR", Kind: "ga", Capacity: 100}); err != nil {
-			t.Fatal(err)
-		}
-		handler := application.NewActivateVenueHandler(repo, clockAt(fixedNow))
+		f := newFixture(t)
+		id := f.draftVenue(t)
 
-		err := handler.Handle(ctx, application.ActivateVenue{VenueID: id.String()})
+		err := f.activate.Handle(f.ctx, application.ActivateVenue{VenueID: id.String()})
 
 		if err != nil {
 			t.Fatalf("Handle() error = %v", err)
 		}
-		venue, _ := repo.Get(ctx, id)
-		if venue.Status() != domain.Active {
-			t.Errorf("Status() = %v, want active", venue.Status())
+		if got := f.venue(t, id).Status(); got != domain.Active {
+			t.Errorf("Status() = %v, want active", got)
 		}
-		events := repo.Published()
-		if _, ok := events[len(events)-1].(domain.VenueActivated); !ok {
-			t.Errorf("last event = %T, want domain.VenueActivated", events[len(events)-1])
+		if _, ok := f.lastEvent(t).(domain.VenueActivated); !ok {
+			t.Errorf("last event = %T, want domain.VenueActivated", f.lastEvent(t))
 		}
 	})
 
-	for name, tt := range map[string]struct {
-		venueID func(domain.VenueID) string
+	tests := map[string]struct {
+		venueID func(f *fixture, t *testing.T) string
 		wantErr error
 	}{
-		"unknown venue":           {func(domain.VenueID) string { return uuid.NewString() }, application.ErrVenueNotFound},
-		"malformed venue id":      {func(domain.VenueID) string { return "nope" }, domain.ErrInvalidVenueID},
-		"no sections, VEN-5 rule": {func(id domain.VenueID) string { return id.String() }, domain.ErrVenueHasNoSections},
-	} {
+		"unknown venue":      {func(*fixture, *testing.T) string { return uuid.NewString() }, application.ErrVenueNotFound},
+		"malformed venue id": {func(*fixture, *testing.T) string { return "nope" }, domain.ErrInvalidVenueID},
+		"no sections (VEN-5)": {func(f *fixture, t *testing.T) string {
+			id, err := f.register.Handle(f.ctx, validRegisterVenue())
+			if err != nil {
+				t.Fatal(err)
+			}
+			return id.String()
+		}, domain.ErrVenueHasNoSections},
+	}
+	for name, tt := range tests {
 		t.Run(name+" saves nothing", func(t *testing.T) {
-			ctx, repo, id, _ := setupAddSection(t)
-			before := len(repo.Published())
+			f := newFixture(t)
+			venueID := tt.venueID(f, t)
+			before := len(f.repo.Published())
 
-			err := application.NewActivateVenueHandler(repo, clockAt(fixedNow)).
-				Handle(ctx, application.ActivateVenue{VenueID: tt.venueID(id)})
+			err := f.activate.Handle(f.ctx, application.ActivateVenue{VenueID: venueID})
 
 			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("Handle() error = %v, want %v", err, tt.wantErr)
 			}
-			if got := len(repo.Published()); got != before {
+			if got := len(f.repo.Published()); got != before {
 				t.Errorf("published %d new events, want none", got-before)
 			}
 		})
@@ -60,49 +62,44 @@ func TestActivateVenue(t *testing.T) {
 
 func TestRetireVenue(t *testing.T) {
 	t.Run("retires an active venue (VEN-6)", func(t *testing.T) {
-		ctx, repo, id, addSection := setupAddSection(t)
-		if err := addSection.Handle(ctx, application.AddSection{VenueID: id.String(), Code: "FLOOR", Kind: "ga", Capacity: 100}); err != nil {
-			t.Fatal(err)
-		}
-		if err := application.NewActivateVenueHandler(repo, clockAt(fixedNow)).Handle(ctx, application.ActivateVenue{VenueID: id.String()}); err != nil {
-			t.Fatal(err)
-		}
-		handler := application.NewRetireVenueHandler(repo, clockAt(fixedNow))
+		f := newFixture(t)
+		id := f.activeVenue(t)
 
-		err := handler.Handle(ctx, application.RetireVenue{VenueID: id.String()})
+		err := f.retire.Handle(f.ctx, application.RetireVenue{VenueID: id.String()})
 
 		if err != nil {
 			t.Fatalf("Handle() error = %v", err)
 		}
-		venue, _ := repo.Get(ctx, id)
-		if venue.Status() != domain.Retired {
-			t.Errorf("Status() = %v, want retired", venue.Status())
+		if got := f.venue(t, id).Status(); got != domain.Retired {
+			t.Errorf("Status() = %v, want retired", got)
 		}
-		events := repo.Published()
-		if _, ok := events[len(events)-1].(domain.VenueRetired); !ok {
-			t.Errorf("last event = %T, want domain.VenueRetired", events[len(events)-1])
+		if _, ok := f.lastEvent(t).(domain.VenueRetired); !ok {
+			t.Errorf("last event = %T, want domain.VenueRetired", f.lastEvent(t))
 		}
 	})
 
-	for name, tt := range map[string]struct {
-		venueID func(domain.VenueID) string
+	tests := map[string]struct {
+		venueID func(f *fixture, t *testing.T) string
 		wantErr error
 	}{
-		"unknown venue":           {func(domain.VenueID) string { return uuid.NewString() }, application.ErrVenueNotFound},
-		"malformed venue id":      {func(domain.VenueID) string { return "nope" }, domain.ErrInvalidVenueID},
-		"draft venue, VEN-6 rule": {func(id domain.VenueID) string { return id.String() }, domain.ErrInvalidVenueTransition},
-	} {
+		"unknown venue":      {func(*fixture, *testing.T) string { return uuid.NewString() }, application.ErrVenueNotFound},
+		"malformed venue id": {func(*fixture, *testing.T) string { return "nope" }, domain.ErrInvalidVenueID},
+		"draft venue (VEN-6)": {func(f *fixture, t *testing.T) string {
+			return f.draftVenue(t).String()
+		}, domain.ErrInvalidVenueTransition},
+	}
+	for name, tt := range tests {
 		t.Run(name+" saves nothing", func(t *testing.T) {
-			ctx, repo, id, _ := setupAddSection(t)
-			before := len(repo.Published())
+			f := newFixture(t)
+			venueID := tt.venueID(f, t)
+			before := len(f.repo.Published())
 
-			err := application.NewRetireVenueHandler(repo, clockAt(fixedNow)).
-				Handle(ctx, application.RetireVenue{VenueID: tt.venueID(id)})
+			err := f.retire.Handle(f.ctx, application.RetireVenue{VenueID: venueID})
 
 			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("Handle() error = %v, want %v", err, tt.wantErr)
 			}
-			if got := len(repo.Published()); got != before {
+			if got := len(f.repo.Published()); got != before {
 				t.Errorf("published %d new events, want none", got-before)
 			}
 		})
