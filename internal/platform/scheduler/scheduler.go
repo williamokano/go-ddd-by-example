@@ -1,4 +1,4 @@
-// Package scheduler is a driving adapter driven by time: on every tick it
+// Package scheduler drives use cases by time: on every tick it
 // calls a use case, exactly like an HTTP handler or a Kafka consumer does on
 // a request or a message.
 package scheduler

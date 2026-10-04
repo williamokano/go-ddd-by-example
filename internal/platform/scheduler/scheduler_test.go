@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/williamokano/go-ddd-by-example/internal/platform/scheduler"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/trace"
-	"github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/driving/scheduler"
 )
 
 func TestRun_CallsTheUseCaseOncePerTickAndStopsOnCancel(t *testing.T) {

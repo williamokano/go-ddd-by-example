@@ -13,7 +13,8 @@ import (
 )
 
 // The whole state machine of Chapter 1 in one table: for every state and
-// command, either "ok → new state" or a specific error (SHW-5, SHW-6, SHW-8).
+// command, either "ok → new state" or a specific error (SHW-5, SHW-6, SHW-8,
+// SHW-9, SHW-10).
 func TestShow_StateMachine(t *testing.T) {
 	commands := map[string]func(t *testing.T, s *domain.Show) error{
 		"price":      func(t *testing.T, s *domain.Show) error { return s.Price(fullPrices(t), activeLayout(), now) },
@@ -21,6 +22,8 @@ func TestShow_StateMachine(t *testing.T) {
 		"publish":    func(_ *testing.T, s *domain.Show) error { return s.Publish(activeLayout(), now) },
 		"cancel":     func(t *testing.T, s *domain.Show) error { return s.Cancel(reason(t, "promoter ill"), now) },
 		"sold out":   func(_ *testing.T, s *domain.Show) error { return s.MarkSoldOut(now) },
+		"complete":   func(_ *testing.T, s *domain.Show) error { return s.Complete(afterTheShow) },
+		"back":       func(_ *testing.T, s *domain.Show) error { return s.MarkBackOnSale(now) },
 	}
 	type outcome struct {
 		state domain.Status
@@ -33,22 +36,27 @@ func TestShow_StateMachine(t *testing.T) {
 		domain.Draft: {
 			"price": ok(domain.Draft), "reschedule": ok(domain.Draft), "publish": ok(domain.Published),
 			"cancel": ok(domain.Cancelled), "sold out": fails(domain.ErrInvalidShowTransition),
+			"complete": fails(domain.ErrInvalidShowTransition), "back": fails(domain.ErrInvalidShowTransition),
 		},
 		domain.Published: {
 			"price": fails(domain.ErrShowNotDraft), "reschedule": fails(domain.ErrShowNotDraft),
 			"publish": fails(domain.ErrInvalidShowTransition), "cancel": ok(domain.Cancelled), "sold out": ok(domain.SoldOut),
+			"complete": ok(domain.Completed), "back": ok(domain.Published),
 		},
 		domain.SoldOut: {
 			"price": fails(domain.ErrShowNotDraft), "reschedule": fails(domain.ErrShowNotDraft),
 			"publish": fails(domain.ErrInvalidShowTransition), "cancel": ok(domain.Cancelled), "sold out": ok(domain.SoldOut),
+			"complete": ok(domain.Completed), "back": ok(domain.Published),
 		},
 		domain.Cancelled: {
 			"price": fails(domain.ErrShowNotDraft), "reschedule": fails(domain.ErrShowNotDraft),
 			"publish": fails(domain.ErrInvalidShowTransition), "cancel": fails(domain.ErrInvalidShowTransition), "sold out": ok(domain.Cancelled),
+			"complete": fails(domain.ErrInvalidShowTransition), "back": ok(domain.Cancelled),
 		},
 		domain.Completed: {
 			"price": fails(domain.ErrShowNotDraft), "reschedule": fails(domain.ErrShowNotDraft),
 			"publish": fails(domain.ErrInvalidShowTransition), "cancel": fails(domain.ErrInvalidShowTransition), "sold out": ok(domain.Completed),
+			"complete": ok(domain.Completed), "back": ok(domain.Completed),
 		},
 	}
 	for state, row := range table {
@@ -163,5 +171,44 @@ func TestRehydrateShow(t *testing.T) {
 
 	if s.Status() != domain.SoldOut || s.Version() != 3 || s.Prices().IsZero() || len(s.PullEvents()) != 0 {
 		t.Errorf("rehydrated show = %v v%d, events %v", s.Status(), s.Version(), s.PullEvents())
+	}
+}
+
+// afterTheShow is past inAMonth's end.
+var afterTheShow = now.Add(31 * 24 * time.Hour)
+
+func TestShow_Complete(t *testing.T) {
+	t.Run("not before the show has ended (SHW-9)", func(t *testing.T) {
+		s := showIn(t, domain.Published)
+
+		if err := s.Complete(s.Schedule().EndsAt().Add(-time.Second)); !errors.Is(err, domain.ErrShowNotEnded) {
+			t.Errorf("error = %v, want %v", err, domain.ErrShowNotEnded)
+		}
+	})
+
+	t.Run("records ShowCompleted once", func(t *testing.T) {
+		s := showIn(t, domain.SoldOut)
+
+		_ = s.Complete(afterTheShow)
+		_ = s.Complete(afterTheShow)
+
+		want := []sharedkernel.DomainEvent{domain.ShowCompleted{ShowID: showID, At: afterTheShow}}
+		if diff := cmp.Diff(want, s.PullEvents(), showValues); diff != "" {
+			t.Errorf("events mismatch (-want +got):\n%s", diff)
+		}
+	})
+}
+
+// SHW-10: a refund put seats back on sale, so a SoldOut show is Published
+// again. Like SHW-8, an old or repeated fact is a no-op.
+func TestShow_MarkBackOnSale(t *testing.T) {
+	s := showIn(t, domain.SoldOut)
+
+	_ = s.MarkBackOnSale(now)
+	_ = s.MarkBackOnSale(now)
+
+	want := []sharedkernel.DomainEvent{domain.ShowBackOnSale{ShowID: showID, At: now}}
+	if diff := cmp.Diff(want, s.PullEvents(), showValues); diff != "" {
+		t.Errorf("events mismatch (-want +got):\n%s", diff)
 	}
 }

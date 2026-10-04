@@ -140,6 +140,40 @@ func (s *Show) MarkSoldOut(now time.Time) error {
 	}
 }
 
+// Complete records that a Published or SoldOut show has ended (SHW-9). The
+// sweep may run it twice: completing a Completed show is a no-op.
+func (s *Show) Complete(now time.Time) error {
+	switch s.status {
+	case Published, SoldOut:
+		if now.Before(s.schedule.EndsAt()) {
+			return fmt.Errorf("%w: it ends at %s", ErrShowNotEnded, s.schedule.EndsAt().Format(time.RFC3339))
+		}
+		s.status = Completed
+		s.events.Record(ShowCompleted{ShowID: s.id, At: now})
+		return nil
+	case Completed:
+		return nil
+	default:
+		return fmt.Errorf("%w: a %s show cannot complete", ErrInvalidShowTransition, s.status)
+	}
+}
+
+// MarkBackOnSale records Ticketing's fact that a sold-out show has seats
+// again, after a refund (SHW-10): it is Published again. Like SHW-8, a fact
+// that arrives twice or too late is a no-op.
+func (s *Show) MarkBackOnSale(now time.Time) error {
+	switch s.status {
+	case SoldOut:
+		s.status = Published
+		s.events.Record(ShowBackOnSale{ShowID: s.id, At: now})
+		return nil
+	case Published, Cancelled, Completed:
+		return nil
+	default:
+		return fmt.Errorf("%w: a %s show cannot be back on sale", ErrInvalidShowTransition, s.status)
+	}
+}
+
 // ID returns the show's identity.
 func (s *Show) ID() ShowID { return s.id }
 

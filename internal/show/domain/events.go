@@ -87,3 +87,27 @@ func (ShowSoldOut) EventName() string { return "show.ShowSoldOut" }
 
 // OccurredAt implements DomainEvent.
 func (e ShowSoldOut) OccurredAt() time.Time { return e.At }
+
+// ShowCompleted records that a show has ended (SHW-9).
+type ShowCompleted struct {
+	ShowID ShowID
+	At     time.Time
+}
+
+// EventName implements DomainEvent.
+func (ShowCompleted) EventName() string { return "show.ShowCompleted" }
+
+// OccurredAt implements DomainEvent.
+func (e ShowCompleted) OccurredAt() time.Time { return e.At }
+
+// ShowBackOnSale records that a sold-out show has seats again (SHW-10).
+type ShowBackOnSale struct {
+	ShowID ShowID
+	At     time.Time
+}
+
+// EventName implements DomainEvent.
+func (ShowBackOnSale) EventName() string { return "show.ShowBackOnSale" }
+
+// OccurredAt implements DomainEvent.
+func (e ShowBackOnSale) OccurredAt() time.Time { return e.At }
