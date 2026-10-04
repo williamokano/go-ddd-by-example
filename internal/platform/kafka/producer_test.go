@@ -28,6 +28,7 @@ func TestProducer_PublishesTheEnvelopeKeyedByAggregate(t *testing.T) {
 	msg := outbox.Message{
 		EventID: uuid.New(), Topic: topic, Key: "venue-42", Type: "venue.activated.v1",
 		Payload: json.RawMessage(`{"venue_id":"venue-42"}`), OccurredAt: time.Date(2026, 11, 1, 20, 0, 0, 0, time.UTC),
+		CorrelationID: "purchase-42", CausationID: "evt-9",
 	}
 
 	if err := producer.Publish(context.Background(), []outbox.Message{msg}); err != nil {
@@ -49,7 +50,8 @@ func TestProducer_PublishesTheEnvelopeKeyedByAggregate(t *testing.T) {
 	if err := json.Unmarshal(rec.Value, &env); err != nil {
 		t.Fatal(err)
 	}
-	if env.EventID != msg.EventID.String() || env.AggregateID != "venue-42" || string(env.Payload) != `{"venue_id":"venue-42"}` {
+	if env.EventID != msg.EventID.String() || env.AggregateID != "venue-42" || string(env.Payload) != `{"venue_id":"venue-42"}` ||
+		env.CorrelationID != "purchase-42" || env.CausationID != "evt-9" {
 		t.Errorf("envelope = %+v", env)
 	}
 }

@@ -33,6 +33,7 @@ func (p *Producer) Publish(ctx context.Context, msgs []outbox.Message) error {
 		value, err := json.Marshal(Envelope{
 			EventID: m.EventID.String(), EventType: m.Type, OccurredAt: m.OccurredAt,
 			AggregateID: m.Key, Payload: m.Payload,
+			CorrelationID: m.CorrelationID, CausationID: m.CausationID,
 		})
 		if err != nil {
 			return fmt.Errorf("kafka: envelope %s: %w", m.Type, err)
@@ -46,6 +47,7 @@ func (p *Producer) Publish(ctx context.Context, msgs []outbox.Message) error {
 				{Key: "event_type", Value: []byte(m.Type)},
 				{Key: "occurred_at", Value: []byte(m.OccurredAt.UTC().Format(time.RFC3339Nano))},
 				{Key: "aggregate_id", Value: []byte(m.Key)},
+				{Key: "correlation_id", Value: []byte(m.CorrelationID)},
 			},
 		})
 	}

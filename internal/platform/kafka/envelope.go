@@ -15,7 +15,7 @@ type Envelope struct {
 	EventType     string          `json:"event_type"`
 	OccurredAt    time.Time       `json:"occurred_at"`
 	AggregateID   string          `json:"aggregate_id"`
-	CorrelationID string          `json:"correlation_id,omitempty"` // Part 8
-	CausationID   string          `json:"causation_id,omitempty"`   // Part 8
+	CorrelationID string          `json:"correlation_id,omitempty"` // the flow (8.3)
+	CausationID   string          `json:"causation_id,omitempty"`   // the event that caused this one
 	Payload       json.RawMessage `json:"payload"`                  // a contracts struct
 }

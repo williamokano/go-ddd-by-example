@@ -19,4 +19,7 @@ type Message struct {
 	Type       string          // e.g. "venue.activated.v1"
 	Payload    json.RawMessage // the contracts struct, as JSON
 	OccurredAt time.Time
+
+	CorrelationID string // the flow this event belongs to (8.3)
+	CausationID   string // the event that caused it, "" for a command from HTTP
 }

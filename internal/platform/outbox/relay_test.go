@@ -21,6 +21,7 @@ import (
 
 	"github.com/williamokano/go-ddd-by-example/internal/platform/outbox"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/postgres/pgtest"
+	"github.com/williamokano/go-ddd-by-example/internal/platform/trace"
 )
 
 func TestMain(m *testing.M) { os.Exit(pgtest.Main(m)) }
@@ -37,7 +38,8 @@ func newOutbox(t *testing.T, pool *pgxpool.Pool) string {
 		CREATE TABLE %[1]s.outbox (
 			id BIGSERIAL PRIMARY KEY, event_id UUID NOT NULL UNIQUE, topic TEXT NOT NULL,
 			msg_key TEXT NOT NULL, event_type TEXT NOT NULL, payload JSONB NOT NULL,
-			occurred_at TIMESTAMPTZ NOT NULL, published_at TIMESTAMPTZ)`, schema))
+			occurred_at TIMESTAMPTZ NOT NULL, published_at TIMESTAMPTZ,
+			correlation_id TEXT NOT NULL DEFAULT '', causation_id TEXT NOT NULL DEFAULT '')`, schema))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,5 +180,30 @@ func TestRelay_TwoRelaysNeverPublishTheSameRow(t *testing.T) {
 	}
 	if got := len(slow.types()) + len(fast.types()); got != 3 {
 		t.Errorf("published %d messages in total, want exactly 3", got)
+	}
+}
+
+// The repository's Save passes its ctx to Write: that is how the IDs reach
+// the outbox without the domain knowing about them (8.3).
+func TestWrite_StampsTheContextsIDsAndTheRelayCarriesThem(t *testing.T) {
+	pool := pgtest.New(t)
+	schema := newOutbox(t, pool)
+	ctx := trace.WithCausationID(trace.WithCorrelationID(context.Background(), "purchase-42"), "evt-9")
+	err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+		return outbox.Write(ctx, tx, schema, []outbox.Message{{
+			EventID: uuid.New(), Topic: "t", Key: "k", Type: "a.v1", Payload: json.RawMessage(`{}`), OccurredAt: time.Now(),
+		}})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub := &recorder{}
+
+	if _, err := outbox.NewRelay(pool, schema, pub, discard).Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(pub.sent) != 1 || pub.sent[0].CorrelationID != "purchase-42" || pub.sent[0].CausationID != "evt-9" {
+		t.Errorf("published %+v, want correlation purchase-42 and causation evt-9", pub.sent)
 	}
 }

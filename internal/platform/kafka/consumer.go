@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/williamokano/go-ddd-by-example/internal/platform/trace"
 )
 
 // Handler handles one message. Returning nil commits it; an error retries it.
@@ -66,6 +68,7 @@ func process(ctx context.Context, client *kgo.Client, cfg ConsumerConfig, handle
 	if err := json.Unmarshal(rec.Value, &env); err != nil {
 		return deadLetter(ctx, client, cfg, logger, rec, fmt.Errorf("decode envelope: %w", err))
 	}
+	ctx = withTrace(ctx, env)
 	backoff := cfg.Backoff
 	var err error
 	for attempt := 1; attempt <= cfg.MaxAttempts; attempt++ {
@@ -99,4 +102,15 @@ func deadLetter(ctx context.Context, client *kgo.Client, cfg ConsumerConfig, log
 	}
 	logger.ErrorContext(ctx, "kafka dead-lettered", "group", cfg.Group, "topic", rec.Topic, "offset", rec.Offset, "error", cause)
 	return true
+}
+
+// withTrace continues the event's flow: its correlation ID (or the event
+// itself, for an event published without one), and the event as the cause of
+// whatever the handler does next (8.3).
+func withTrace(ctx context.Context, env Envelope) context.Context {
+	correlation := env.CorrelationID
+	if correlation == "" {
+		correlation = env.EventID
+	}
+	return trace.WithCausationID(trace.WithCorrelationID(ctx, correlation), env.EventID)
 }

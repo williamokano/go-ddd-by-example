@@ -17,6 +17,7 @@ import (
 	"github.com/williamokano/go-ddd-by-example/internal/platform/kafka"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/kafka/kafkatest"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/outbox"
+	"github.com/williamokano/go-ddd-by-example/internal/platform/trace"
 )
 
 var discard = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -160,5 +161,39 @@ func TestRun_UndecodableMessagesGoStraightToTheDLQ(t *testing.T) {
 
 	if dead := kafkatest.Consume(t, topic+".dlq", 1); string(dead[0].Value) != "not json" {
 		t.Errorf("dlq value = %q", dead[0].Value)
+	}
+}
+
+// The runner continues the flow: the consumed event's correlation ID, and the
+// event itself as the cause of whatever the handler does (8.3).
+func TestRun_PutsTheIDsBackIntoTheContext(t *testing.T) {
+	topic := kafkatest.Topic(t)
+	producer, err := kafka.NewProducer(kafkatest.Brokers(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer producer.Close()
+	msg := outbox.Message{
+		EventID: uuid.New(), Topic: topic, Key: "k", Type: "a.v1", Payload: json.RawMessage(`{}`),
+		OccurredAt: time.Now(), CorrelationID: "purchase-42",
+	}
+	if err := producer.Publish(context.Background(), []outbox.Message{msg}); err != nil {
+		t.Fatal(err)
+	}
+
+	var mu sync.Mutex
+	var correlation, causation string
+	handled := false
+	err = runUntil(t, config(t, topic, "ids"), func(ctx context.Context, _ kafka.Envelope) error {
+		mu.Lock()
+		defer mu.Unlock()
+		correlation, causation, handled = trace.CorrelationID(ctx), trace.CausationID(ctx), true
+		return nil
+	}, func() bool { mu.Lock(); defer mu.Unlock(); return handled })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if correlation != "purchase-42" || causation != msg.EventID.String() {
+		t.Errorf("correlation %q, causation %q; want purchase-42 and the event id", correlation, causation)
 	}
 }

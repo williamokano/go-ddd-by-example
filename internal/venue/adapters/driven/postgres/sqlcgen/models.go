@@ -12,14 +12,16 @@ import (
 )
 
 type ShowOutbox struct {
-	ID          int64
-	EventID     uuid.UUID
-	Topic       string
-	MsgKey      string
-	EventType   string
-	Payload     []byte
-	OccurredAt  time.Time
-	PublishedAt pgtype.Timestamptz
+	ID            int64
+	EventID       uuid.UUID
+	Topic         string
+	MsgKey        string
+	EventType     string
+	Payload       []byte
+	OccurredAt    time.Time
+	PublishedAt   pgtype.Timestamptz
+	CorrelationID string
+	CausationID   string
 }
 
 type ShowShow struct {
@@ -81,14 +83,16 @@ type TicketingOrder struct {
 }
 
 type TicketingOutbox struct {
-	ID          int64
-	EventID     uuid.UUID
-	Topic       string
-	MsgKey      string
-	EventType   string
-	Payload     []byte
-	OccurredAt  time.Time
-	PublishedAt pgtype.Timestamptz
+	ID            int64
+	EventID       uuid.UUID
+	Topic         string
+	MsgKey        string
+	EventType     string
+	Payload       []byte
+	OccurredAt    time.Time
+	PublishedAt   pgtype.Timestamptz
+	CorrelationID string
+	CausationID   string
 }
 
 type TicketingSeat struct {
@@ -113,14 +117,16 @@ type TicketingTicket struct {
 }
 
 type VenueOutbox struct {
-	ID          int64
-	EventID     uuid.UUID
-	Topic       string
-	MsgKey      string
-	EventType   string
-	Payload     []byte
-	OccurredAt  time.Time
-	PublishedAt pgtype.Timestamptz
+	ID            int64
+	EventID       uuid.UUID
+	Topic         string
+	MsgKey        string
+	EventType     string
+	Payload       []byte
+	OccurredAt    time.Time
+	PublishedAt   pgtype.Timestamptz
+	CorrelationID string
+	CausationID   string
 }
 
 type VenueSection struct {
