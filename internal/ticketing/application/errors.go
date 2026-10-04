@@ -20,6 +20,9 @@ var (
 	// ErrTicketNotFound means no ticket has that code.
 	ErrTicketNotFound = errors.New("ticketing: ticket not found")
 
+	// ErrCheckoutNotFound means no checkout process exists for that order.
+	ErrCheckoutNotFound = errors.New("ticketing: checkout not found")
+
 	// ErrConcurrentModification means the aggregate changed since it was
 	// loaded (ADR-011); use cases retry a few times, then give up.
 	ErrConcurrentModification = errors.New("ticketing: concurrent modification")

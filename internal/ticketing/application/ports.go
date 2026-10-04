@@ -109,3 +109,12 @@ type ShowSchedule interface {
 	// StartsAt returns the show's start, or ErrInventoryNotFound.
 	StartsAt(ctx context.Context, showID domain.ShowID) (time.Time, error)
 }
+
+// CheckoutProcessRepository loads and saves CheckoutProcess aggregates (9.4).
+type CheckoutProcessRepository interface {
+	// Get loads an order's checkout, or returns ErrCheckoutNotFound.
+	Get(ctx context.Context, orderID domain.OrderID) (*domain.CheckoutProcess, error)
+
+	// Save persists the process; a stale version is ErrConcurrentModification.
+	Save(ctx context.Context, p *domain.CheckoutProcess) error
+}
