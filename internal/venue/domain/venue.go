@@ -76,3 +76,9 @@ func (v *Venue) Capacity() int {
 	}
 	return total
 }
+
+// Activate opens the venue for shows.
+func (v *Venue) Activate() error {
+	v.status = Active
+	return nil
+}

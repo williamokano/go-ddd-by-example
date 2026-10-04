@@ -135,3 +135,18 @@ func TestVenue_Sections_ReturnsACopy(t *testing.T) {
 		t.Errorf("mutating Sections() changed the venue (-want +got):\n%s", diff)
 	}
 }
+
+func TestVenue_Activate(t *testing.T) {
+	t.Run("a draft venue with a section becomes active (VEN-5)", func(t *testing.T) {
+		venue := newDraftVenue(t, withSection(gaSection(t, "FLOOR", 500)))
+
+		err := venue.Activate()
+
+		if err != nil {
+			t.Fatalf("Activate() error = %v", err)
+		}
+		if got, want := venue.Status(), domain.Active; got != want {
+			t.Errorf("Status() = %v, want %v", got, want)
+		}
+	})
+}
