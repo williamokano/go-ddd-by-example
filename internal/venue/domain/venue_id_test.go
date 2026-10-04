@@ -49,3 +49,17 @@ func TestNewVenueID(t *testing.T) {
 		t.Errorf("String() = %q, want %q", got, u.String())
 	}
 }
+
+func TestVenueID_IsZero(t *testing.T) {
+	if !(domain.VenueID{}).IsZero() {
+		t.Error("VenueID{}.IsZero() = false, want true")
+	}
+
+	id, err := domain.ParseVenueID("0192f5e0-7c1a-7b3e-9d2a-3f4b5c6d7e8f")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id.IsZero() {
+		t.Error("parsed id IsZero() = true, want false")
+	}
+}
