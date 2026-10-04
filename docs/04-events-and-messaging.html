@@ -64,10 +64,10 @@ CREATE INDEX ON venue.outbox (id) WHERE published_at IS NULL;</code></pre>
 <div class="table-wrap"><table>
   <tr><th>Topic</th><th>Producer</th><th>Event types</th><th>Consumers (group id)</th></tr>
   <tr><td><code>venue.events</code></td><td>Venue</td><td><code>venue.activated.v1</code>, <code>venue.retired.v1</code></td><td><code>show</code></td></tr>
-  <tr><td><code>show.events</code></td><td>Show</td><td><code>show.published.v1</code>, <code>show.cancelled.v1</code></td><td><code>ticketing</code></td></tr>
-  <tr><td><code>ticketing.events</code></td><td>Ticketing</td><td><code>ticketing.inventory_sold_out.v1</code>, <code>ticketing.tickets_issued.v1</code>, <code>ticketing.order_refunded.v1</code></td><td><code>show</code>, <code>notifications</code></td></tr>
+  <tr><td><code>show.events</code></td><td>Show</td><td><code>show.published.v1</code> (retired in 9.3), <code>show.published.v2</code>, <code>show.cancelled.v1</code></td><td><code>ticketing</code></td></tr>
+  <tr><td><code>ticketing.events</code></td><td>Ticketing</td><td><code>ticketing.inventory_sold_out.v1</code>, <code>ticketing.tickets_issued.v1</code>, <code>ticketing.order_refunded.v1</code>, <code>ticketing.inventory_available_again.v1</code> (9.5)</td><td><code>show</code>, <code>notifications</code></td></tr>
   <tr><td><code>ticketing.internal</code></td><td>Ticketing</td><td>private domain-level events for the checkout saga (<code>OrderPaid</code>, <code>SeatsSold</code>, <code>HoldConfirmationFailed</code>)</td><td><code>ticketing-saga</code></td></tr>
-  <tr><td><code>&lt;topic&gt;.dlq</code></td><td>consumer runner</td><td>messages that failed after N retries</td><td>humans</td></tr>
+  <tr><td><code>&lt;topic&gt;.dlq</code></td><td>consumer runner</td><td>poison messages: errors the handler marked <code>kafka.Permanent</code> (ADR-015)</td><td>humans</td></tr>
 </table></div>
 <ul>
   <li><strong>One topic per producing context</strong>, keyed by <strong>aggregate ID</strong>. Kafka only guarantees order within a partition, and the same key always goes to the same partition. So <code>venue.activated</code> is always seen before <code>venue.retired</code> for the same venue. Putting each event type in its own topic would lose that guarantee.</li>
@@ -86,6 +86,7 @@ CREATE INDEX ON venue.outbox (id) WHERE published_at IS NULL;</code></pre>
   "payload":        { … contracts.ShowPublishedV1 … }
 }</code></pre>
 <p>The envelope fields also go into Kafka headers, so a consumer can route on <code>event_type</code> without decoding the payload.</p>
+<div class="callout"><span class="label">Found while building it (Parts 8.3 and 9.7)</span><p>A trace has to cross the outbox. The span that wrote the event is long gone when the relay publishes it, so its <code>traceparent</code> is stored in the outbox row (column <code>trace_parent</code>), copied into a <code>traceparent</code> Kafka header by the relay (not into the envelope: it's transport metadata, not part of the fact), and picked up by the consumer runner, which starts a child span. Since 9.7 the correlation ID <em>is</em> the trace ID, so a log line and a Jaeger trace find each other.</p></div>
 
 <h2>Consuming: the driving side</h2>
 <p>A Kafka consumer is a <strong>driving adapter</strong>, just like an HTTP handler. It decodes a message into a <code>contracts</code> type, translates it into a <em>command</em> in the receiving context's language (this is the ACL), and calls a use case.</p>
@@ -100,12 +101,14 @@ CREATE INDEX ON venue.outbox (id) WHERE published_at IS NULL;</code></pre>
   <tr><th>Reality</th><th>Our answer</th></tr>
   <tr><td><strong>Duplicates</strong> (at-least-once)</td><td>1) <em>Natural idempotency in the domain</em>: <code>OpenInventory</code> for an existing show is a no-op, and <code>MarkSoldOut</code> on a SoldOut show is a no-op. Unit-tested. 2) An <em>inbox</em> table <code>(consumer, event_id)</code> as a safety net (Part 8).</td></tr>
   <tr><td><strong>Reordering across topics</strong></td><td>Within one topic and key (one aggregate), order is preserved, so <code>show.published</code> always arrives before <code>show.cancelled</code>. Across topics there's no order: a <code>ticketing.inventory_sold_out</code> can reach Show after Show has cancelled that show. Handlers check state and treat "too late" facts as no-ops, not errors (SHW-8).</td></tr>
-  <tr><td><strong>Transient failure</strong> (DB down)</td><td>Retry with backoff. The offset isn't committed, so the message is redelivered.</td></tr>
-  <tr><td><strong>Poison message</strong> (can't decode, rule violation)</td><td>After N attempts, publish to <code>&lt;topic&gt;.dlq</code> with the error in a header, log it, commit, and move on. Never block a partition forever.</td></tr>
+  <tr><td><strong>Transient failure</strong> (DB down)</td><td>Retry in place with exponential backoff, capped, for as long as it takes. The offset isn't committed, so the partition waits. Dead-lettering a message only because the database was down would lose it (ADR-015).</td></tr>
+  <tr><td><strong>Poison message</strong> (can't decode, rule violation)</td><td>The handler says so by wrapping the error in <code>kafka.Permanent</code>. The runner publishes it to <code>&lt;topic&gt;.dlq</code> at once, with the error in a header, logs it, commits, and moves on. Retrying it would never help.</td></tr>
   <tr><td><strong>Eventual consistency</strong></td><td>Accepted by design: a show becomes SoldOut a few hundred ms after the last ticket is sold. The business is fine with that, and the e2e tests poll with a timeout.</td></tr>
 </table></div>
+<div class="callout warn"><span class="label">Found in the failure drills (Part 8.5, ADR-015)</span><p>The first runner dead-lettered <em>any</em> error after N attempts. Drill 4 (stop Postgres while messages flow) showed the cost: every message consumed during the outage ended up in the DLQ, and its effect was lost. The fix splits the two cases: only an error the handler marks as <code>Permanent</code> is poison; everything else blocks the partition and retries. "Never block a partition forever" became "never block it for a message that can't succeed".</p></div>
 
 <h2>The checkout saga (choreography)</h2>
+<div class="callout"><span class="label">Since Part 9.4 (ADR-014)</span><p>The same steps also run <em>orchestrated</em>: a <code>CheckoutProcess</code> per order (<code>started → awaiting_seats → completed | compensated</code>) decides the next step, and a <code>CheckoutOrchestrator</code> runs it. <code>SAGA_STYLE=orchestration</code> (the default) or <code>choreography</code> picks one; the e2e suite passes with both. Since 9.1 (ADR-013) <code>OrderPaid</code> carries the section, because <code>ConfirmHold</code> loads a <code>SectionInventory</code>, not the whole show's.</p></div>
 <p>Paying and confirming seats touches two aggregates (<code>Order</code> and <code>ShowInventory</code>) <em>and</em> an external system. One aggregate per transaction, plus payment providers that can't join a transaction anyway, means a saga.</p>
 <pre class="diagram"><code>HTTP POST /orders ─▶ PlaceOrder:      inventory.Get (read-only check: hold valid, owned) → Order.Place → save   [tx1: Order]
                      ChargeOrder:     PaymentGateway.Charge(order.Total)  (external, no tx)
@@ -127,8 +130,9 @@ ticketing.internal: HoldConfirmationFailed ─▶ RefundOrder: PaymentGateway.Re
 <h2>Evolving contracts</h2>
 <ol>
   <li><strong>Additive changes</strong> (a new optional field) go into the same version. Consumers ignore unknown fields (Go's <code>encoding/json</code> does by default).</li>
-  <li><strong>Breaking changes</strong> (rename, remove, change meaning) need a new type, <code>show.published.v2</code>. Publish v1 and v2 side by side until every consumer has migrated, then retire v1.</li>
+  <li><strong>Breaking changes</strong> (rename, remove, change meaning) need a new type, <code>show.published.v2</code>. Publish v1 and v2 side by side until every consumer has migrated, then retire v1. Consumers keep <em>recognising</em> v1 after that, to skip it: old records stay in the topic until retention drops them (9.3).</li>
   <li>Contracts have <strong>golden-file tests</strong> (Chapter 5). A diff in the JSON shape fails CI, so a breaking change can't slip through unnoticed.</li>
+  <li><em>Found in 9.8:</em> a new fact that must travel through several contexts (the venue's country, for VAT) is an additive field at <em>each</em> hop: <code>venue.activated.v1.country</code> → Show's VenueLayout → <code>show.published.v2.venue_country</code> → Ticketing. Facts published before the change lack it, so the consumer needs a sensible default or a refusal.</li>
 </ol>
 </main>
 <script src="assets/course.js"></script>

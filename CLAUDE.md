@@ -39,12 +39,22 @@ The course lives in `docs/` (static HTML). Serve it with `make docs` → http://
   and CI lint green. Then update the docs from the real code: add `<!-- snippet: TAG PATH#Decl -->` /
   `<!-- resume: FROM TO -->` markers, run `make docs-snippets`, and fix any lesson text the implementation
   proved wrong. Append the new tags to `scripts/solution-tags.sh` (the session's git proxy can't push tags).
-- Doc changes go to `main` via a docs branch; never merge `solution` into `main`.
+- **Findings flow into the course, not only into notes.** When building a lesson changes or adds a rule, a
+  contract, a config knob or a decision, update the reference chapters in the same docs change: rule rows
+  (VEN/SHW/TKT-x) in `docs/01-the-domain.html`, topics and delivery rules in `04`, layout in `03`, env vars,
+  Compose and make targets in `06`, test levels in `05`, a new ADR in `07`, and a hint in the lesson brief
+  when the learner would otherwise hit the problem blind.
+- **`main` is the published course and always has the latest docs.** Every change to `docs/`, `CLAUDE.md`,
+  `scripts/` or course tooling is made on a docs branch off `main` and merged into `main` first, then `main` is
+  merged into `solution` (a merge commit, no rebase), so `solution` = `main`'s docs + the reference code.
+  Never edit `docs/` on `solution`, and never merge `solution` into `main`. `tasks/todo.md` is the exception:
+  on `solution` it records the reference build's progress; on `main` it stays the learner's blank checklist.
 
 ## Fixed technical choices
 
 Go 1.27 (via mise), PostgreSQL 18, pgx/v5 + sqlc, goose migrations (embedded),
 Kafka (KRaft) + franz-go, net/http, slog, stdlib testing + go-cmp, testcontainers-go.
+OpenTelemetry + Jaeger arrive in Part 9.7.
 Module path: `github.com/williamokano/go-ddd-by-example`.
 
 ## Commands (once they exist — they are created during the course)
@@ -52,4 +62,5 @@ Module path: `github.com/williamokano/go-ddd-by-example`.
 - `make test` — fast tests (domain, application, http, contract, arch)
 - `make test-integration` — testcontainers (Postgres, Kafka)
 - `make test-e2e` — full stack via Docker Compose
+- `make drills` — failure drills against the Compose stack (Part 8.5)
 - `make up` / `make infra` / `make down` / `make generate` / `make lint`
