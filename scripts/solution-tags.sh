@@ -1,6 +1,7 @@
 #!/bin/sh
 # Recreates the reference-solution tags (one per lesson, one per Part) on the
-# commits of the `solution` branch. CI runs it on main (.github/workflows/solution-tags.yml);
+# commits of the `solution` branch. CI runs it on main (.github/workflows/solution-tags.yml,
+# which needs the TAGS_TOKEN secret for tags on commits that touch workflows);
 # to run it by hand from a clone:
 #
 #   git fetch origin solution && sh scripts/solution-tags.sh && git push origin --tags
