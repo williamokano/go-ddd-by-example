@@ -46,8 +46,15 @@ func (v *Venue) Address() Address { return v.address }
 // Status returns where the venue is in its lifecycle.
 func (v *Venue) Status() Status { return v.status }
 
-// AddSection adds a section to the venue's layout.
+// AddSection adds a section to the venue's layout. Section codes are unique
+// within the venue (VEN-2): only the root sees all the sections, so only the
+// root can enforce it.
 func (v *Venue) AddSection(s Section) error {
+	for _, existing := range v.sections {
+		if existing.Code() == s.Code() {
+			return fmt.Errorf("%w: %s", ErrDuplicateSectionCode, s.Code())
+		}
+	}
 	v.sections = append(v.sections, s)
 	return nil
 }

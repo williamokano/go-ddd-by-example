@@ -89,4 +89,17 @@ func TestVenue_AddSection(t *testing.T) {
 			t.Errorf("Sections() codes mismatch (-want +got):\n%s", diff)
 		}
 	})
+
+	t.Run("rejects a duplicate section code and stays unchanged (VEN-2)", func(t *testing.T) {
+		venue := newDraftVenue(t, withSection(seatedSection(t, "ORCH", mustRow(t, "A", 20))))
+
+		err := venue.AddSection(gaSection(t, "orch", 300))
+
+		if !errors.Is(err, domain.ErrDuplicateSectionCode) {
+			t.Errorf("AddSection() error = %v, want %v", err, domain.ErrDuplicateSectionCode)
+		}
+		if diff := cmp.Diff([]string{"ORCH"}, sectionCodes(venue.Sections())); diff != "" {
+			t.Errorf("Sections() codes mismatch (-want +got):\n%s", diff)
+		}
+	})
 }
