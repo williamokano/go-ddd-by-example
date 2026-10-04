@@ -79,6 +79,9 @@ func (v *Venue) Capacity() int {
 
 // Activate opens the venue for shows.
 func (v *Venue) Activate() error {
+	if len(v.sections) == 0 {
+		return ErrVenueHasNoSections
+	}
 	v.status = Active
 	return nil
 }

@@ -149,4 +149,17 @@ func TestVenue_Activate(t *testing.T) {
 			t.Errorf("Status() = %v, want %v", got, want)
 		}
 	})
+
+	t.Run("fails without sections and stays draft (VEN-5)", func(t *testing.T) {
+		venue := newDraftVenue(t)
+
+		err := venue.Activate()
+
+		if !errors.Is(err, domain.ErrVenueHasNoSections) {
+			t.Errorf("Activate() error = %v, want %v", err, domain.ErrVenueHasNoSections)
+		}
+		if got, want := venue.Status(), domain.Draft; got != want {
+			t.Errorf("Status() = %v, want %v", got, want)
+		}
+	})
 }
