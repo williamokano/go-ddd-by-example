@@ -6,6 +6,10 @@ import "errors"
 var (
 	ErrInvalidID = errors.New("show: invalid id")
 
+	// SHW-1: a title of 1–200 characters; drafted only at an active venue.
+	ErrInvalidTitle   = errors.New("show: invalid title")
+	ErrVenueNotActive = errors.New("show: venue is not active")
+
 	// SHW-2: doorsOpen ≤ startsAt < endsAt, at most 12h, start in the future.
 	ErrInvalidSchedule = errors.New("show: invalid schedule")
 
