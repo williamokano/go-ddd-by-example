@@ -12,6 +12,10 @@ type holdResponse struct {
 	ExpiresAt time.Time `json:"expiresAt"`
 }
 
+type checkInRequest struct {
+	GateID string `json:"gateId"`
+}
+
 type customerRequest struct {
 	CustomerID string `json:"customerId"`
 }

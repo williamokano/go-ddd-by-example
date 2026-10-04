@@ -119,6 +119,7 @@ func TestErrorMapping(t *testing.T) {
 		{domain.ErrInvalidHoldSize, 422, "Invalid hold size"},
 		{domain.ErrDuplicateSeat, 422, "Duplicate seat"},
 		{domain.ErrUnknownSeat, 422, "Unknown seat"},
+		{domain.ErrHoldSpansSections, 422, "Hold spans sections"},
 		{domain.ErrNotHoldOwner, 403, "Not your hold"},
 		{application.ErrInventoryNotFound, 404, "Inventory not found"},
 		{application.ErrHoldNotFound, 404, "Hold not found"},

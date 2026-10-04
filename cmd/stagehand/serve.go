@@ -122,6 +122,7 @@ func serve(ctx context.Context) error {
 		Seats:    ticketingpg.NewSeatQueries(pool),
 		Checkout: ticketingapp.NewCheckoutHandler(inventories, orders, gateway, ticketingIDs, clk),
 		Orders:   ticketingapp.NewOrderQueries(orders, tickets),
+		CheckIn:  ticketingapp.NewCheckInHandler(tickets, ticketingpg.NewShowSchedule(pool), clk),
 	}, logger)
 	refund := ticketingapp.NewRefundOrderHandler(orders, gateway, clk)
 	saga := ticketingconsumer.NewSagaConsumer(ticketingconsumer.SagaSteps{

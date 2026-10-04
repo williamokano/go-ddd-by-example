@@ -25,6 +25,7 @@ var errorStatuses = []struct {
 	{sharedkernel.ErrInvalidMoney, http.StatusUnprocessableEntity, "Invalid money"},
 	{domain.ErrInvalidContactEmail, http.StatusUnprocessableEntity, "Invalid contact email"},
 	{application.ErrOrderNotFound, http.StatusNotFound, "Order not found"},
+	{application.ErrTicketNotFound, http.StatusNotFound, "Ticket not found"},
 	{domain.ErrNotHoldOwner, http.StatusForbidden, "Not your hold"},
 	{application.ErrInventoryNotFound, http.StatusNotFound, "Inventory not found"},
 	{application.ErrHoldNotFound, http.StatusNotFound, "Hold not found"},
@@ -33,6 +34,10 @@ var errorStatuses = []struct {
 	{domain.ErrCustomerAlreadyHolding, http.StatusConflict, "Customer already holding"},
 	{domain.ErrSalesClosed, http.StatusConflict, "Sales closed"},
 	{domain.ErrHoldExpired, http.StatusConflict, "Hold expired"},
+	{domain.ErrAlreadyCheckedIn, http.StatusConflict, "Already checked in"},
+	{domain.ErrTicketVoided, http.StatusConflict, "Ticket voided"},
+	{domain.ErrNotShowDay, http.StatusConflict, "Not the day of the show"},
+	{domain.ErrHoldSpansSections, http.StatusUnprocessableEntity, "Hold spans sections"},
 	{application.ErrConcurrentModification, http.StatusConflict, "Concurrent modification"},
 }
 

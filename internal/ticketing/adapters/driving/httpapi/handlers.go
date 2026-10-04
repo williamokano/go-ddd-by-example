@@ -39,6 +39,18 @@ func (h *handlers) release(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *handlers) checkIn(w http.ResponseWriter, r *http.Request) {
+	var req checkInRequest
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	if err := h.uc.CheckIn.Handle(r.Context(), application.CheckIn{TicketCode: r.PathValue("code"), GateID: req.GateID}); err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *handlers) seats(w http.ResponseWriter, r *http.Request) {
 	showID, err := domain.ParseShowID(r.PathValue("id"))
 	if err != nil {
