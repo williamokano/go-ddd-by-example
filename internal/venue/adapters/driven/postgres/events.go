@@ -56,7 +56,7 @@ func sectionsV1(sections []domain.Section) []contracts.SectionV1 {
 			sv.Kind, sv.Capacity = contracts.KindGA, s.Capacity()
 		}
 		for _, r := range s.Rows() {
-			sv.Rows = append(sv.Rows, contracts.RowV1{Label: r.Label(), Seats: r.Seats()})
+			sv.Rows = append(sv.Rows, contracts.RowV1{Label: r.Label(), Seats: r.Seats(), AccessibleSeats: r.AccessibleSeats()})
 		}
 		out = append(out, sv)
 	}

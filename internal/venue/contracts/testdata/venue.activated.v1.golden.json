@@ -8,7 +8,11 @@
       "rows": [
         {
           "label": "A",
-          "seats": 10
+          "seats": 10,
+          "accessible_seats": [
+            1,
+            2
+          ]
         },
         {
           "label": "B",

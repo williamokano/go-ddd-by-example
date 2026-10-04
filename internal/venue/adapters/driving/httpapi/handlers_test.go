@@ -62,14 +62,14 @@ func TestAddSection(t *testing.T) {
 	s := &stubs{}
 
 	w := do(t, s.handler(), http.MethodPost, "/venues/"+venueID.String()+"/sections",
-		`{"code":"orch","name":"Orchestra","kind":"seated","rows":[{"label":"A","seats":20}]}`)
+		`{"code":"orch","name":"Orchestra","kind":"seated","rows":[{"label":"A","seats":20,"accessibleSeats":[1,2]}]}`)
 
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204 (%s)", w.Code, w.Body)
 	}
 	want := application.AddSection{
 		VenueID: venueID.String(), Code: "orch", Name: "Orchestra", Kind: "seated",
-		Rows: []application.RowSpec{{Label: "A", Seats: 20}},
+		Rows: []application.RowSpec{{Label: "A", Seats: 20, Accessible: []int{1, 2}}},
 	}
 	if diff := cmp.Diff(&want, s.added); diff != "" {
 		t.Errorf("command mismatch (-want +got):\n%s", diff)

@@ -17,11 +17,14 @@ func TestAddSection(t *testing.T) {
 
 		err := f.add.Handle(f.ctx, application.AddSection{
 			VenueID: id.String(), Code: "orch", Name: "Orchestra", Kind: application.KindSeated,
-			Rows: []application.RowSpec{{Label: "A", Seats: 10}, {Label: "B", Seats: 12}},
+			Rows: []application.RowSpec{{Label: "A", Seats: 10, Accessible: []int{1, 2}}, {Label: "B", Seats: 12}},
 		})
 
 		if err != nil {
 			t.Fatalf("Handle() error = %v", err)
+		}
+		if ev, ok := f.lastEvent(t).(domain.SectionAdded); !ok || len(ev.Section.Rows()[0].AccessibleSeats()) != 2 {
+			t.Errorf("row A's accessible seats were lost: %+v", f.lastEvent(t))
 		}
 		if got, want := f.venue(t, id).Capacity(), 122; got != want {
 			t.Errorf("Capacity() = %d, want %d", got, want)

@@ -24,8 +24,9 @@ var statuses = map[string]domain.Status{
 }
 
 type rowJSON struct {
-	Label string `json:"label"`
-	Seats int    `json:"seats"`
+	Label      string `json:"label"`
+	Seats      int    `json:"seats"`
+	Accessible []int  `json:"accessible,omitempty"`
 }
 
 // rowsToVenue rebuilds the aggregate from its rows (reconstitution: no
@@ -72,6 +73,9 @@ func rowToSection(s sqlcgen.ListSectionsRow) (domain.Section, error) {
 		rows := make([]domain.Row, 0, len(stored))
 		for _, r := range stored {
 			row, err := domain.NewRow(r.Label, r.Seats)
+			if err == nil {
+				row, err = row.WithAccessibleSeats(r.Accessible...)
+			}
 			if err != nil {
 				return domain.Section{}, fmt.Errorf("section %s: stored row: %w", s.Code, err)
 			}
@@ -93,7 +97,7 @@ func kindOf(s domain.Section) string {
 func rowsJSON(s domain.Section) ([]byte, error) {
 	rows := make([]rowJSON, 0, len(s.Rows()))
 	for _, r := range s.Rows() {
-		rows = append(rows, rowJSON{Label: r.Label(), Seats: r.Seats()})
+		rows = append(rows, rowJSON{Label: r.Label(), Seats: r.Seats(), Accessible: r.AccessibleSeats()})
 	}
 	b, err := json.Marshal(rows)
 	if err != nil {

@@ -181,6 +181,7 @@ func activeVenue(t *testing.T) *domain.Venue {
 		t.Fatal(err)
 	}
 	a, _ := domain.NewRow("A", 10)
+	a, _ = a.WithAccessibleSeats(1, 2) // round-trips too (9.3)
 	b, _ := domain.NewRow("B", 12)
 	orch, err := domain.NewSeatedSection(code, "Orchestra", []domain.Row{a, b})
 	if err != nil {

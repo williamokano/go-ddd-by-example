@@ -25,8 +25,9 @@ type addSectionRequest struct {
 }
 
 type rowDTO struct {
-	Label string `json:"label"`
-	Seats int    `json:"seats"`
+	Label           string `json:"label"`
+	Seats           int    `json:"seats"`
+	AccessibleSeats []int  `json:"accessibleSeats,omitempty"`
 }
 
 type venueResponse struct {

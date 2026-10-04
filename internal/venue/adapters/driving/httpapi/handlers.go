@@ -39,7 +39,7 @@ func (h *handlers) addSection(w http.ResponseWriter, r *http.Request) {
 		VenueID: r.PathValue("id"), Code: req.Code, Name: req.Name, Kind: req.Kind, Capacity: req.Capacity,
 	}
 	for _, row := range req.Rows {
-		cmd.Rows = append(cmd.Rows, application.RowSpec{Label: row.Label, Seats: row.Seats})
+		cmd.Rows = append(cmd.Rows, application.RowSpec{Label: row.Label, Seats: row.Seats, Accessible: row.AccessibleSeats})
 	}
 	if err := h.uc.AddSection.Handle(r.Context(), cmd); err != nil {
 		h.writeError(w, r, err)

@@ -58,3 +58,26 @@ func TestRow_SeatNumbers(t *testing.T) {
 		t.Errorf("SeatNumbers() mismatch (-want +got):\n%s", diff)
 	}
 }
+
+// Accessible seats are part of the layout (9.3): wheelchair spaces, step-free
+// access. They must exist in the row and are listed once, in order.
+func TestRow_WithAccessibleSeats(t *testing.T) {
+	row := mustRow(t, "A", 10)
+
+	got, err := row.WithAccessibleSeats(9, 1, 10)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff([]int{1, 9, 10}, got.AccessibleSeats()); diff != "" {
+		t.Errorf("accessible seats (-want +got):\n%s", diff)
+	}
+	if len(row.AccessibleSeats()) != 0 {
+		t.Error("WithAccessibleSeats changed the original row: rows are values")
+	}
+	for name, seats := range map[string][]int{"seat 0": {0}, "seat 11 of 10": {11}, "seat 3 twice": {3, 3}} {
+		if _, err := row.WithAccessibleSeats(seats...); !errors.Is(err, domain.ErrInvalidRow) {
+			t.Errorf("%s: error = %v, want %v", name, err, domain.ErrInvalidRow)
+		}
+	}
+}

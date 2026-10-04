@@ -20,8 +20,9 @@ type AddSection struct {
 
 // RowSpec describes one row of a seated section.
 type RowSpec struct {
-	Label string
-	Seats int
+	Label      string
+	Seats      int
+	Accessible []int // seat numbers with step-free access
 }
 
 // Section kinds as they appear in commands.
@@ -82,6 +83,9 @@ func newSection(cmd AddSection) (domain.Section, error) {
 		for _, r := range cmd.Rows {
 			row, err := domain.NewRow(r.Label, r.Seats)
 			if err != nil {
+				return domain.Section{}, err
+			}
+			if row, err = row.WithAccessibleSeats(r.Accessible...); err != nil {
 				return domain.Section{}, err
 			}
 			rows = append(rows, row)

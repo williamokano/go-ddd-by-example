@@ -41,9 +41,12 @@ type SectionV1 struct {
 }
 
 // RowV1 is one row of a seated section; its seats are numbered 1..Seats.
+// AccessibleSeats was added later (9.3): additive, so still v1, and
+// consumers that don't know it simply ignore it.
 type RowV1 struct {
-	Label string `json:"label"`
-	Seats int    `json:"seats"`
+	Label           string `json:"label"`
+	Seats           int    `json:"seats"`
+	AccessibleSeats []int  `json:"accessible_seats,omitempty"`
 }
 
 // VenueRetiredV1 announces that a venue closed for good; its shows get cancelled (SHW-7).

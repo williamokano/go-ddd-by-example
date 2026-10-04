@@ -48,6 +48,30 @@ func TestToOutboxMessages_VenueActivated(t *testing.T) {
 	}
 }
 
+// An additive change keeps the version (9.3): consumers that don't know
+// accessible_seats ignore it.
+func TestToOutboxMessages_VenueActivatedCarriesAccessibleSeats(t *testing.T) {
+	code, _ := domain.NewSectionCode("ORCH")
+	row, _ := domain.NewRow("A", 10)
+	row, _ = row.WithAccessibleSeats(1, 2)
+	orch, _ := domain.NewSeatedSection(code, "Orchestra", []domain.Row{row})
+
+	got, err := postgres.ToOutboxMessages([]sharedkernel.DomainEvent{
+		domain.VenueActivated{VenueID: venueID, Name: "Coliseu", Sections: []domain.Section{orch}, At: at},
+	}, fixedID)
+
+	if err != nil || len(got) != 1 || got[0].Type != contracts.TypeVenueActivatedV1 {
+		t.Fatalf("got %+v, %v; want one venue.activated.v1", got, err)
+	}
+	var payload contracts.VenueActivatedV1
+	if err := json.Unmarshal(got[0].Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff([]int{1, 2}, payload.Sections[0].Rows[0].AccessibleSeats); diff != "" {
+		t.Errorf("accessible seats (-want +got):\n%s", diff)
+	}
+}
+
 func TestToOutboxMessages_VenueRetired(t *testing.T) {
 	got, err := postgres.ToOutboxMessages([]sharedkernel.DomainEvent{domain.VenueRetired{VenueID: venueID, At: at}}, fixedID)
 
