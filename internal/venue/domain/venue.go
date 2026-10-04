@@ -12,10 +12,11 @@ const maxVenueNameLength = 120
 // Venue is the aggregate root of Venue Management: a place where shows happen,
 // with its seating layout.
 type Venue struct {
-	id      VenueID
-	name    string
-	address Address
-	status  Status
+	id       VenueID
+	name     string
+	address  Address
+	status   Status
+	sections []Section
 }
 
 // RegisterVenue registers a new venue. It starts as a Draft.
@@ -44,3 +45,12 @@ func (v *Venue) Address() Address { return v.address }
 
 // Status returns where the venue is in its lifecycle.
 func (v *Venue) Status() Status { return v.status }
+
+// AddSection adds a section to the venue's layout.
+func (v *Venue) AddSection(s Section) error {
+	v.sections = append(v.sections, s)
+	return nil
+}
+
+// Sections returns the venue's sections, in the order they were added.
+func (v *Venue) Sections() []Section { return v.sections }

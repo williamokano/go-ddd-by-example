@@ -49,6 +49,12 @@ func NewGeneralAdmissionSection(code SectionCode, name string, capacity int) (Se
 	return Section{code: code, name: strings.TrimSpace(name), kind: GeneralAdmission, gaCapacity: capacity}, nil
 }
 
+// Code returns the section's identity within its venue.
+func (s Section) Code() SectionCode { return s.code }
+
+// Name returns the section's display name.
+func (s Section) Name() string { return s.name }
+
 // Kind returns whether the section is seated or general admission.
 func (s Section) Kind() SectionKind { return s.kind }
 

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 
 	"github.com/williamokano/go-ddd-by-example/internal/venue/domain"
@@ -71,6 +72,21 @@ func TestRegisterVenue(t *testing.T) {
 
 		if !errors.Is(err, domain.ErrInvalidAddress) {
 			t.Errorf("RegisterVenue() error = %v, want %v", err, domain.ErrInvalidAddress)
+		}
+	})
+}
+
+func TestVenue_AddSection(t *testing.T) {
+	t.Run("a draft venue accepts a new section", func(t *testing.T) {
+		venue := newDraftVenue(t)
+
+		err := venue.AddSection(seatedSection(t, "ORCH", mustRow(t, "A", 20)))
+
+		if err != nil {
+			t.Fatalf("AddSection() error = %v", err)
+		}
+		if diff := cmp.Diff([]string{"ORCH"}, sectionCodes(venue.Sections())); diff != "" {
+			t.Errorf("Sections() codes mismatch (-want +got):\n%s", diff)
 		}
 	})
 }
