@@ -1,6 +1,6 @@
 DOCS_PORT ?= 8000
 
-.PHONY: docs test lint infra down reset migrate generate test-integration run
+.PHONY: docs test lint up infra down reset migrate generate test-integration run
 
 docs: ## serve the course at http://localhost:$(DOCS_PORT)
 	@echo "Course: http://localhost:$(DOCS_PORT)"
@@ -14,6 +14,9 @@ test-integration: ## adapter tests against real Postgres (testcontainers; needs 
 
 lint: ## golangci-lint (v2)
 	golangci-lint run
+
+up: ## start everything: postgres, migrate, app (http://localhost:8080)
+	docker compose up -d --build --wait
 
 infra: ## only the infrastructure (postgres), for running the app from your IDE
 	docker compose up -d --wait postgres

@@ -1,0 +1,35 @@
+### Requests to poke the running app (make up). Works with the VS Code REST
+### Client or JetBrains HTTP Client; the curl equivalents are in comments.
+@base = http://localhost:8080
+
+### Register a venue            curl -i -X POST $base/venues -d '{...}'
+# @name register
+POST {{base}}/venues
+Content-Type: application/json
+
+{"name": "Coliseu dos Recreios", "street": "Rua Portas de Santo Antão 96", "city": "Lisboa", "country": "PT"}
+
+### Lay it out: a seated section…
+@venue = {{register.response.body.id}}
+POST {{base}}/venues/{{venue}}/sections
+Content-Type: application/json
+
+{"code": "ORCH", "name": "Orchestra", "kind": "seated", "rows": [{"label": "A", "seats": 10}, {"label": "B", "seats": 12}]}
+
+### …and a standing one
+POST {{base}}/venues/{{venue}}/sections
+Content-Type: application/json
+
+{"code": "FLOOR", "name": "Floor", "kind": "ga", "capacity": 500}
+
+### Activate it (VEN-5)
+POST {{base}}/venues/{{venue}}/activation
+
+### Read it back: status active, capacity 522
+GET {{base}}/venues/{{venue}}
+
+### List active venues
+GET {{base}}/venues?status=active
+
+### Retire it (VEN-6)
+POST {{base}}/venues/{{venue}}/retirement

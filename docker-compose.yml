@@ -12,5 +12,26 @@ services:
       retries: 30
     volumes: [pgdata:/var/lib/postgresql]
 
+  migrate:                              # one-shot: same image as the app, different subcommand
+    build: .
+    command: ["migrate", "up"]
+    environment:
+      DATABASE_URL: postgres://stagehand:stagehand@postgres:5432/stagehand?sslmode=disable
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  app:
+    build: .
+    command: ["serve"]
+    ports: ["8080:8080"]
+    environment:
+      DATABASE_URL: postgres://stagehand:stagehand@postgres:5432/stagehand?sslmode=disable
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "/stagehand", "healthcheck"]
+      interval: 2s
+      retries: 30
+
 volumes:
   pgdata: {}
