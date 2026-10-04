@@ -9,6 +9,7 @@ import (
 
 	"github.com/williamokano/go-ddd-by-example/internal/platform/clock"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/idgen"
+	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/driven/ids"
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/driven/memory"
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/application"
@@ -84,4 +85,18 @@ func (f *fixture) seatStates(t *testing.T, showID string) map[string]string {
 		out[s.Ref.String()] = s.State.String()
 	}
 	return out
+}
+
+func published[T sharedkernel.DomainEvent](events []sharedkernel.DomainEvent) bool {
+	return count[T](events) > 0
+}
+
+func count[T sharedkernel.DomainEvent](events []sharedkernel.DomainEvent) int {
+	n := 0
+	for _, ev := range events {
+		if _, ok := ev.(T); ok {
+			n++
+		}
+	}
+	return n
 }

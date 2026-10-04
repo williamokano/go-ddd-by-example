@@ -23,3 +23,11 @@ func (g TicketingIDs) NewHoldID() domain.HoldID { return domain.NewHoldID(g.sour
 
 // NewOrderID returns a new order identity.
 func (g TicketingIDs) NewOrderID() domain.OrderID { return domain.NewOrderID(g.source.New()) }
+
+// ticketNamespace scopes the name-based (v5) ticket IDs.
+var ticketNamespace = uuid.MustParse("6f3a0c8e-2b1d-5e7f-9a4c-1d2e3f405162")
+
+// TicketIDFor derives a ticket ID from order + seat (UUIDv5): deterministic.
+func (TicketingIDs) TicketIDFor(order domain.OrderID, seat domain.SeatRef) domain.TicketID {
+	return domain.NewTicketID(uuid.NewSHA1(ticketNamespace, []byte(order.String()+"/"+seat.String())))
+}
