@@ -51,4 +51,15 @@ func TestNewAddress(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("normalises the country code to upper case", func(t *testing.T) {
+		addr, err := domain.NewAddress("Rua da Alegria 12", "Lisboa", "pt")
+
+		if err != nil {
+			t.Fatalf("NewAddress() error = %v", err)
+		}
+		if got, want := addr.Country(), "PT"; got != want {
+			t.Errorf("Country() = %q, want %q", got, want)
+		}
+	})
 }
