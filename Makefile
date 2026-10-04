@@ -21,8 +21,9 @@ lint: ## golangci-lint (v2)
 up: ## start everything: postgres, migrate, app (http://localhost:8080)
 	docker compose up -d --build --wait
 
-infra: ## only the infrastructure (postgres), for running the app from your IDE
-	docker compose up -d --wait postgres
+infra: ## only the infrastructure (postgres, kafka + topics, kafka-ui), for running the app from your IDE
+	docker compose up -d --wait postgres kafka kafka-ui
+	docker compose up kafka-init
 
 down: ## stop everything (keep data)
 	docker compose down
