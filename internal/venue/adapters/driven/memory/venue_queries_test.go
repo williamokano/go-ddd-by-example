@@ -2,6 +2,7 @@ package memory_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -45,5 +46,59 @@ func TestVenueQueries_Get(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("VenueView mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestVenueQueries_Get_UnknownID(t *testing.T) {
+	_, err := memory.NewVenueQueries(memory.NewVenueRepository()).Get(context.Background(), newDraftVenue(t).ID())
+
+	if !errors.Is(err, application.ErrVenueNotFound) {
+		t.Errorf("Get() error = %v, want %v", err, application.ErrVenueNotFound)
+	}
+}
+
+func TestVenueQueries_List(t *testing.T) {
+	ctx := context.Background()
+	repo := memory.NewVenueRepository()
+	draft := newDraftVenue(t)
+	active := newDraftVenue(t)
+	code, _ := domain.NewSectionCode("FLOOR")
+	floor, _ := domain.NewGeneralAdmissionSection(code, "Floor", 10)
+	if err := active.AddSection(floor, fixedNow); err != nil {
+		t.Fatal(err)
+	}
+	if err := active.Activate(fixedNow); err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range []*domain.Venue{draft, active} {
+		if err := repo.Save(ctx, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	queries := memory.NewVenueQueries(repo)
+
+	tests := []struct {
+		status  string
+		wantIDs []string
+	}{
+		{"active", []string{active.ID().String()}},
+		{"draft", []string{draft.ID().String()}},
+		{"retired", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.status, func(t *testing.T) {
+			views, err := queries.List(ctx, tt.status)
+
+			if err != nil {
+				t.Fatalf("List() error = %v", err)
+			}
+			var gotIDs []string
+			for _, v := range views {
+				gotIDs = append(gotIDs, v.ID)
+			}
+			if diff := cmp.Diff(tt.wantIDs, gotIDs); diff != "" {
+				t.Errorf("List(%q) ids mismatch (-want +got):\n%s", tt.status, diff)
+			}
+		})
 	}
 }

@@ -12,6 +12,10 @@ import (
 type VenueQueries interface {
 	// Get returns the view of one venue, or ErrVenueNotFound.
 	Get(ctx context.Context, id domain.VenueID) (VenueView, error)
+
+	// List returns the venues with the given status ("draft", "active",
+	// "retired"), ordered by name.
+	List(ctx context.Context, status string) ([]VenueView, error)
 }
 
 // VenueView is a venue as readers see it: strings and ints only.

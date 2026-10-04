@@ -1,7 +1,10 @@
 package memory
 
 import (
+	"cmp"
 	"context"
+	"slices"
+	"strings"
 
 	"github.com/williamokano/go-ddd-by-example/internal/venue/application"
 	"github.com/williamokano/go-ddd-by-example/internal/venue/domain"
@@ -21,6 +24,22 @@ func (q VenueQueries) Get(ctx context.Context, id domain.VenueID) (application.V
 		return application.VenueView{}, err
 	}
 	return toView(v), nil
+}
+
+// List implements application.VenueQueries.
+func (q VenueQueries) List(_ context.Context, status string) ([]application.VenueView, error) {
+	q.repo.mu.Lock()
+	defer q.repo.mu.Unlock()
+	var views []application.VenueView
+	for _, state := range q.repo.venues {
+		if state.Status.String() == status {
+			views = append(views, toView(domain.RehydrateVenue(state)))
+		}
+	}
+	slices.SortFunc(views, func(a, b application.VenueView) int {
+		return cmp.Or(strings.Compare(a.Name, b.Name), strings.Compare(a.ID, b.ID))
+	})
+	return views, nil
 }
 
 func toView(v *domain.Venue) application.VenueView {
