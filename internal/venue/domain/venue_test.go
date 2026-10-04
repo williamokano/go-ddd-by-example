@@ -80,7 +80,7 @@ func TestVenue_AddSection(t *testing.T) {
 	t.Run("a draft venue accepts a new section", func(t *testing.T) {
 		venue := newDraftVenue(t)
 
-		err := venue.AddSection(seatedSection(t, "ORCH", mustRow(t, "A", 20)))
+		err := venue.AddSection(seatedSection(t, "ORCH", mustRow(t, "A", 20)), fixedNow)
 
 		if err != nil {
 			t.Fatalf("AddSection() error = %v", err)
@@ -93,7 +93,7 @@ func TestVenue_AddSection(t *testing.T) {
 	t.Run("rejects a duplicate section code and stays unchanged (VEN-2)", func(t *testing.T) {
 		venue := newDraftVenue(t, withSection(seatedSection(t, "ORCH", mustRow(t, "A", 20))))
 
-		err := venue.AddSection(gaSection(t, "orch", 300))
+		err := venue.AddSection(gaSection(t, "orch", 300), fixedNow)
 
 		if !errors.Is(err, domain.ErrDuplicateSectionCode) {
 			t.Errorf("AddSection() error = %v, want %v", err, domain.ErrDuplicateSectionCode)
@@ -113,7 +113,7 @@ func TestVenue_AddSection_OnlyWhileDraft(t *testing.T) {
 			venue := newVenue(t)
 			before := venue.Sections()
 
-			err := venue.AddSection(gaSection(t, "BALCONY", 100))
+			err := venue.AddSection(gaSection(t, "BALCONY", 100), fixedNow)
 
 			if !errors.Is(err, domain.ErrVenueNotDraft) {
 				t.Errorf("AddSection() error = %v, want %v", err, domain.ErrVenueNotDraft)
@@ -128,7 +128,7 @@ func TestVenue_AddSection_OnlyWhileDraft(t *testing.T) {
 func TestVenue_AddSection_RejectsAZeroSection(t *testing.T) {
 	venue := newDraftVenue(t)
 
-	err := venue.AddSection(domain.Section{})
+	err := venue.AddSection(domain.Section{}, fixedNow)
 
 	if !errors.Is(err, domain.ErrInvalidSection) {
 		t.Errorf("AddSection() error = %v, want %v", err, domain.ErrInvalidSection)

@@ -58,7 +58,7 @@ func (v *Venue) Status() Status { return v.status }
 // within the venue (VEN-2): only the root sees all the sections, so only the
 // root can enforce it. The layout can only change while the venue is a
 // draft (VEN-4).
-func (v *Venue) AddSection(s Section) error {
+func (v *Venue) AddSection(s Section, now time.Time) error {
 	if v.status != Draft {
 		return fmt.Errorf("%w: venue is %s", ErrVenueNotDraft, v.status)
 	}
@@ -71,6 +71,7 @@ func (v *Venue) AddSection(s Section) error {
 		}
 	}
 	v.sections = append(v.sections, s)
+	v.events.Record(SectionAdded{VenueID: v.id, Section: s, At: now})
 	return nil
 }
 

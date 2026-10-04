@@ -23,3 +23,20 @@ func TestRegisterVenue_RecordsVenueRegistered(t *testing.T) {
 		t.Errorf("events mismatch (-want +got):\n%s", diff)
 	}
 }
+
+func TestVenue_AddSection_RecordsSectionAdded(t *testing.T) {
+	venue := newDraftVenue(t)
+	venue.PullEvents() // discard the creation event
+	section := seatedSection(t, "ORCH", mustRow(t, "A", 20))
+
+	if err := venue.AddSection(section, fixedNow); err != nil {
+		t.Fatal(err)
+	}
+
+	want := []domain.DomainEvent{
+		domain.SectionAdded{VenueID: venue.ID(), Section: section, At: fixedNow},
+	}
+	if diff := cmp.Diff(want, venue.PullEvents(), domainValues); diff != "" {
+		t.Errorf("events mismatch (-want +got):\n%s", diff)
+	}
+}

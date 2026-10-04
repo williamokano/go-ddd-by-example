@@ -35,3 +35,16 @@ func (VenueRegistered) EventName() string { return "venue.VenueRegistered" }
 
 // OccurredAt implements DomainEvent.
 func (e VenueRegistered) OccurredAt() time.Time { return e.At }
+
+// SectionAdded: a section was added to a draft venue's layout.
+type SectionAdded struct {
+	VenueID VenueID
+	Section Section
+	At      time.Time
+}
+
+// EventName implements DomainEvent.
+func (SectionAdded) EventName() string { return "venue.SectionAdded" }
+
+// OccurredAt implements DomainEvent.
+func (e SectionAdded) OccurredAt() time.Time { return e.At }

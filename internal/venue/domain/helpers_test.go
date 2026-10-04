@@ -75,7 +75,7 @@ func newDraftVenue(t *testing.T, opts ...venueOption) *domain.Venue {
 		t.Fatalf("RegisterVenue() error = %v", err)
 	}
 	for _, s := range spec.sections {
-		if err := venue.AddSection(s); err != nil {
+		if err := venue.AddSection(s, fixedNow); err != nil {
 			t.Fatalf("AddSection(%s) error = %v", s.Code(), err)
 		}
 	}
