@@ -27,6 +27,7 @@ const (
 type VenueActivatedV1 struct {
 	VenueID     string      `json:"venue_id"`
 	Name        string      `json:"name"`
+	Country     string      `json:"country,omitempty"` // ISO 3166 alpha-2; added in 9.8 (additive)
 	Sections    []SectionV1 `json:"sections"`
 	ActivatedAt time.Time   `json:"activated_at"`
 }

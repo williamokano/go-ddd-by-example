@@ -69,7 +69,7 @@ func (c *ShowConsumer) Handle(ctx context.Context, env kafka.Envelope) error {
 // toOpenInventory folds v2's seats back into Ticketing's rows, numbered
 // 1..n; a row with gaps is not something Ticketing can sell.
 func toOpenInventory(e showcontracts.ShowPublishedV2) (application.OpenInventory, error) {
-	cmd := application.OpenInventory{ShowID: e.ShowID, StartsAt: e.StartsAt}
+	cmd := application.OpenInventory{ShowID: e.ShowID, Country: e.VenueCountry, StartsAt: e.StartsAt}
 	for _, s := range e.Sections {
 		spec := application.SectionSpec{Code: s.Code, Kind: s.Kind, Capacity: s.Capacity, Price: s.Price.Amount, Currency: s.Price.Currency}
 		for _, seat := range s.Seats {

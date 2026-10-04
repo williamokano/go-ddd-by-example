@@ -37,7 +37,7 @@ func TestShowConsumer_PublishedV2OpensTheInventory(t *testing.T) {
 	c := consumer.NewShowConsumer(open, &closeStub{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	start := time.Date(2026, 12, 1, 20, 0, 0, 0, time.UTC)
 	payload, _ := json.Marshal(showcontracts.ShowPublishedV2{
-		ShowID: "s1", VenueID: "v1", StartsAt: start,
+		ShowID: "s1", VenueID: "v1", VenueCountry: "PT", StartsAt: start,
 		Sections: []showcontracts.SectionV2{
 			{Code: "ORCH", Kind: "seated", Price: showcontracts.PriceV1{Amount: 4500, Currency: "EUR"}, Seats: []showcontracts.SeatV2{
 				{Row: "A", Number: 1}, {Row: "A", Number: 2, Accessible: true}, {Row: "B", Number: 1},
@@ -51,7 +51,7 @@ func TestShowConsumer_PublishedV2OpensTheInventory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := &application.OpenInventory{ShowID: "s1", StartsAt: start, Sections: []application.SectionSpec{
+	want := &application.OpenInventory{ShowID: "s1", Country: "PT", StartsAt: start, Sections: []application.SectionSpec{
 		{Code: "ORCH", Kind: "seated", Rows: []application.RowSpec{{Label: "A", Seats: 2, Accessible: []int{2}}, {Label: "B", Seats: 1}},
 			Price: 4500, Currency: "EUR"},
 		{Code: "FLOOR", Kind: "ga", Capacity: 3, Price: 2500, Currency: "EUR"},

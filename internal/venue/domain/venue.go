@@ -106,7 +106,7 @@ func (v *Venue) Activate(now time.Time) error {
 		return ErrVenueHasNoSections
 	}
 	v.status = Active
-	v.events.Record(VenueActivated{VenueID: v.id, Name: v.name, Sections: v.Sections(), At: now})
+	v.events.Record(VenueActivated{VenueID: v.id, Name: v.name, Country: v.address.Country(), Sections: v.Sections(), At: now})
 	return nil
 }
 

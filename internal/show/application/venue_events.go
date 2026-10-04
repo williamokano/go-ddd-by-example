@@ -14,6 +14,7 @@ import (
 type OnVenueActivated struct {
 	VenueID  string
 	Name     string
+	Country  string
 	Sections []LayoutSectionSpec
 }
 
@@ -47,7 +48,7 @@ func (h *OnVenueActivatedHandler) Handle(ctx context.Context, cmd OnVenueActivat
 	if err != nil {
 		return fmt.Errorf("on venue activated: %w", err)
 	}
-	layout := domain.VenueLayout{VenueID: id, Name: cmd.Name, Active: true}
+	layout := domain.VenueLayout{VenueID: id, Name: cmd.Name, Country: cmd.Country, Active: true}
 	for _, s := range cmd.Sections {
 		section := domain.LayoutSection{Code: s.Code, Kind: s.Kind, Capacity: s.Capacity}
 		for _, r := range s.Rows {

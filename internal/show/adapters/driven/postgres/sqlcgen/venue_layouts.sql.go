@@ -12,7 +12,7 @@ import (
 )
 
 const getVenueLayout = `-- name: GetVenueLayout :one
-SELECT venue_id, name, active, sections FROM show.venue_layouts WHERE venue_id = $1
+SELECT venue_id, name, active, sections, country FROM show.venue_layouts WHERE venue_id = $1
 `
 
 type GetVenueLayoutRow struct {
@@ -20,6 +20,7 @@ type GetVenueLayoutRow struct {
 	Name     string
 	Active   bool
 	Sections []byte
+	Country  string
 }
 
 func (q *Queries) GetVenueLayout(ctx context.Context, venueID uuid.UUID) (GetVenueLayoutRow, error) {
@@ -30,15 +31,16 @@ func (q *Queries) GetVenueLayout(ctx context.Context, venueID uuid.UUID) (GetVen
 		&i.Name,
 		&i.Active,
 		&i.Sections,
+		&i.Country,
 	)
 	return i, err
 }
 
 const upsertVenueLayout = `-- name: UpsertVenueLayout :exec
-INSERT INTO show.venue_layouts (venue_id, name, active, sections)
-VALUES ($1, $2, $3, $4)
+INSERT INTO show.venue_layouts (venue_id, name, active, sections, country)
+VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (venue_id) DO UPDATE
-SET name = EXCLUDED.name, active = EXCLUDED.active, sections = EXCLUDED.sections, updated_at = now()
+SET name = EXCLUDED.name, active = EXCLUDED.active, sections = EXCLUDED.sections, country = EXCLUDED.country, updated_at = now()
 `
 
 type UpsertVenueLayoutParams struct {
@@ -46,6 +48,7 @@ type UpsertVenueLayoutParams struct {
 	Name     string
 	Active   bool
 	Sections []byte
+	Country  string
 }
 
 func (q *Queries) UpsertVenueLayout(ctx context.Context, arg UpsertVenueLayoutParams) error {
@@ -54,6 +57,7 @@ func (q *Queries) UpsertVenueLayout(ctx context.Context, arg UpsertVenueLayoutPa
 		arg.Name,
 		arg.Active,
 		arg.Sections,
+		arg.Country,
 	)
 	return err
 }

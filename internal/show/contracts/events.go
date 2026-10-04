@@ -33,14 +33,15 @@ type PriceV1 struct {
 // lists every seat instead of rows of counts, so each seat can carry its own
 // flags. Show publishes both versions until every consumer reads v2.
 type ShowPublishedV2 struct {
-	ShowID      string      `json:"show_id"`
-	VenueID     string      `json:"venue_id"`
-	Title       string      `json:"title"`
-	DoorsOpen   time.Time   `json:"doors_open"`
-	StartsAt    time.Time   `json:"starts_at"`
-	EndsAt      time.Time   `json:"ends_at"`
-	Sections    []SectionV2 `json:"sections"`
-	PublishedAt time.Time   `json:"published_at"`
+	ShowID       string      `json:"show_id"`
+	VenueID      string      `json:"venue_id"`
+	VenueCountry string      `json:"venue_country,omitempty"` // added in 9.8 (additive): VAT depends on it
+	Title        string      `json:"title"`
+	DoorsOpen    time.Time   `json:"doors_open"`
+	StartsAt     time.Time   `json:"starts_at"`
+	EndsAt       time.Time   `json:"ends_at"`
+	Sections     []SectionV2 `json:"sections"`
+	PublishedAt  time.Time   `json:"published_at"`
 }
 
 // SectionV2 is one priced section: its seats when seated, a capacity when GA.

@@ -35,7 +35,7 @@ func ToOutboxMessages(events []sharedkernel.DomainEvent, newID func() uuid.UUID)
 		switch e := ev.(type) {
 		case domain.ShowPublished:
 			err = add(e.ShowID, contracts.TypeShowPublishedV2, contracts.ShowPublishedV2{
-				ShowID: e.ShowID.String(), VenueID: e.VenueID.String(), Title: e.Title,
+				ShowID: e.ShowID.String(), VenueID: e.VenueID.String(), VenueCountry: e.Layout.Country, Title: e.Title,
 				DoorsOpen: e.Schedule.DoorsOpen(), StartsAt: e.Schedule.StartsAt(), EndsAt: e.Schedule.EndsAt(),
 				Sections: pricedSectionsV2(e.Layout, e.Prices), PublishedAt: e.At,
 			}, ev)

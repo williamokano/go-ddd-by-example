@@ -30,7 +30,7 @@ func TestToOutboxMessages_ShowPublished(t *testing.T) {
 	orch, _ := sharedkernel.NewMoney(4500, eur)
 	floor, _ := sharedkernel.NewMoney(2500, eur)
 	prices, _ := domain.NewPriceList(map[string]sharedkernel.Money{"ORCH": orch, "FLOOR": floor})
-	layout := domain.VenueLayout{VenueID: venueID, Active: true, Sections: []domain.LayoutSection{
+	layout := domain.VenueLayout{VenueID: venueID, Active: true, Country: "PT", Sections: []domain.LayoutSection{
 		{Code: "ORCH", Kind: "seated", Rows: []domain.LayoutRow{{Label: "A", Seats: 2, Accessible: []int{2}}}},
 		{Code: "FLOOR", Kind: "ga", Capacity: 3},
 	}}
@@ -52,7 +52,7 @@ func TestToOutboxMessages_ShowPublished(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := contracts.ShowPublishedV2{
-		ShowID: showID.String(), VenueID: venueID.String(), Title: "Fado",
+		ShowID: showID.String(), VenueID: venueID.String(), VenueCountry: "PT", Title: "Fado",
 		DoorsOpen: start.Add(-time.Hour), StartsAt: start, EndsAt: start.Add(2 * time.Hour), PublishedAt: at,
 		Sections: []contracts.SectionV2{
 			{Code: "ORCH", Kind: "seated", Price: contracts.PriceV1{Amount: 4500, Currency: "EUR"},

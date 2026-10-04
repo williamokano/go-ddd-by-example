@@ -20,7 +20,7 @@ var at = time.Date(2026, 12, 1, 20, 0, 0, 0, time.UTC)
 // counts can't, which is why this is a new version and not a new field.
 func TestShowPublishedV2_Golden(t *testing.T) {
 	golden(t, "testdata/show.published.v2.golden.json", contracts.ShowPublishedV2{
-		ShowID: "0192f5e0-0000-7000-8000-000000000001", VenueID: "0192f5e0-0000-7000-8000-000000000002",
+		ShowID: "0192f5e0-0000-7000-8000-000000000001", VenueID: "0192f5e0-0000-7000-8000-000000000002", VenueCountry: "PT",
 		Title: "Fado Night", DoorsOpen: at.Add(-time.Hour), StartsAt: at, EndsAt: at.Add(2 * time.Hour),
 		Sections: []contracts.SectionV2{
 			{Code: "ORCH", Kind: contracts.KindSeated, Price: contracts.PriceV1{Amount: 4500, Currency: "EUR"},

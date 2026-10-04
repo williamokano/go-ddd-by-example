@@ -33,6 +33,7 @@ func (e SectionAdded) OccurredAt() time.Time { return e.At }
 type VenueActivated struct {
 	VenueID  VenueID
 	Name     string
+	Country  string // where it is: VAT depends on it (9.8)
 	Sections []Section
 	At       time.Time
 }

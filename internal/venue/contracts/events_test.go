@@ -20,6 +20,7 @@ func TestVenueActivatedV1_Golden(t *testing.T) {
 	event := contracts.VenueActivatedV1{
 		VenueID: "0192f5e0-7c1a-7b3e-9d2a-3f4b5c6d7e8f",
 		Name:    "Coliseu dos Recreios",
+		Country: "PT",
 		Sections: []contracts.SectionV1{
 			{Code: "ORCH", Kind: contracts.KindSeated, Rows: []contracts.RowV1{{Label: "A", Seats: 10, AccessibleSeats: []int{1, 2}}, {Label: "B", Seats: 12}}},
 			{Code: "FLOOR", Kind: contracts.KindGA, Capacity: 500},

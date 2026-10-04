@@ -29,14 +29,14 @@ func TestToOutboxMessages_VenueActivated(t *testing.T) {
 	floor, _ := domain.NewGeneralAdmissionSection(code, "Floor", 500)
 
 	got, err := postgres.ToOutboxMessages([]sharedkernel.DomainEvent{
-		domain.VenueActivated{VenueID: venueID, Name: "Coliseu", Sections: []domain.Section{floor}, At: at},
+		domain.VenueActivated{VenueID: venueID, Name: "Coliseu", Country: "PT", Sections: []domain.Section{floor}, At: at},
 	}, fixedID)
 
 	if err != nil {
 		t.Fatalf("ToOutboxMessages() error = %v", err)
 	}
 	payload, _ := json.Marshal(contracts.VenueActivatedV1{
-		VenueID: venueID.String(), Name: "Coliseu", ActivatedAt: at,
+		VenueID: venueID.String(), Name: "Coliseu", Country: "PT", ActivatedAt: at,
 		Sections: []contracts.SectionV1{{Code: "FLOOR", Kind: contracts.KindGA, Capacity: 500}},
 	})
 	want := []outbox.Message{{

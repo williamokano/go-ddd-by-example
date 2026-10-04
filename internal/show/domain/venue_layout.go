@@ -8,6 +8,7 @@ type VenueLayout struct {
 	VenueID  VenueID
 	Name     string
 	Active   bool
+	Country  string // the venue's ISO country code, forwarded for VAT (9.8)
 	Sections []LayoutSection
 }
 

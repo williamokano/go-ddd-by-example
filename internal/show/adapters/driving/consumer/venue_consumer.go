@@ -64,7 +64,7 @@ func (c *VenueConsumer) Handle(ctx context.Context, env kafka.Envelope) error {
 }
 
 func toOnVenueActivated(e contracts.VenueActivatedV1) application.OnVenueActivated {
-	cmd := application.OnVenueActivated{VenueID: e.VenueID, Name: e.Name}
+	cmd := application.OnVenueActivated{VenueID: e.VenueID, Name: e.Name, Country: e.Country}
 	for _, s := range e.Sections {
 		spec := application.LayoutSectionSpec{Code: s.Code, Kind: s.Kind, Capacity: s.Capacity}
 		for _, r := range s.Rows {

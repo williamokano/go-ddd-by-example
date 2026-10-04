@@ -28,7 +28,7 @@ func ToOutboxMessages(events []sharedkernel.DomainEvent, newID func() uuid.UUID)
 		case domain.VenueActivated:
 			eventType, venueID = contracts.TypeVenueActivatedV1, e.VenueID
 			payload = contracts.VenueActivatedV1{
-				VenueID: e.VenueID.String(), Name: e.Name, Sections: sectionsV1(e.Sections), ActivatedAt: e.At,
+				VenueID: e.VenueID.String(), Name: e.Name, Country: e.Country, Sections: sectionsV1(e.Sections), ActivatedAt: e.At,
 			}
 		case domain.VenueRetired:
 			eventType, venueID = contracts.TypeVenueRetiredV1, e.VenueID

@@ -53,6 +53,7 @@ type ShowVenueLayout struct {
 	Active    bool
 	Sections  []byte
 	UpdatedAt time.Time
+	Country   string
 }
 
 type TicketingCheckoutProcess struct {

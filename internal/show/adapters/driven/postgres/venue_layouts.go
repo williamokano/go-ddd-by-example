@@ -49,7 +49,7 @@ func (l *VenueLayouts) Get(ctx context.Context, id domain.VenueID) (domain.Venue
 	if err := json.Unmarshal(row.Sections, &sections); err != nil {
 		return domain.VenueLayout{}, fmt.Errorf("venue layout %s sections: %w", id, err)
 	}
-	layout := domain.VenueLayout{VenueID: id, Name: row.Name, Active: row.Active}
+	layout := domain.VenueLayout{VenueID: id, Name: row.Name, Active: row.Active, Country: row.Country}
 	for _, s := range sections {
 		ls := domain.LayoutSection{Code: s.Code, Kind: s.Kind, Capacity: s.Capacity}
 		for _, r := range s.Rows {
@@ -75,7 +75,7 @@ func (l *VenueLayouts) Upsert(ctx context.Context, layout domain.VenueLayout) er
 		return fmt.Errorf("venue layout %s: %w", layout.VenueID, err)
 	}
 	err = sqlcgen.New(pgplatform.Conn(ctx, l.pool)).UpsertVenueLayout(ctx, sqlcgen.UpsertVenueLayoutParams{
-		VenueID: uuid.MustParse(layout.VenueID.String()), Name: layout.Name, Active: layout.Active, Sections: b,
+		VenueID: uuid.MustParse(layout.VenueID.String()), Name: layout.Name, Active: layout.Active, Sections: b, Country: layout.Country,
 	})
 	if err != nil {
 		return fmt.Errorf("upsert venue layout %s: %w", layout.VenueID, err)

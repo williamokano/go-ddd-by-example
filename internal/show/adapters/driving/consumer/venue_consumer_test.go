@@ -55,7 +55,7 @@ func TestVenueConsumer(t *testing.T) {
 	t.Run("venue.activated.v1 becomes OnVenueActivated", func(t *testing.T) {
 		s := &stubs{}
 		env := envelope(t, contracts.TypeVenueActivatedV1, contracts.VenueActivatedV1{
-			VenueID: "v1", Name: "Coliseu", ActivatedAt: time.Now(),
+			VenueID: "v1", Name: "Coliseu", Country: "PT", ActivatedAt: time.Now(),
 			Sections: []contracts.SectionV1{
 				{Code: "ORCH", Kind: contracts.KindSeated, Rows: []contracts.RowV1{{Label: "A", Seats: 10, AccessibleSeats: []int{1}}}},
 				{Code: "FLOOR", Kind: contracts.KindGA, Capacity: 500},
@@ -66,7 +66,7 @@ func TestVenueConsumer(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		want := &application.OnVenueActivated{VenueID: "v1", Name: "Coliseu", Sections: []application.LayoutSectionSpec{
+		want := &application.OnVenueActivated{VenueID: "v1", Name: "Coliseu", Country: "PT", Sections: []application.LayoutSectionSpec{
 			{Code: "ORCH", Kind: "seated", Rows: []application.RowSpec{{Label: "A", Seats: 10, Accessible: []int{1}}}},
 			{Code: "FLOOR", Kind: "ga", Capacity: 500},
 		}}

@@ -29,7 +29,7 @@ func Run(t *testing.T, newLayouts func(t *testing.T) application.VenueLayouts) {
 	t.Run("upsert then get round-trips, and a second upsert replaces", func(t *testing.T) {
 		layouts := newLayouts(t)
 		layout := domain.VenueLayout{
-			VenueID: domain.NewVenueID(uuid.New()), Name: "Coliseu", Active: true,
+			VenueID: domain.NewVenueID(uuid.New()), Name: "Coliseu", Active: true, Country: "PT",
 			Sections: []domain.LayoutSection{
 				{Code: "ORCH", Kind: "seated", Rows: []domain.LayoutRow{{Label: "A", Seats: 10, Accessible: []int{1, 2}}}},
 				{Code: "FLOOR", Kind: "ga", Capacity: 500},

@@ -56,6 +56,7 @@ func TestVenue_Activate_RecordsVenueActivatedWithTheLayout(t *testing.T) {
 	want := []sharedkernel.DomainEvent{domain.VenueActivated{
 		VenueID:  venue.ID(),
 		Name:     venue.Name(),
+		Country:  "PT", // VAT depends on it (9.8)
 		Sections: []domain.Section{orch, floor},
 		At:       fixedNow,
 	}}
