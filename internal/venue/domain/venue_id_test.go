@@ -28,4 +28,12 @@ func TestParseVenueID(t *testing.T) {
 			t.Errorf("ParseVenueID() error = %v, want %v", err, domain.ErrInvalidVenueID)
 		}
 	})
+
+	t.Run("rejects the nil UUID", func(t *testing.T) {
+		_, err := domain.ParseVenueID("00000000-0000-0000-0000-000000000000")
+
+		if !errors.Is(err, domain.ErrInvalidVenueID) {
+			t.Errorf("ParseVenueID() error = %v, want %v", err, domain.ErrInvalidVenueID)
+		}
+	})
 }

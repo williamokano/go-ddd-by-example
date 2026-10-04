@@ -16,7 +16,7 @@ type VenueID struct{ value uuid.UUID }
 // ParseVenueID parses the textual form of a VenueID.
 func ParseVenueID(raw string) (VenueID, error) {
 	u, err := uuid.Parse(raw)
-	if err != nil {
+	if err != nil || u == uuid.Nil {
 		return VenueID{}, fmt.Errorf("%w: %q", ErrInvalidVenueID, raw)
 	}
 	return VenueID{value: u}, nil
