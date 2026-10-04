@@ -83,6 +83,7 @@
   <dt>Creates</dt><dd>OpenInventory (from <code>show.published.v1</code>), HoldSeats, ReleaseHold handlers; Postgres repo (<code>ticketing.inventories</code>, <code>ticketing.seats</code>, <code>ticketing.holds</code>); HTTP <code>POST /shows/{id}/holds</code>, <code>DELETE /holds/{id}</code>, <code>GET /shows/{id}/seats</code>; a consumer for <code>show.events</code></dd>
 </dl>
 <div class="callout tdd"><span class="label">TDD script (highlights)</span><ol class="tests">
+  <li>HTTP: <code>POST /shows/{id}/holds</code> takes <code>{"customerId", "seats"}</code> and <code>DELETE /holds/{id}</code> takes <code>{"customerId"}</code> in its body (no login; see <a href="01-the-domain.html">chapter 1</a>). A missing customer id → 422; someone else's hold → 403.</li>
   <li>Receiving <code>show.published.v1</code> twice opens the inventory once (TKT-1).</li>
   <li>HoldSeats retries on <code>ErrConcurrentModification</code> (up to 3 times) and then gives up with a 409.</li>
   <li>The repository writes only <em>changed</em> seats, not all 50k. Track dirty seats in the aggregate, or diff them in the adapter. Discuss which.</li>
@@ -129,7 +130,7 @@
   <li>ConfirmHold handler: on <code>OrderPaid</code>, the inventory confirms. Redelivery is a no-op.</li>
   <li>IssueTickets handler: on <code>SeatsSold</code>, one ticket per seat with unique codes (TKT-9), and the order becomes Fulfilled. Redelivery issues no duplicates. How do you detect that? (A deterministic ticket ID derived from order + seat, or a uniqueness constraint.)</li>
   <li>RefundOrder handler: on <code>HoldConfirmationFailed</code>, the gateway refunds and the order becomes Refunded. <strong>This is the compensation.</strong></li>
-  <li>HTTP: <code>POST /orders</code> takes <code>{"holdId", "contactEmail"}</code>; the customer still comes from the <code>X-Customer-ID</code> header. A missing or malformed email → 422.</li>
+  <li>HTTP: <code>POST /orders</code> takes <code>{"holdId", "customerId", "contactEmail"}</code>, all typed by the customer. A missing or malformed field → 422; a hold that isn't this customer's → 403 (TKT-6).</li>
   <li>The S1 outer-loop test goes green.</li>
 </ol></div>
 </section>

@@ -60,8 +60,10 @@ VenueRetired ─────────▶ ShowCancelled (each future show)
   <tr><td>Venue Management</td><td><span class="tag">supporting</span></td><td>Same as above.</td><td>Domain model, simplest. Our learning playground.</td></tr>
   <tr><td>Payments</td><td><span class="tag">generic</span></td><td>Every business needs it and it's solved elsewhere.</td><td>Buy it. Here: a driven port with a fake adapter.</td></tr>
   <tr><td>Notifications</td><td><span class="tag">generic</span></td><td>Sending emails.</td><td>A transaction script. No aggregates.</td></tr>
-  <tr><td>Identity &amp; access</td><td><span class="tag">generic</span></td><td>Login, roles.</td><td>Out of scope. We trust an <code>X-Customer-ID</code> / <code>X-Actor-ID</code> header, and the customer gives a contact email at checkout.</td></tr>
+  <tr><td>Identity &amp; access</td><td><span class="tag">generic</span></td><td>Login, roles.</td><td>Out of scope: no authentication. Callers say who they are in the request (see the note below).</td></tr>
 </table></div>
+
+<div class="callout warn"><span class="label">No authentication, but an email for purchasing</span><p>The course has no login. Every request that acts for someone names them explicitly in its body: <code>promoterId</code> when drafting, pricing, publishing or cancelling a show; <code>customerId</code> when holding seats, releasing a hold or placing an order. Nothing checks these ids, so anyone can claim to be anyone. That's a deliberate simplification, kept visible in the API rather than hidden behind an imaginary gateway. The only personal data is the <strong>contact email</strong> the customer types at checkout (TKT-6): it's where the tickets and any refund notice go. Real authentication is the optional <a href="ext-2-identity.html">extension E2</a>.</p></div>
 
 <h2>Bounded contexts and their languages</h2>
 <p>A <strong>bounded context</strong> is a part of the <em>solution</em> space: a boundary inside which every word has exactly one meaning, and one model applies. The same word can mean different things in different contexts. That isn't a bug; it's the reason the boundaries exist.</p>
