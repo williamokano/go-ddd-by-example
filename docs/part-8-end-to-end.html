@@ -24,6 +24,58 @@
   <li>S5, the full cascade: venue retired → show cancelled → tickets voided → order refunded. Assert each step through the public APIs, with <code>eventually</code>.</li>
   <li>The whole e2e suite runs in under 2 minutes from <code>make test-e2e</code>.</li>
 </ol></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: part-7 lesson-8.1 -->
+<p class="resume">Start this lesson from <code>git checkout part-7</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/61f93ad065ae"><code>lesson-8.1</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/6a6d16fd0f89...61f93ad065ae">this lesson's 3 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>The per-request fake mode is HTTP middleware in the fakegateway package (<code>X-Fake-Payment-Mode</code>), and <code>make test-e2e</code> runs the app with <code>HOLD_TTL=3s</code>.</li>
+</ul>
+<!-- snippet: lesson-8.1 internal/ticketing/adapters/driven/payment/fakegateway/header.go#ModeHeader -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/61f93ad065ae/internal/ticketing/adapters/driven/payment/fakegateway/header.go"><code>internal/ticketing/adapters/driven/payment/fakegateway/header.go</code></a> at <code>lesson-8.1</code></div>
+<pre><code>// ModeHeader is HTTP middleware that reads HeaderName into the request's
+// context, so e2e scenarios share one app instance (8.1).
+func ModeHeader(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw := r.Header.Get(HeaderName)
+		if raw == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		mode, err := ParseMode(raw)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(WithMode(r.Context(), mode)))
+	})
+}</code></pre>
+<!-- /snippet -->
+<!-- snippet: lesson-8.1 test/e2e/scenarios_test.go#TestS3_LatePaymentIsRefunded -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/61f93ad065ae/test/e2e/scenarios_test.go"><code>test/e2e/scenarios_test.go</code></a> at <code>lesson-8.1</code></div>
+<pre><code>// S3 — Late payment: the provider approves after the hold expired, so the
+// saga cannot confirm the seats and compensates with a refund (TKT-7).
+func TestS3_LatePaymentIsRefunded(t *testing.T) {
+	c := newClient(t)
+	show := c.publishedShow()
+	customer := uuid.NewString()
+	h := c.hold(show, customer, "ORCH/A/1")
+	order := c.checkout(h, customer, map[string]string{"X-Fake-Payment-Mode": "delay:5s"})
+
+	var got orderJSON
+	eventually(t, 30*time.Second, "the late order is refunded", func() bool {
+		got = c.order(order)
+		return got.Status == "refunded"
+	})
+	if len(got.Tickets) != 0 {
+		t.Errorf("a refunded late order has tickets: %+v", got.Tickets)
+	}
+	if s := c.seatStates(show)["ORCH/A/1"]; s != "available" {
+		t.Errorf("ORCH/A/1 is %q, want available", s)
+	}
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l8-2">
@@ -34,9 +86,34 @@
 </dl>
 <div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
   <li>The handler formats the expected email from a <code>TicketsIssuedV1</code> (golden text) and sends it to the contact email the event carries. Notifications never looks the customer up anywhere.</li>
-  <li>A duplicate event doesn't send twice. This needs the inbox from 8.4: write the test now, see it fail, and come back.</li>
+  <li>A duplicate event doesn't send twice. That needs the inbox, so it is the first test of 8.4, not a test left red for two lessons.</li>
 </ol></div>
 <div class="callout discuss"><span class="label">Discuss</span><p>No domain package, no aggregates, no repository. Is that "bad DDD"? (No. Strategic DDD tells you <em>where not</em> to invest. Generic subdomain, simplest thing that works.)</p></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-8.1 lesson-8.2 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-8.1</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/c8d661a63e34"><code>lesson-8.2</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/61f93ad065ae...c8d661a63e34">this lesson's 2 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>No domain package at all. The duplicate-email test needs the inbox, so it lives in 8.4 rather than staying red for two lessons.</li>
+</ul>
+<!-- snippet: lesson-8.2 internal/notifications/application/send.go#SendTicketsHandler.Handle -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/c8d661a63e34/internal/notifications/application/send.go"><code>internal/notifications/application/send.go</code></a> at <code>lesson-8.2</code></div>
+<pre><code>// Handle sends one email listing every ticket.
+func (h *SendTicketsHandler) Handle(ctx context.Context, cmd SendTickets) error {
+	var b strings.Builder
+	fmt.Fprintf(&amp;b, "Your tickets for order %s (show %s):\n\n", cmd.OrderID, cmd.ShowID)
+	for _, t := range cmd.Tickets {
+		fmt.Fprintf(&amp;b, "  %-14s %s\n", t.Seat, t.Code)
+	}
+	b.WriteString("\nShow the code at the door. Enjoy the show!\n")
+	return send(ctx, h.sender, Email{
+		To:      cmd.ContactEmail,
+		Subject: fmt.Sprintf("Your %d ticket(s) for order %s", len(cmd.Tickets), cmd.OrderID),
+		Body:    b.String(),
+	})
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l8-3">
@@ -51,6 +128,53 @@
   <li>e2e: after S1, every log line and outbox row for that purchase share one correlation ID.</li>
 </ol></div>
 <div class="callout discuss"><span class="label">Discuss</span><p>The correlation ID travels in <code>context.Context</code>, and the domain doesn't take a context. How does the ID reach the outbox without touching the domain? (The repository adapter reads it from <code>ctx</code> in <code>Save</code>.)</p></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-8.2 lesson-8.3 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-8.2</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/1aee850cf756"><code>lesson-8.3</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/c8d661a63e34...1aee850cf756">this lesson's 5 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li><code>outbox.Write</code> stamps the IDs from the <code>ctx</code> the repository already passes, so no context's code mentions them.</li>
+  <li>Each scheduler tick starts a flow of its own.</li>
+</ul>
+<!-- snippet: lesson-8.3 internal/platform/outbox/writer.go#Write -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/1aee850cf756/internal/platform/outbox/writer.go"><code>internal/platform/outbox/writer.go</code></a> at <code>lesson-8.3</code></div>
+<pre><code>// Write inserts msgs into &lt;schema&gt;.outbox inside tx, the transaction that also
+// saves the aggregate: both commit, or neither does. Messages without trace
+// IDs get the ones in ctx, so the domain never sees them (8.3).
+func Write(ctx context.Context, tx pgx.Tx, schema string, msgs []Message) error {
+	table := pgx.Identifier{schema, "outbox"}.Sanitize()
+	for _, m := range msgs {
+		if m.CorrelationID == "" {
+			m.CorrelationID = trace.CorrelationID(ctx)
+		}
+		if m.CausationID == "" {
+			m.CausationID = trace.CausationID(ctx)
+		}
+		_, err := tx.Exec(ctx,
+			`INSERT INTO `+table+` (event_id, topic, msg_key, event_type, payload, occurred_at, correlation_id, causation_id)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+			m.EventID, m.Topic, m.Key, m.Type, []byte(m.Payload), m.OccurredAt, m.CorrelationID, m.CausationID)
+		if err != nil {
+			return fmt.Errorf("outbox %s: insert %s: %w", schema, m.Type, err)
+		}
+	}
+	return nil
+}</code></pre>
+<!-- /snippet -->
+<!-- snippet: lesson-8.3 internal/platform/kafka/consumer.go#withTrace -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/1aee850cf756/internal/platform/kafka/consumer.go"><code>internal/platform/kafka/consumer.go</code></a> at <code>lesson-8.3</code></div>
+<pre><code>// withTrace continues the event's flow: its correlation ID (or the event
+// itself, for an event published without one), and the event as the cause of
+// whatever the handler does next (8.3).
+func withTrace(ctx context.Context, env Envelope) context.Context {
+	correlation := env.CorrelationID
+	if correlation == "" {
+		correlation = env.EventID
+	}
+	return trace.WithCausationID(trace.WithCorrelationID(ctx, correlation), env.EventID)
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l8-4">
@@ -62,9 +186,93 @@
 <div class="callout tdd"><span class="label">TDD script</span><ol class="tests">
   <li>The inbox insert and the handler's writes commit together, or roll back together.</li>
   <li>A second delivery of the same <code>event_id</code> is skipped.</li>
-  <li>The 8.2 duplicate-email test now passes.</li>
+  <li>The duplicate-email test from 8.2: a second delivery of the same <code>event_id</code> sends nothing.</li>
 </ol></div>
 <div class="callout discuss"><span class="label">Discuss</span><p>We refactored "Save is the transaction" (ADR-004) into "the use case may open a transaction". Write ADR-012 recording this, and explain why we didn't start there.</p></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-8.3 lesson-8.4 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-8.3</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/7631aed4c175"><code>lesson-8.4</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/1aee850cf756...7631aed4c175">this lesson's 3 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li><code>postgres.Begin</code> joins an ambient transaction through a <em>savepoint</em>, so no repository signature changed and none of the contract suites noticed (ADR-012).</li>
+</ul>
+<!-- snippet: lesson-8.4 internal/platform/postgres/tx.go#TxManager.WithinTx,Begin,Inbox.Claim -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/7631aed4c175/internal/platform/postgres/tx.go"><code>internal/platform/postgres/tx.go</code></a> at <code>lesson-8.4</code></div>
+<pre><code>// WithinTx runs fn in a transaction carried by its context: it commits if fn
+// returns nil and rolls back otherwise. Inside an ambient transaction, it
+// simply joins it.
+func (m *TxManager) WithinTx(ctx context.Context, fn func(ctx context.Context) error) (err error) {
+	if _, ok := ctx.Value(txKey{}).(pgx.Tx); ok {
+		return fn(ctx)
+	}
+	tx, err := m.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+	if err := fn(context.WithValue(ctx, txKey{}, tx)); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	return nil
+}
+
+// Begin starts a repository's transaction. Inside an ambient transaction it
+// starts a savepoint instead, so the repository's Commit and Rollback still
+// work, and the ambient transaction decides what is finally committed.
+func Begin(ctx context.Context, pool *pgxpool.Pool) (pgx.Tx, error) {
+	if tx, ok := ctx.Value(txKey{}).(pgx.Tx); ok {
+		nested, err := tx.Begin(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("savepoint: %w", err)
+		}
+		return nested, nil
+	}
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin: %w", err)
+	}
+	return tx, nil
+}
+
+// Claim records eventID as processed and reports whether this is its first
+// delivery. It must run inside WithinTx.
+func (i *Inbox) Claim(ctx context.Context, eventID string) (bool, error) {
+	tx, ok := ctx.Value(txKey{}).(pgx.Tx)
+	if !ok {
+		return false, ErrNoTransaction
+	}
+	tag, err := tx.Exec(ctx,
+		`INSERT INTO `+i.table+` (consumer, event_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, i.consumer, eventID)
+	if err != nil {
+		return false, fmt.Errorf("inbox %s: claim %s: %w", i.consumer, eventID, err)
+	}
+	return tag.RowsAffected() == 1, nil
+}</code></pre>
+<!-- /snippet -->
+<!-- snippet: lesson-8.4 internal/notifications/application/send.go#script.sendOnce -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/7631aed4c175/internal/notifications/application/send.go"><code>internal/notifications/application/send.go</code></a> at <code>lesson-8.4</code></div>
+<pre><code>func (s script) sendOnce(ctx context.Context, eventID string, e Email) error {
+	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		first, err := s.inbox.Claim(ctx, eventID)
+		if err != nil || !first {
+			return err //nolint:wrapcheck // wrapped below, once
+		}
+		return s.sender.Send(ctx, e) //nolint:wrapcheck // wrapped below, once
+	})
+	if err != nil {
+		return fmt.Errorf("send %q to %s: %w", e.Subject, e.To, err)
+	}
+	return nil
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l8-5">
@@ -76,6 +284,56 @@
   <li>Stop Postgres: HTTP returns 500s and consumers back off without losing messages.</li>
 </ol></div>
 <div class="callout discuss"><span class="label">Discuss</span><p>For each drill, which pattern saved you (outbox, idempotency, offsets committed after handling, DLQ)?</p></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-8.4 lesson-8.5 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-8.4</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/f626de98fc5d"><code>lesson-8.5</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/7631aed4c175...f626de98fc5d">this lesson's 3 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>Drill 4 failed the first time: a 1.5 s retry budget dead-lettered <code>show.published.v1</code> and an email during a Postgres outage. Only <code>kafka.Permanent</code> errors go to the DLQ now; others retry with capped backoff (ADR-015).</li>
+  <li>The drills are tests (<code>make drills</code>); <code>notes/failure-drills.md</code> records what each one taught.</li>
+</ul>
+<!-- snippet: lesson-8.5 internal/platform/kafka/consumer.go#Permanent,process -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/f626de98fc5d/internal/platform/kafka/consumer.go"><code>internal/platform/kafka/consumer.go</code></a> at <code>lesson-8.5</code></div>
+<pre><code>// Permanent marks err as poison: a message that will never be handled, such as
+// a payload that does not decode. The runner parks it in the DLQ at once.
+// Anything else is transient (a database outage, a timeout) and is retried
+// until it succeeds (8.5).
+func Permanent(err error) error {
+	if err == nil {
+		return nil
+	}
+	return permanentError{err: err}
+}
+
+// process handles rec until it succeeds or is parked in the DLQ. It returns
+// false if ctx ended first.
+func process(ctx context.Context, client *kgo.Client, cfg ConsumerConfig, handle Handler, logger *slog.Logger, rec *kgo.Record) bool {
+	var env Envelope
+	if err := json.Unmarshal(rec.Value, &amp;env); err != nil {
+		return deadLetter(ctx, client, cfg, logger, rec, fmt.Errorf("decode envelope: %w", err))
+	}
+	ctx = withTrace(ctx, env)
+	backoff := cfg.Backoff
+	for attempt := 1; ; attempt++ {
+		err := handle(ctx, env)
+		if err == nil {
+			return true
+		}
+		if IsPermanent(err) {
+			return deadLetter(ctx, client, cfg, logger, rec, err)
+		}
+		logger.WarnContext(ctx, "kafka handler", "group", cfg.Group, "event_type", env.EventType,
+			"event_id", env.EventID, "attempt", attempt, "retry_in", backoff, "error", err)
+		select {
+		case &lt;-ctx.Done():
+			return false
+		case &lt;-time.After(backoff):
+		}
+		backoff = min(backoff*2, cfg.MaxBackoff)
+	}
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l8-6">
@@ -85,6 +343,44 @@
   <li>Re-read Chapters 2 and 3. Mark anything you would now explain differently, and update the docs.</li>
   <li>Pick the Part 9 stretch goals you want.</li>
 </ol></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-8.5 lesson-8.6 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-8.5</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/4d78867b0b31"><code>lesson-8.6</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/f626de98fc5d...4d78867b0b31">this lesson's 1 commits</a>).</p>
+<!-- /resume -->
+<!-- snippet: lesson-8.6 notes/retrospective.md#L1-L30 -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/4d78867b0b31/notes/retrospective.md"><code>notes/retrospective.md</code></a> at <code>lesson-8.6</code></div>
+<pre><code># Retrospective (8.6)
+
+Parts 0–8 are built: four contexts, six acceptance scenarios, four failure
+drills. Below is what I would explain differently now, then the stretch goals.
+
+## What I would explain differently
+
+**Chapter 4: "Delivery guarantees and how we cope."** The chapter separates
+transient failures (retry, don't commit) from poison (dead-letter it). The
+5.4 runner merged them into "N attempts, then the DLQ", and every test passed.
+Only drill 4 showed the DLQ swallowing `show.published.v1` during a Postgres
+outage. The lesson should say plainly that a bounded retry turns an outage
+into data loss. The runner should be built with `kafka.Permanent` from the
+start, and the poison row should say "at once", not "after N attempts".
+
+**ADR-004 → ADR-012: "Save is the transaction."** It was the right start.
+Every use case so far touched one aggregate, so the repository could own the
+transaction, and no port leaked `pgx`. The inbox broke that: the claim and the
+handler's writes must commit together. The cheapest change was a `TxManager`
+port plus repositories that *join* an ambient transaction through a savepoint
+(`platform/postgres.Begin`). No repository signature changed, and none of the
+contract suites noticed. That is the argument for starting simple: the
+refactor cost one file.
+
+**Chapter 3: correlation IDs and the pure domain.** The Discuss answer ("the
+repository adapter reads it from ctx in Save") understates it. The adapter
+doesn't even need to know. `outbox.Write` stamps the IDs from the `ctx` it
+already receives, so no context's code mentions them.
+
+**Part 7.6: the race test and ADR-005.** "One aggregate per show" is correct</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 </main>
 <script src="assets/course.js"></script>

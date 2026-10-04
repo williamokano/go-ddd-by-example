@@ -105,6 +105,8 @@ git log --oneline lesson-1.5..lesson-1.6   # every TDD step of lesson 1.6
 git diff lesson-1.5 lesson-1.6             # everything lesson 1.6 changed
 git diff lesson-1.6 -- internal/           # your code vs the reference</code></pre>
 <p>Tags are named <code>lesson-X.Y</code> (end of a lesson) and <code>part-N</code> (end of a Part). The reference is <em>a</em> correct answer, not <em>the</em> answer. If yours differs, use the Discuss questions to work out whether the difference matters.</p>
+<p>Part 9's stretch goals are independent, but the reference builds them in order, one tag each, so <code>lesson-9.4</code> also contains 9.1 to 9.3. To try one goal on its own, start from <code>part-8</code> and compare with <code>git diff lesson-9.3 lesson-9.4</code>. The optional extension track (E1 to E6) has no reference solution.</p>
+<p>The <code>solution</code> branch also has a <code>README.md</code> that maps every DDD and hexagonal concept to the file that shows it, and a <code>notes/</code> folder with the design work the lessons ask for: event storming, aggregate design and its measurements, failure drills, the orchestration comparison, and the retrospective.</p>
 <p>The snippets in these pages are generated from the tagged code (<code>make docs-snippets</code>), and <code>make docs-check</code> fails when a page no longer matches the code, so they can't drift.</p>
 
 <h2>Viewing these docs</h2>

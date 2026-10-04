@@ -35,6 +35,51 @@
   <li>Interfaces don't need tests, but contracts do. Where will the contract of <code>Save</code> be tested? (Lesson 2.6.)</li>
   <li>Why is <code>IDGenerator</code> context-specific (<code>NewVenueID</code>) and not a generic <code>NewUUID()</code>?</li>
 </ul></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: part-1 lesson-2.1 -->
+<p class="resume">Start this lesson from <code>git checkout part-1</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/c37331a44f3a"><code>lesson-2.1</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/1340008d6cb6...c37331a44f3a">this lesson's 1 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>Three ports, nothing else: <code>VenueRepository</code>, <code>Clock</code>, <code>IDGenerator</code>. No adapter exists yet, and that is the point: the application states what it needs before anyone provides it.</li>
+</ul>
+<!-- snippet: lesson-2.1 internal/venue/application/ports.go -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/c37331a44f3a/internal/venue/application/ports.go"><code>internal/venue/application/ports.go</code></a> at <code>lesson-2.1</code></div>
+<pre><code>package application
+
+import (
+	"context"
+	"time"
+
+	"github.com/williamokano/go-ddd-by-example/internal/venue/domain"
+)
+
+// VenueRepository loads and saves whole Venue aggregates (one per root, not
+// one per table). It is a driven port: the core declares it, an adapter
+// implements it (memory for tests, Postgres in production).
+type VenueRepository interface {
+	// Get loads the venue with the given ID, or returns ErrVenueNotFound.
+	Get(ctx context.Context, id domain.VenueID) (*domain.Venue, error)
+
+	// Save persists the aggregate and its pending events atomically: it drains
+	// v.PullEvents() and stores them with the venue (the outbox, from Part 5).
+	// It returns ErrConcurrentModification if the stored version differs from
+	// v.Version(), i.e. someone else saved the venue since it was loaded.
+	Save(ctx context.Context, v *domain.Venue) error
+}
+
+// Clock tells the time. The domain never calls time.Now(); use cases ask the
+// clock and pass the time in (ADR-008).
+type Clock interface {
+	Now() time.Time
+}
+
+// IDGenerator hands out new identities. It is per context and per aggregate,
+// so the type system stops a ShowID being used as a VenueID (ADR-008).
+type IDGenerator interface {
+	NewVenueID() domain.VenueID
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l2-2">
@@ -53,6 +98,76 @@
   <li>Save with a stale version → <code>ErrConcurrentModification</code>.</li>
   <li>Save drains the aggregate's pending events and keeps them in a <code>Published()</code> slice the tests can inspect.</li>
 </ol></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-2.1 lesson-2.2 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-2.1</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/1ad744a15a64"><code>lesson-2.2</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/c37331a44f3a...1ad744a15a64">this lesson's 8 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>The memory repository stores a <em>copy</em> of the state (<code>StateOf</code>/<code>Rehydrate</code>), never the pointer. Otherwise a use case that fails halfway leaks its unsaved changes into the next test.</li>
+  <li><code>Save</code> drains the venue's events into <code>Published()</code>, so use-case tests can assert "what would have gone to the outbox" long before there is one.</li>
+  <li><code>platform/clock</code> and <code>platform/idgen</code> are shared building blocks with no context in them; the typed-ID adapter (<code>venue/adapters/driven/ids</code>) is per context.</li>
+</ul>
+<!-- snippet: lesson-2.2 internal/venue/adapters/driven/memory/venue_repository.go#VenueRepository.Save -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/1ad744a15a64/internal/venue/adapters/driven/memory/venue_repository.go"><code>internal/venue/adapters/driven/memory/venue_repository.go</code></a> at <code>lesson-2.2</code></div>
+<pre><code>// Save implements application.VenueRepository. Like the Postgres adapter, it
+// accepts the save only if the stored version is the one the venue was loaded
+// at (0 for a new venue), then stores the next version (ADR-011).
+func (r *VenueRepository) Save(_ context.Context, v *domain.Venue) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.venues[v.ID()].Version != v.Version() {
+		return fmt.Errorf("%w: venue %s", application.ErrConcurrentModification, v.ID())
+	}
+	state := stateOf(v)
+	state.Version++
+	r.venues[v.ID()] = state
+	r.published = append(r.published, v.PullEvents()...)
+	return nil
+}</code></pre>
+<!-- /snippet -->
+<!-- snippet: lesson-2.2 internal/platform/clock/clock.go -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/1ad744a15a64/internal/platform/clock/clock.go"><code>internal/platform/clock/clock.go</code></a> at <code>lesson-2.2</code></div>
+<pre><code>// Package clock implements the Clock driven port of every context: the real
+// clock for production and a fixed, hand-advanced one for tests.
+package clock
+
+import (
+	"sync"
+	"time"
+)
+
+// System is the real clock. It reports UTC, so stored and compared times
+// never depend on the server's time zone.
+type System struct{}
+
+// Now returns the current time in UTC.
+func (System) Now() time.Time { return time.Now().UTC() }
+
+// Fixed is a clock that only moves when told to. Tests use it to make
+// time-based rules (hold expiry, TKT-4) deterministic: no sleeping.
+type Fixed struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+// NewFixed returns a clock stopped at t.
+func NewFixed(t time.Time) *Fixed { return &amp;Fixed{now: t} }
+
+// Now returns the clock's current time.
+func (c *Fixed) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+// Advance moves the clock forward by d.
+func (c *Fixed) Advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d)
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l2-3">
@@ -74,6 +189,33 @@ func (h *RegisterVenueHandler) Handle(ctx context.Context, cmd RegisterVenue) (d
   <li>The handler has no <code>if</code> about business rules. Where did they all go?</li>
   <li>Should the handler wrap domain errors (<code>fmt.Errorf("register venue: %w", err)</code>)? What does wrapping cost or gain at the HTTP adapter?</li>
 </ul></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-2.2 lesson-2.3 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-2.2</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/4ff32b6a83de"><code>lesson-2.3</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/1ad744a15a64...4ff32b6a83de">this lesson's 3 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>Three commits: the happy path, then "domain errors come back unchanged and nothing is saved", then wrapping with the use case's name. <code>errors.Is</code> still finds the domain sentinel through the wrap.</li>
+</ul>
+<!-- snippet: lesson-2.3 internal/venue/application/register_venue.go#RegisterVenueHandler.Handle -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/4ff32b6a83de/internal/venue/application/register_venue.go"><code>internal/venue/application/register_venue.go</code></a> at <code>lesson-2.3</code></div>
+<pre><code>// Handle registers the venue and returns its new ID. Errors are wrapped with
+// the use case's name; errors.Is still finds the domain error underneath.
+func (h *RegisterVenueHandler) Handle(ctx context.Context, cmd RegisterVenue) (domain.VenueID, error) {
+	addr, err := domain.NewAddress(cmd.Street, cmd.City, cmd.Country)
+	if err != nil {
+		return domain.VenueID{}, fmt.Errorf("register venue: %w", err)
+	}
+	venue, err := domain.RegisterVenue(h.ids.NewVenueID(), cmd.Name, addr, h.clock.Now())
+	if err != nil {
+		return domain.VenueID{}, fmt.Errorf("register venue: %w", err)
+	}
+	if err := h.venues.Save(ctx, venue); err != nil {
+		return domain.VenueID{}, fmt.Errorf("register venue: %w", err)
+	}
+	return venue.ID(), nil
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l2-4">
@@ -88,6 +230,64 @@ func (h *RegisterVenueHandler) Handle(ctx context.Context, cmd RegisterVenue) (d
   <li>A rule violation (e.g. activating without sections) → the domain error, and nothing is saved.</li>
 </ol></div>
 <div class="callout do"><span class="label">Refactor step</span><p>Once all four handlers exist, look for duplication in the <em>tests</em> (setup of handler + fakes) and extract a small <code>newFixture(t)</code>. Don't extract a generic "base handler" in production code. Four explicit 15-line handlers are clearer than one clever abstraction.</p></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-2.3 lesson-2.4 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-2.3</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/7c194c890b9c"><code>lesson-2.4</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/4ff32b6a83de...7c194c890b9c">this lesson's 5 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>Every use case is the same recipe: parse input → load → call the aggregate → save. The recipe shows up in the code, but no "service base class" appears: three small handlers are clearer than one generic one.</li>
+  <li>A <code>newFixture</code> helper arrived only after the third use case's tests repeated the same setup (the last commit of the lesson).</li>
+</ul>
+<!-- snippet: lesson-2.4 internal/venue/application/add_section.go#AddSectionHandler.Handle,newSection -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/7c194c890b9c/internal/venue/application/add_section.go"><code>internal/venue/application/add_section.go</code></a> at <code>lesson-2.4</code></div>
+<pre><code>// Handle adds the section: parse → load → one domain call → save.
+func (h *AddSectionHandler) Handle(ctx context.Context, cmd AddSection) error {
+	id, err := domain.ParseVenueID(cmd.VenueID)
+	if err != nil {
+		return fmt.Errorf("add section: %w", err)
+	}
+	section, err := newSection(cmd)
+	if err != nil {
+		return fmt.Errorf("add section: %w", err)
+	}
+	venue, err := h.venues.Get(ctx, id)
+	if err != nil {
+		return fmt.Errorf("add section: %w", err)
+	}
+	if err := venue.AddSection(section, h.clock.Now()); err != nil {
+		return fmt.Errorf("add section: %w", err)
+	}
+	if err := h.venues.Save(ctx, venue); err != nil {
+		return fmt.Errorf("add section: %w", err)
+	}
+	return nil
+}
+
+// newSection parses the command's primitives into a domain Section.
+func newSection(cmd AddSection) (domain.Section, error) {
+	code, err := domain.NewSectionCode(cmd.Code)
+	if err != nil {
+		return domain.Section{}, err
+	}
+	switch cmd.Kind {
+	case KindSeated:
+		rows := make([]domain.Row, 0, len(cmd.Rows))
+		for _, r := range cmd.Rows {
+			row, err := domain.NewRow(r.Label, r.Seats)
+			if err != nil {
+				return domain.Section{}, err
+			}
+			rows = append(rows, row)
+		}
+		return domain.NewSeatedSection(code, cmd.Name, rows)
+	case KindGA:
+		return domain.NewGeneralAdmissionSection(code, cmd.Name, cmd.Capacity)
+	default:
+		return domain.Section{}, fmt.Errorf("%w: unknown kind %q (want %q or %q)", domain.ErrInvalidSection, cmd.Kind, KindSeated, KindGA)
+	}
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l2-5">
@@ -103,6 +303,63 @@ func (h *RegisterVenueHandler) Handle(ctx context.Context, cmd RegisterVenue) (d
   <li><code>List(status)</code> filters by status.</li>
 </ol></div>
 <div class="callout discuss"><span class="label">Discuss</span><p>Why doesn't the query port return <code>*domain.Venue</code>? Think about what an HTTP adapter could do with an aggregate pointer, and what loading 1,000 aggregates costs just to show a list.</p></div>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-2.4 lesson-2.5 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-2.4</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/77a35a494922"><code>lesson-2.5</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/7c194c890b9c...77a35a494922">this lesson's 2 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>The read side has its own port and flat DTOs (<code>VenueView</code>): queries never return the aggregate, so nothing outside the domain can call its methods.</li>
+</ul>
+<!-- snippet: lesson-2.5 internal/venue/application/queries.go -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/77a35a494922/internal/venue/application/queries.go"><code>internal/venue/application/queries.go</code></a> at <code>lesson-2.5</code></div>
+<pre><code>package application
+
+import (
+	"context"
+
+	"github.com/williamokano/go-ddd-by-example/internal/venue/domain"
+)
+
+// VenueQueries is the read side (CQRS-lite): flat views for screens and APIs,
+// built straight from storage. It never returns aggregates: a reader can't
+// call AddSection on a view, and listing venues doesn't load 1,000 aggregates.
+type VenueQueries interface {
+	// Get returns the view of one venue, or ErrVenueNotFound.
+	Get(ctx context.Context, id domain.VenueID) (VenueView, error)
+
+	// List returns the venues with the given status ("draft", "active",
+	// "retired"), ordered by name.
+	List(ctx context.Context, status string) ([]VenueView, error)
+}
+
+// VenueView is a venue as readers see it: strings and ints only.
+type VenueView struct {
+	ID       string
+	Name     string
+	Street   string
+	City     string
+	Country  string
+	Status   string
+	Capacity int
+	Sections []SectionView
+}
+
+// SectionView is one section of a VenueView. Kind is "seated" or "ga".
+type SectionView struct {
+	Code     string
+	Name     string
+	Kind     string
+	Capacity int
+	Rows     []RowView
+}
+
+// RowView is one row of a seated SectionView.
+type RowView struct {
+	Label string
+	Seats int
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l2-6">
@@ -115,6 +372,194 @@ func (h *RegisterVenueHandler) Handle(ctx context.Context, cmd RegisterVenue) (d
 <div class="callout do"><span class="label">Your turn</span><p>Move the repository tests from 2.2 into <code>venuerepotest.Run(t, factory)</code>. The memory adapter's test becomes a one-liner. Add cases: round-trip of an active venue with a GA and a seated section; two concurrent saves from the same loaded version (the second gets <code>ErrConcurrentModification</code>).</p></div>
 <h4>Done when</h4>
 <ul><li><code>make test</code> is green, and every Venue use case is covered without any infrastructure. The app "works" entirely in memory.</li></ul>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-2.5 lesson-2.6 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-2.5</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/b26f10e0919c"><code>lesson-2.6</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/77a35a494922...b26f10e0919c">this lesson's 3 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>The contract suite lives in a non-test package (<code>venuerepotest</code>) so the Postgres adapter can run the very same tests in 3.5.</li>
+  <li>golangci-lint's <code>wrapcheck</code> flagged returning domain errors unwrapped. They are the application's own vocabulary, so <code>.golangci.yml</code> ignores the domain packages instead of wrapping them everywhere.</li>
+</ul>
+<!-- snippet: lesson-2.6 internal/venue/application/venuerepotest/suite.go#Run -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/b26f10e0919c/internal/venue/application/venuerepotest/suite.go"><code>internal/venue/application/venuerepotest/suite.go</code></a> at <code>lesson-2.6</code></div>
+<pre><code>// Run runs the contract against repositories built by newRepo. Each test uses
+// fresh random IDs, so implementations may share storage between tests.
+func Run(t *testing.T, newRepo func(t *testing.T) application.VenueRepository) {
+	t.Helper()
+
+	t.Run("get of an unknown id is ErrVenueNotFound", func(t *testing.T) {
+		_, err := newRepo(t).Get(context.Background(), domain.NewVenueID(uuid.New()))
+
+		if !errors.Is(err, application.ErrVenueNotFound) {
+			t.Errorf("Get() error = %v, want %v", err, application.ErrVenueNotFound)
+		}
+	})
+
+	t.Run("save then get round-trips a draft venue", func(t *testing.T) {
+		repo := newRepo(t)
+		venue := draftVenue(t)
+
+		mustSave(t, repo, venue)
+
+		assertSameState(t, venue, mustGet(t, repo, venue.ID()))
+	})
+
+	t.Run("save then get round-trips an active venue with seated and GA sections", func(t *testing.T) {
+		repo := newRepo(t)
+		venue := activeVenue(t)
+
+		mustSave(t, repo, venue)
+
+		assertSameState(t, venue, mustGet(t, repo, venue.ID()))
+	})
+
+	t.Run("changes without save are not visible", func(t *testing.T) {
+		repo := newRepo(t)
+		venue := draftVenue(t)
+		mustSave(t, repo, venue)
+		loaded := mustGet(t, repo, venue.ID())
+
+		if err := loaded.AddSection(gaSection(t, "BOX", 4), now); err != nil {
+			t.Fatal(err)
+		}
+
+		if got := len(mustGet(t, repo, venue.ID()).Sections()); got != 0 {
+			t.Errorf("unsaved change is visible: %d sections, want 0", got)
+		}
+	})
+
+	t.Run("an update round-trips", func(t *testing.T) {
+		repo := newRepo(t)
+		venue := draftVenue(t)
+		mustSave(t, repo, venue)
+		loaded := mustGet(t, repo, venue.ID())
+		if err := loaded.AddSection(gaSection(t, "BOX", 4), now); err != nil {
+			t.Fatal(err)
+		}
+
+		mustSave(t, repo, loaded)
+
+		assertSameState(t, loaded, mustGet(t, repo, venue.ID()))
+	})
+
+	t.Run("save from a stale version is ErrConcurrentModification", func(t *testing.T) {
+		repo := newRepo(t)
+		venue := draftVenue(t)
+		mustSave(t, repo, venue)
+		first, second := mustGet(t, repo, venue.ID()), mustGet(t, repo, venue.ID())
+		mustSave(t, repo, first)
+
+		err := repo.Save(context.Background(), second)
+
+		if !errors.Is(err, application.ErrConcurrentModification) {
+			t.Errorf("Save() error = %v, want %v", err, application.ErrConcurrentModification)
+		}
+	})
+
+	t.Run("registering the same id twice is ErrConcurrentModification", func(t *testing.T) {
+		repo := newRepo(t)
+		venue := draftVenue(t)
+		mustSave(t, repo, venue)
+		twin, err := domain.RegisterVenue(venue.ID(), "Twin", venue.Address(), now)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		err = repo.Save(context.Background(), twin)
+
+		if !errors.Is(err, application.ErrConcurrentModification) {
+			t.Errorf("Save() error = %v, want %v", err, application.ErrConcurrentModification)
+		}
+	})
+
+	t.Run("of two concurrent saves from the same version, exactly one wins", func(t *testing.T) {
+		repo := newRepo(t)
+		venue := draftVenue(t)
+		mustSave(t, repo, venue)
+		copies := []*domain.Venue{mustGet(t, repo, venue.ID()), mustGet(t, repo, venue.ID())}
+
+		errs := make([]error, len(copies))
+		var wg sync.WaitGroup
+		for i, v := range copies {
+			wg.Go(func() { errs[i] = repo.Save(context.Background(), v) })
+		}
+		wg.Wait()
+
+		var wins, conflicts int
+		for _, err := range errs {
+			switch {
+			case err == nil:
+				wins++
+			case errors.Is(err, application.ErrConcurrentModification):
+				conflicts++
+			default:
+				t.Errorf("Save() unexpected error = %v", err)
+			}
+		}
+		if wins != 1 || conflicts != 1 {
+			t.Errorf("wins = %d, conflicts = %d; want exactly one of each", wins, conflicts)
+		}
+	})
+
+	t.Run("save drains the venue's pending events", func(t *testing.T) {
+		repo := newRepo(t)
+		venue := draftVenue(t)
+
+		mustSave(t, repo, venue)
+
+		if left := venue.PullEvents(); len(left) != 0 {
+			t.Errorf("venue still has %d pending events after Save", len(left))
+		}
+	})
+
+	t.Run("a loaded venue has no pending events", func(t *testing.T) {
+		repo := newRepo(t)
+		venue := draftVenue(t)
+		mustSave(t, repo, venue)
+
+		if got := mustGet(t, repo, venue.ID()).PullEvents(); len(got) != 0 {
+			t.Errorf("loaded venue has events %v, want none", got)
+		}
+	})
+}</code></pre>
+<!-- /snippet -->
+<!-- snippet: lesson-2.6 .golangci.yml -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/b26f10e0919c/.golangci.yml"><code>.golangci.yml</code></a> at <code>lesson-2.6</code></div>
+<pre><code>version: "2"
+
+linters:
+  default: standard
+  enable:
+    - errorlint
+    - gocritic
+    - revive
+    - testpackage
+    - wrapcheck
+  settings:
+    wrapcheck:
+      # Domain errors are the application's own vocabulary and already name
+      # their context ("venue: invalid row"); wrapping them everywhere is noise.
+      # Handlers still add the use case name at their boundary.
+      ignore-package-globs:
+        - github.com/williamokano/go-ddd-by-example/internal/*/domain
+        - github.com/williamokano/go-ddd-by-example/internal/sharedkernel
+  exclusions:
+    rules:
+      # The domain returns its own sentinel errors; there is nothing foreign to wrap.
+      - path: internal/.*/domain/
+        linters: [wrapcheck]
+      # domain.DomainEvent is the ubiquitous language (it becomes
+      # sharedkernel.DomainEvent in Part 7), not an accidental stutter.
+      - path: internal/.*/domain/
+        linters: [revive]
+        text: "stutters"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 </main>
 <script src="assets/course.js"></script>

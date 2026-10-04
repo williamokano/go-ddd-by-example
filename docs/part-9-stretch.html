@@ -17,41 +17,450 @@
 <section class="lesson" id="l9-1">
 <h3><span class="lesson-id">9.1</span> Re-cut the inventory aggregate per section</h3>
 <p>Supersede ADR-005: a <code>SectionInventory</code> per (show, section), with holds limited to one section. Re-run the 7.6 measurements and compare. Which tests had to change? (Ideally domain tests and the inventory repository. HTTP and e2e should barely change.)</p>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: part-8 lesson-9.1 -->
+<p class="resume">Start this lesson from <code>git checkout part-8</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/821d6d62e993"><code>lesson-9.1</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/4d78867b0b31...821d6d62e993">this lesson's 4 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>Measured: 10 sections of 100 → 30/200 holds succeed (p50 0.3 s) against 3/200 for one section of 1,000. Finer aggregates spread contention; they don't remove it.</li>
+  <li>Cost: TKT-3 becomes per section, and TKT-10 (sold out) spans sections, so it became a domain service run by a policy (ADR-013). HTTP tests didn't change; one e2e test did (S4).</li>
+</ul>
+<!-- snippet: lesson-9.1 internal/ticketing/domain/sold_out.go#ShowSoldOut -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/821d6d62e993/internal/ticketing/domain/sold_out.go"><code>internal/ticketing/domain/sold_out.go</code></a> at <code>lesson-9.1</code></div>
+<pre><code>// ShowSoldOut is a domain service: TKT-10 ("a show is sold out when every
+// seat is sold") spans every SectionInventory of the show, so no single
+// aggregate can decide it (ADR-013). It returns the event to announce, and
+// whether the show is sold out. Deciding twice is harmless: Show treats a
+// second InventorySoldOut as a no-op (SHW-8).
+func ShowSoldOut(sections []*SectionInventory, now time.Time) (InventorySoldOut, bool) {
+	if len(sections) == 0 {
+		return InventorySoldOut{}, false
+	}
+	for _, s := range sections {
+		if !s.IsSoldOut() {
+			return InventorySoldOut{}, false
+		}
+	}
+	return InventorySoldOut{ShowID: sections[0].ShowID(), At: now}, true
+}</code></pre>
+<!-- /snippet -->
+<!-- snippet: lesson-9.1 internal/ticketing/domain/inventory.go#OpenInventory -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/821d6d62e993/internal/ticketing/domain/inventory.go"><code>internal/ticketing/domain/inventory.go</code></a> at <code>lesson-9.1</code></div>
+<pre><code>// OpenInventory opens the inventory of a published show from its layout
+// snapshot: one SectionInventory per section, every seat and GA place
+// priced and Available (TKT-1).
+func OpenInventory(showID ShowID, layout InventoryLayout, startsAt time.Time, now time.Time) ([]*SectionInventory, error) {
+	if showID.IsZero() {
+		return nil, fmt.Errorf("%w: zero show id", ErrInvalidID)
+	}
+	if len(layout.Sections) == 0 {
+		return nil, fmt.Errorf("%w: nothing to sell", ErrInvalidLayout)
+	}
+	sections := make([]*SectionInventory, 0, len(layout.Sections))
+	seen := map[string]bool{}
+	for i, s := range layout.Sections {
+		code := strings.ToUpper(strings.TrimSpace(s.Code))
+		if seen[code] {
+			return nil, fmt.Errorf("%w: section %s twice", ErrInvalidLayout, code)
+		}
+		seen[code] = true
+		inv, err := openSection(showID, s, i, startsAt, now)
+		if err != nil {
+			return nil, err
+		}
+		sections = append(sections, inv)
+	}
+	return sections, nil
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l9-2">
 <h3><span class="lesson-id">9.2</span> Ticket check-in at the gate</h3>
 <p>A new use case: <code>CheckIn(ticketCode, gateID, now)</code>. A ticket can only be checked in once, only if it isn't voided, and only on the day of the show. It touches only the <code>Ticket</code> aggregate. Notice how cheap that is, because Ticket was kept small.</p>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-9.1 lesson-9.2 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-9.1</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/4a2ca9a563b4"><code>lesson-9.2</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/821d6d62e993...4a2ca9a563b4">this lesson's 4 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>Only the Ticket is written. The show's start comes from a small read port (<code>ShowSchedule</code>), so the gate never loads 50,000 seats. "The day of the show" is the 24 hours around the start: Ticketing doesn't know the venue's time zone.</li>
+</ul>
+<!-- snippet: lesson-9.2 internal/ticketing/domain/ticket.go#Ticket.CheckIn -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/4a2ca9a563b4/internal/ticketing/domain/ticket.go"><code>internal/ticketing/domain/ticket.go</code></a> at <code>lesson-9.2</code></div>
+<pre><code>// CheckIn lets the ticket in through gate (TKT-13): once, never when voided,
+// and only on the day of the show, which starts at startsAt.
+func (t *Ticket) CheckIn(gate GateID, startsAt, now time.Time) error {
+	switch t.status {
+	case VoidedTicket:
+		return fmt.Errorf("%w: %s", ErrTicketVoided, t.code)
+	case CheckedInTicket:
+		return fmt.Errorf("%w: %s at %s through %s", ErrAlreadyCheckedIn, t.code, t.checkedInAt.Format(time.RFC3339), t.gate)
+	}
+	if now.Before(startsAt.Add(-checkInWindow)) || now.After(startsAt.Add(checkInWindow)) {
+		return fmt.Errorf("%w: the show starts at %s", ErrNotShowDay, startsAt.Format(time.RFC3339))
+	}
+	t.status, t.checkedInAt, t.gate = CheckedInTicket, now, gate
+	t.events.Record(TicketCheckedIn{TicketID: t.id, ShowID: t.showID, Gate: gate, At: now})
+	return nil
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l9-3">
 <h3><span class="lesson-id">9.3</span> Contract evolution: <code>show.published.v2</code></h3>
 <p>Add per-seat accessibility flags, which requires restructuring the payload. Publish v1 and v2 side by side, migrate Ticketing to v2, then retire v1. Golden tests guide you through it.</p>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-9.2 lesson-9.3 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-9.2</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/b6503cc48fcd"><code>lesson-9.3</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/4a2ca9a563b4...b6503cc48fcd">this lesson's 6 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>Venue's <code>accessible_seats</code> was additive, so <code>venue.activated.v1</code> kept its version. Seat-by-seat flags need a new shape, so <code>show.published.v2</code>.</li>
+  <li>Once Ticketing reads v2 it must <em>skip</em> v1: both arrive for every show, v1 first on the same key, and v1 would open the inventory without the flags. Show then retired v1; the type constant stays for records still in the topic.</li>
+</ul>
+<!-- snippet: lesson-9.3 internal/show/contracts/events.go#ShowPublishedV2,SeatV2 -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/b6503cc48fcd/internal/show/contracts/events.go"><code>internal/show/contracts/events.go</code></a> at <code>lesson-9.3</code></div>
+<pre><code>// ShowPublishedV2 is ShowPublishedV1 restructured (9.3): a seated section
+// lists every seat instead of rows of counts, so each seat can carry its own
+// flags. Show publishes both versions until every consumer reads v2.
+type ShowPublishedV2 struct {
+	ShowID      string      `json:"show_id"`
+	VenueID     string      `json:"venue_id"`
+	Title       string      `json:"title"`
+	DoorsOpen   time.Time   `json:"doors_open"`
+	StartsAt    time.Time   `json:"starts_at"`
+	EndsAt      time.Time   `json:"ends_at"`
+	Sections    []SectionV2 `json:"sections"`
+	PublishedAt time.Time   `json:"published_at"`
+}
+
+// SeatV2 is one seat of a seated section.
+type SeatV2 struct {
+	Row        string `json:"row"`
+	Number     int    `json:"number"`
+	Accessible bool   `json:"accessible,omitempty"`
+}</code></pre>
+<!-- /snippet -->
+<!-- snippet: lesson-9.3 internal/ticketing/adapters/driving/consumer/show_consumer.go#toOpenInventory -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/b6503cc48fcd/internal/ticketing/adapters/driving/consumer/show_consumer.go"><code>internal/ticketing/adapters/driving/consumer/show_consumer.go</code></a> at <code>lesson-9.3</code></div>
+<pre><code>// toOpenInventory folds v2's seats back into Ticketing's rows, numbered
+// 1..n; a row with gaps is not something Ticketing can sell.
+func toOpenInventory(e showcontracts.ShowPublishedV2) (application.OpenInventory, error) {
+	cmd := application.OpenInventory{ShowID: e.ShowID, StartsAt: e.StartsAt}
+	for _, s := range e.Sections {
+		spec := application.SectionSpec{Code: s.Code, Kind: s.Kind, Capacity: s.Capacity, Price: s.Price.Amount, Currency: s.Price.Currency}
+		for _, seat := range s.Seats {
+			if n := len(spec.Rows); n == 0 || spec.Rows[n-1].Label != seat.Row {
+				spec.Rows = append(spec.Rows, application.RowSpec{Label: seat.Row})
+			}
+			row := &amp;spec.Rows[len(spec.Rows)-1]
+			if seat.Number != row.Seats+1 {
+				return application.OpenInventory{}, fmt.Errorf("section %s row %s: seat %d after seat %d", s.Code, seat.Row, seat.Number, row.Seats)
+			}
+			row.Seats++
+			if seat.Accessible {
+				row.Accessible = append(row.Accessible, seat.Number)
+			}
+		}
+		cmd.Sections = append(cmd.Sections, spec)
+	}
+	return cmd, nil
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l9-4">
 <h3><span class="lesson-id">9.4</span> Orchestration instead of choreography</h3>
 <p>Re-implement checkout with an explicit <code>Checkout</code> process-manager aggregate (a state machine that issues commands). Compare readability, testability and failure handling with ADR-010.</p>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-9.3 lesson-9.4 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-9.3</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/95f071824caa"><code>lesson-9.4</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/b6503cc48fcd...95f071824caa">this lesson's 5 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>Same steps, new driver: the saga consumer is unchanged, and the composition root swaps its steps for the orchestrator's (<code>SAGA_STYLE</code>). The comparison is in <code>notes/orchestration.md</code> (ADR-014).</li>
+</ul>
+<!-- snippet: lesson-9.4 internal/ticketing/domain/checkout_process.go#CheckoutProcess.advance -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/95f071824caa/internal/ticketing/domain/checkout_process.go"><code>internal/ticketing/domain/checkout_process.go</code></a> at <code>lesson-9.4</code></div>
+<pre><code>// advance moves from → to and asks for step. A fact for a state already
+// left is a redelivery: no step. Any other state is out of order.
+func (p *CheckoutProcess) advance(from, to CheckoutState, step CheckoutStep, now time.Time) (CheckoutStep, error) {
+	switch {
+	case p.state == from:
+		p.state = to
+		p.events.Record(CheckoutAdvanced{OrderID: p.orderID, From: from, To: to, At: now})
+		return step, nil
+	case p.state &gt; from:
+		return StepNone, nil
+	default:
+		return StepNone, fmt.Errorf("%w: %s, expected %s", ErrInvalidCheckoutTransition, p.state, from)
+	}
+}</code></pre>
+<!-- /snippet -->
+<!-- snippet: lesson-9.4 internal/ticketing/application/orchestrator.go#CheckoutOrchestrator.drive -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/95f071824caa/internal/ticketing/application/orchestrator.go"><code>internal/ticketing/application/orchestrator.go</code></a> at <code>lesson-9.4</code></div>
+<pre><code>// drive loads (or, with a show, starts) the order's process, applies the
+// fact, runs the step the process asks for, then saves the process.
+func (o *CheckoutOrchestrator) drive(ctx context.Context, rawOrder, rawShow string,</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l9-5">
 <h3><span class="lesson-id">9.5</span> Show lifecycle completion and back-on-sale</h3>
 <p>A scheduler marks shows Completed after <code>endsAt</code>. When a refund frees seats on a SoldOut show, Ticketing publishes <code>inventory_available_again</code> and Show moves back to Published.</p>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-9.4 lesson-9.5 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-9.4</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/17cec1afe2b7"><code>lesson-9.5</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/95f071824caa...17cec1afe2b7">this lesson's 8 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>Nothing freed sold seats until a return existed (TKT-14). A first "show back on sale" policy across sections would miss the announcement when two sections come back at once. Seats back in <em>any</em> section is enough, so <code>SectionBackOnSale</code> is published as is.</li>
+</ul>
+<!-- snippet: lesson-9.5 internal/ticketing/domain/inventory.go#SectionInventory.ReturnSeats -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/17cec1afe2b7/internal/ticketing/domain/inventory.go"><code>internal/ticketing/domain/inventory.go</code></a> at <code>lesson-9.5</code></div>
+<pre><code>// ReturnSeats puts the seats sold to a returned order back on sale (9.5). A
+// sold-out section is not sold out any more: it records SectionBackOnSale.
+// Seats not sold to the order (a refund after a failed confirmation), a
+// redelivery, or a closed inventory (a cancelled show): nothing happens.
+func (inv *SectionInventory) ReturnSeats(order OrderID, now time.Time) {
+	if inv.closed {
+		return
+	}
+	var returned []SeatRef
+	for _, ref := range inv.order {
+		if s := inv.seats[ref]; s.state == Sold &amp;&amp; s.orderID == order {
+			s.state, s.orderID = Available, OrderID{}
+			returned = append(returned, ref)
+		}
+	}
+	if len(returned) == 0 {
+		return
+	}
+	inv.events.Record(SeatsReturned{ShowID: inv.showID, OrderID: order, Seats: returned, At: now})
+	if inv.soldOut {
+		inv.soldOut = false
+		inv.events.Record(SectionBackOnSale{ShowID: inv.showID, Section: inv.section, At: now})
+	}
+}</code></pre>
+<!-- /snippet -->
+<!-- snippet: lesson-9.5 internal/show/domain/show.go#Show.Complete,Show.MarkBackOnSale -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/17cec1afe2b7/internal/show/domain/show.go"><code>internal/show/domain/show.go</code></a> at <code>lesson-9.5</code></div>
+<pre><code>// Complete records that a Published or SoldOut show has ended (SHW-9). The
+// sweep may run it twice: completing a Completed show is a no-op.
+func (s *Show) Complete(now time.Time) error {
+	switch s.status {
+	case Published, SoldOut:
+		if now.Before(s.schedule.EndsAt()) {
+			return fmt.Errorf("%w: it ends at %s", ErrShowNotEnded, s.schedule.EndsAt().Format(time.RFC3339))
+		}
+		s.status = Completed
+		s.events.Record(ShowCompleted{ShowID: s.id, At: now})
+		return nil
+	case Completed:
+		return nil
+	default:
+		return fmt.Errorf("%w: a %s show cannot complete", ErrInvalidShowTransition, s.status)
+	}
+}
+
+// MarkBackOnSale records Ticketing's fact that a sold-out show has seats
+// again, after a refund (SHW-10): it is Published again. Like SHW-8, a fact
+// that arrives twice or too late is a no-op.
+func (s *Show) MarkBackOnSale(now time.Time) error {
+	switch s.status {
+	case SoldOut:
+		s.status = Published
+		s.events.Record(ShowBackOnSale{ShowID: s.id, At: now})
+		return nil
+	case Published, Cancelled, Completed:
+		return nil
+	default:
+		return fmt.Errorf("%w: a %s show cannot be back on sale", ErrInvalidShowTransition, s.status)
+	}
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l9-6">
 <h3><span class="lesson-id">9.6</span> Database-enforced boundaries</h3>
 <p>One Postgres role per context, with privileges only on its own schema, and each context's pool connects with its own role. Try a cross-schema query and watch the database refuse it.</p>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-9.5 lesson-9.6 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-9.5</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/03ab42b27dbf"><code>lesson-9.6</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/17cec1afe2b7...03ab42b27dbf">this lesson's 3 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li><code>SELECT … FROM venue.venues</code> as <code>stagehand_ticketing</code> fails with "permission denied for schema venue". Migrations still run as the owner (<code>DATABASE_URL</code>); each context's pool uses <code>&lt;CONTEXT&gt;_DATABASE_URL</code>.</li>
+</ul>
+<!-- snippet: lesson-9.6 db/migrations/00014_context_roles.sql -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/03ab42b27dbf/db/migrations/00014_context_roles.sql"><code>db/migrations/00014_context_roles.sql</code></a> at <code>lesson-9.6</code></div>
+<pre><code>-- 9.6: one role per bounded context, with privileges on its own schema only.
+-- The architecture test keeps imports apart; this keeps the data apart: a
+-- query from Ticketing's pool that touches venue.* is refused by Postgres.
+-- Roles are cluster-wide, so they are created only if missing. The password
+-- equals the role name: development credentials only. In production the
+-- roles and their secrets are managed outside migrations, and this file
+-- keeps only the GRANTs.
+-- +goose Up
+-- +goose StatementBegin
+DO $$
+DECLARE
+    ctx  text;
+    role text;
+BEGIN
+    FOREACH ctx IN ARRAY ARRAY['venue', 'show', 'ticketing', 'notifications'] LOOP
+        role := 'stagehand_' || ctx;
+        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = role) THEN
+            EXECUTE format('CREATE ROLE %I LOGIN PASSWORD %L', role, role);
+        END IF;
+        EXECUTE format('GRANT USAGE ON SCHEMA %I TO %I', ctx, role);
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA %I TO %I', ctx, role);
+        EXECUTE format('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA %I TO %I', ctx, role);
+        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO %I', ctx, role);
+        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT USAGE, SELECT ON SEQUENCES TO %I', ctx, role);
+    END LOOP;
+END $$;
+-- +goose StatementEnd
+
+-- +goose Down
+-- +goose StatementBegin
+DO $$
+DECLARE
+    ctx text;
+BEGIN
+    FOREACH ctx IN ARRAY ARRAY['venue', 'show', 'ticketing', 'notifications'] LOOP
+        EXECUTE format('DROP OWNED BY %I', 'stagehand_' || ctx);
+        EXECUTE format('DROP ROLE %I', 'stagehand_' || ctx);
+    END LOOP;
+END $$;
+-- +goose StatementEnd</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l9-7">
 <h3><span class="lesson-id">9.7</span> Distributed tracing with OpenTelemetry</h3>
 <p>Replace the hand-rolled correlation IDs with OTel spans propagated through Kafka headers. Add Jaeger to Compose. Which layers needed changes? (Only adapters and platform.)</p>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-9.6 lesson-9.7 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-9.6</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/9703705a3090"><code>lesson-9.7</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/03ab42b27dbf...9703705a3090">this lesson's 5 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>Only platform and the composition root changed, plus a migration for <code>trace_parent</code>: no domain, application or repository code. The correlation ID is now the trace ID unless a client sends one.</li>
+</ul>
+<!-- snippet: lesson-9.7 internal/platform/httpx/middleware.go#Tracing -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/9703705a3090/internal/platform/httpx/middleware.go"><code>internal/platform/httpx/middleware.go</code></a> at <code>lesson-9.7</code></div>
+<pre><code>// Tracing makes each request an OpenTelemetry server span (9.7), the child
+// of the caller's span when it sends a W3C traceparent.
+func Tracing(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+		ctx, span := otel.Tracer(telemetry.TracerName).Start(ctx, r.Method, oteltrace.WithSpanKind(oteltrace.SpanKindServer))
+		defer span.End()
+		rec := &amp;statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rec, r.WithContext(ctx))
+		span.SetAttributes(attribute.String("url.path", r.URL.Path),
+			attribute.Int("http.response.status_code", rec.status))
+		if rec.status &gt;= http.StatusInternalServerError {
+			span.SetStatus(codes.Error, http.StatusText(rec.status))
+		}
+	})
+}</code></pre>
+<!-- /snippet -->
+<!-- snippet: lesson-9.7 internal/platform/kafka/consumer.go#startSpan -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/9703705a3090/internal/platform/kafka/consumer.go"><code>internal/platform/kafka/consumer.go</code></a> at <code>lesson-9.7</code></div>
+<pre><code>// startSpan continues the producer's trace from the record's traceparent
+// header (9.7): one consumer span per message, however many attempts.
+func startSpan(ctx context.Context, cfg ConsumerConfig, rec *kgo.Record, env Envelope) (context.Context, oteltrace.Span) {
+	carrier := propagation.MapCarrier{}
+	for _, h := range rec.Headers {
+		if h.Key == "traceparent" {
+			carrier["traceparent"] = string(h.Value)
+		}
+	}
+	ctx = otel.GetTextMapPropagator().Extract(ctx, carrier)
+	return otel.Tracer(telemetry.TracerName).Start(ctx, "consume "+env.EventType,
+		oteltrace.WithSpanKind(oteltrace.SpanKindConsumer),
+		oteltrace.WithAttributes(
+			attribute.String("messaging.destination.name", rec.Topic),
+			attribute.String("messaging.consumer.group.name", cfg.Group),
+			attribute.String("messaging.message.id", env.EventID),
+		))
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 
 <section class="lesson" id="l9-8">
 <h3><span class="lesson-id">9.8</span> Fees and taxes as a domain service</h3>
 <p>The order total now includes a service fee (a percentage with a minimum) and VAT by venue country. Where does this logic go? Model it as a <code>PricingPolicy</code> domain service, with the specification pattern for fee rules.</p>
+<details class="solution"><summary>Reference solution (try it yourself first)</summary>
+<!-- resume: lesson-9.7 lesson-9.8 -->
+<p class="resume">Start this lesson from <code>git checkout lesson-9.7</code>. Finished: <a href="https://github.com/williamokano/go-ddd-by-example/tree/ec92254d4900"><code>lesson-9.8</code></a> (<a href="https://github.com/williamokano/go-ddd-by-example/compare/9703705a3090...ec92254d4900">this lesson's 7 commits</a>).</p>
+<!-- /resume -->
+<ul>
+  <li>VAT needs the venue's country, which reached Ticketing through two additive contract fields (9.3 again). The Order records the breakdown the policy computes, so later rule changes don't reprice it.</li>
+</ul>
+<!-- snippet: lesson-9.8 internal/ticketing/domain/pricing.go#SeatsAtLeast,And,PricingPolicy.Price -->
+<div class="snippet-src"><a href="https://github.com/williamokano/go-ddd-by-example/blob/ec92254d4900/internal/ticketing/domain/pricing.go"><code>internal/ticketing/domain/pricing.go</code></a> at <code>lesson-9.8</code></div>
+<pre><code>// SeatsAtLeast is satisfied by orders of n seats or more.
+func SeatsAtLeast(n int) FeeSpecification {
+	return specFunc(func(c PricingContext) bool { return len(c.Lines) &gt;= n })
+}
+
+// And is satisfied when every spec is.
+func And(specs ...FeeSpecification) FeeSpecification {
+	return specFunc(func(c PricingContext) bool {
+		for _, s := range specs {
+			if !s.IsSatisfiedBy(c) {
+				return false
+			}
+		}
+		return true
+	})
+}
+
+// Price computes the breakdown of lines for a show in country (TKT-15).
+func (p PricingPolicy) Price(lines []OrderLine, country string) (PriceBreakdown, error) {
+	if len(lines) == 0 {
+		return PriceBreakdown{}, fmt.Errorf("%w: no lines to price", ErrInvalidHoldSize)
+	}
+	rate, ok := p.VAT[country]
+	if !ok {
+		return PriceBreakdown{}, fmt.Errorf("%w: %q", ErrNoVATRate, country)
+	}
+	subtotal := lines[0].Price
+	for _, l := range lines[1:] {
+		var err error
+		if subtotal, err = subtotal.Add(l.Price); err != nil {
+			return PriceBreakdown{}, fmt.Errorf("subtotal: %w", err)
+		}
+	}
+	fee, err := sharedkernel.NewMoney(0, subtotal.Currency())
+	if err != nil {
+		return PriceBreakdown{}, fmt.Errorf("fee: %w", err)
+	}
+	ctx := PricingContext{Lines: lines, Country: country}
+	for _, rule := range p.Fees {
+		if rule.When.IsSatisfiedBy(ctx) {
+			fee = subtotal.Percent(rule.Percent).Max(rule.Minimum)
+			break
+		}
+	}
+	taxable, err := subtotal.Add(fee)
+	if err != nil {
+		return PriceBreakdown{}, fmt.Errorf("fee: %w", err)
+	}
+	vat := taxable.Percent(rate)
+	total, err := taxable.Add(vat)
+	if err != nil {
+		return PriceBreakdown{}, fmt.Errorf("total: %w", err)
+	}
+	return PriceBreakdown{Subtotal: subtotal, Fee: fee, VAT: vat, Total: total}, nil
+}</code></pre>
+<!-- /snippet -->
+</details>
 </section>
 </main>
 <script src="assets/course.js"></script>
