@@ -18,6 +18,7 @@ type Show struct {
 	promoterID PromoterID
 	title      string
 	schedule   Schedule
+	prices     PriceList
 	status     Status
 	version    int
 
@@ -55,6 +56,41 @@ func startsInTheFuture(s Schedule, now time.Time) error {
 	return nil
 }
 
+// Price sets the show's price list: one positive price for every section of
+// the venue, and nothing else (SHW-4). Only a draft can be priced (SHW-5).
+func (s *Show) Price(prices PriceList, venue VenueLayout, now time.Time) error {
+	if s.status != Draft {
+		return fmt.Errorf("%w: cannot price a %s show", ErrShowNotDraft, s.status)
+	}
+	if err := prices.CoversExactly(venue.SectionCodes()); err != nil {
+		return err
+	}
+	s.prices = prices
+	s.events.Record(ShowPriced{ShowID: s.id, Prices: prices, At: now})
+	return nil
+}
+
+// Publish puts the show on sale. It needs a complete price list (SHW-5) and a
+// start in the future (SHW-2). The recorded ShowPublished carries a snapshot
+// of the layout and prices, so Ticketing never has to ask anyone.
+func (s *Show) Publish(venue VenueLayout, now time.Time) error {
+	if s.status != Draft {
+		return fmt.Errorf("%w: cannot publish a %s show", ErrInvalidShowTransition, s.status)
+	}
+	if s.prices.IsZero() {
+		return ErrShowNotPriced
+	}
+	if err := s.prices.CoversExactly(venue.SectionCodes()); err != nil {
+		return err
+	}
+	if err := startsInTheFuture(s.schedule, now); err != nil {
+		return err
+	}
+	s.status = Published
+	s.events.Record(ShowPublished{ShowID: s.id, VenueID: s.venueID, Schedule: s.schedule, Layout: venue, Prices: s.prices, At: now})
+	return nil
+}
+
 // ID returns the show's identity.
 func (s *Show) ID() ShowID { return s.id }
 
@@ -69,6 +105,9 @@ func (s *Show) Title() string { return s.title }
 
 // Schedule returns when the show takes place.
 func (s *Show) Schedule() Schedule { return s.schedule }
+
+// Prices returns the show's price list (zero until priced).
+func (s *Show) Prices() PriceList { return s.prices }
 
 // Status returns where the show is in its lifecycle.
 func (s *Show) Status() Status { return s.status }

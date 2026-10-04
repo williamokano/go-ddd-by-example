@@ -18,6 +18,13 @@ var (
 	ErrCurrencyMismatch = errors.New("show: currency mismatch")
 	ErrInvalidPriceList = errors.New("show: invalid price list")
 
+	// SHW-5: only a draft is priced or rescheduled; publishing needs prices.
+	ErrShowNotDraft  = errors.New("show: show is not a draft")
+	ErrShowNotPriced = errors.New("show: show has no price list")
+
+	// SHW-6: the state machine.
+	ErrInvalidShowTransition = errors.New("show: invalid show transition")
+
 	// SHW-4: the price list covers every section of the venue, and nothing else.
 	ErrPriceListMismatch = errors.New("show: price list does not match the venue's sections")
 )

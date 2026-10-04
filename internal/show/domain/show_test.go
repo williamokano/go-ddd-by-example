@@ -64,3 +64,72 @@ func TestDraftShow(t *testing.T) {
 		})
 	}
 }
+
+func TestShow_Price(t *testing.T) {
+	t.Run("records ShowPriced (SHW-4, SHW-5)", func(t *testing.T) {
+		s := draftShow(t)
+		s.PullEvents()
+
+		err := s.Price(fullPrices(t), activeLayout(), now)
+
+		if err != nil {
+			t.Fatalf("Price() error = %v", err)
+		}
+		want := []domain.DomainEvent{domain.ShowPriced{ShowID: showID, Prices: fullPrices(t), At: now}}
+		if diff := cmp.Diff(want, s.PullEvents(), showValues); diff != "" {
+			t.Errorf("events mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("an incomplete price list is rejected (SHW-4)", func(t *testing.T) {
+		s := draftShow(t)
+
+		err := s.Price(priceList(t, map[string]domain.Money{"ORCH": eur(t, 4500)}), activeLayout(), now)
+
+		if !errors.Is(err, domain.ErrPriceListMismatch) {
+			t.Errorf("error = %v, want %v", err, domain.ErrPriceListMismatch)
+		}
+	})
+}
+
+func TestShow_Publish(t *testing.T) {
+	t.Run("without a price list fails (SHW-5)", func(t *testing.T) {
+		s := draftShow(t)
+
+		err := s.Publish(activeLayout(), now)
+
+		if !errors.Is(err, domain.ErrShowNotPriced) {
+			t.Errorf("error = %v, want %v", err, domain.ErrShowNotPriced)
+		}
+	})
+
+	t.Run("a priced show is published with the layout and prices snapshot", func(t *testing.T) {
+		s := pricedShow(t)
+		s.PullEvents()
+
+		err := s.Publish(activeLayout(), now)
+
+		if err != nil {
+			t.Fatalf("Publish() error = %v", err)
+		}
+		if s.Status() != domain.Published {
+			t.Errorf("Status() = %v, want published", s.Status())
+		}
+		want := []domain.DomainEvent{domain.ShowPublished{
+			ShowID: showID, VenueID: venueID, Schedule: inAMonth(t), Layout: activeLayout(), Prices: fullPrices(t), At: now,
+		}}
+		if diff := cmp.Diff(want, s.PullEvents(), showValues); diff != "" {
+			t.Errorf("events mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("once the start has passed fails (SHW-2)", func(t *testing.T) {
+		s := pricedShow(t)
+
+		err := s.Publish(activeLayout(), s.Schedule().StartsAt())
+
+		if !errors.Is(err, domain.ErrInvalidSchedule) {
+			t.Errorf("error = %v, want %v", err, domain.ErrInvalidSchedule)
+		}
+	})
+}

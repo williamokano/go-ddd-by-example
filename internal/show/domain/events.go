@@ -37,3 +37,33 @@ func (ShowDrafted) EventName() string { return "show.ShowDrafted" }
 
 // OccurredAt implements DomainEvent.
 func (e ShowDrafted) OccurredAt() time.Time { return e.At }
+
+// ShowPriced records the show's price list.
+type ShowPriced struct {
+	ShowID ShowID
+	Prices PriceList
+	At     time.Time
+}
+
+// EventName implements DomainEvent.
+func (ShowPriced) EventName() string { return "show.ShowPriced" }
+
+// OccurredAt implements DomainEvent.
+func (e ShowPriced) OccurredAt() time.Time { return e.At }
+
+// ShowPublished records that the show went on sale, with the layout and
+// prices it was published with.
+type ShowPublished struct {
+	ShowID   ShowID
+	VenueID  VenueID
+	Schedule Schedule
+	Layout   VenueLayout
+	Prices   PriceList
+	At       time.Time
+}
+
+// EventName implements DomainEvent.
+func (ShowPublished) EventName() string { return "show.ShowPublished" }
+
+// OccurredAt implements DomainEvent.
+func (e ShowPublished) OccurredAt() time.Time { return e.At }

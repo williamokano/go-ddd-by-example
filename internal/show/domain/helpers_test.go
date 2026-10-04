@@ -41,3 +41,26 @@ func inAMonth(t *testing.T) domain.Schedule {
 	}
 	return s
 }
+
+func fullPrices(t *testing.T) domain.PriceList {
+	t.Helper()
+	return priceList(t, map[string]domain.Money{"ORCH": eur(t, 4500), "FLOOR": eur(t, 2500)})
+}
+
+func pricedShow(t *testing.T) *domain.Show {
+	t.Helper()
+	s := draftShow(t)
+	if err := s.Price(fullPrices(t), activeLayout(), now); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func draftShow(t *testing.T) *domain.Show {
+	t.Helper()
+	s, err := domain.DraftShow(showID, activeLayout(), promoterID, "Fado Night", inAMonth(t), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
