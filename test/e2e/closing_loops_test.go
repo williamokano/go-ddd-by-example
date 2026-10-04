@@ -19,14 +19,16 @@ func (c *client) showStatus(id string) string {
 }
 
 // S4 — Sold out: selling the last unit makes Show mark the show sold out
-// (TKT-10 → ticketing.inventory_sold_out.v1 → SHW-8).
+// (SectionSoldOut ×2 → ShowSoldOut → ticketing.inventory_sold_out.v1 → SHW-8).
 func TestS4_SoldOut(t *testing.T) {
 	c := newClient(t)
 	show := c.publishedShow()
-	order := c.buy(show, "ORCH/A/1", "ORCH/A/2", "FLOOR/GA/0001", "FLOOR/GA/0002", "FLOOR/GA/0003")
+	// A hold is for one section (ADR-013): one purchase per section.
+	orch := c.buy(show, "ORCH/A/1", "ORCH/A/2")
+	floor := c.buy(show, "FLOOR/GA/0001", "FLOOR/GA/0002", "FLOOR/GA/0003")
 
-	eventually(t, 20*time.Second, "the order is fulfilled", func() bool {
-		return c.order(order).Status == "fulfilled"
+	eventually(t, 20*time.Second, "both orders are fulfilled", func() bool {
+		return c.order(orch).Status == "fulfilled" && c.order(floor).Status == "fulfilled"
 	})
 	eventually(t, 20*time.Second, "the show is sold out", func() bool {
 		return c.showStatus(show) == "sold_out"
