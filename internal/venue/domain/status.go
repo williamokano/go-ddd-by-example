@@ -9,3 +9,18 @@ const (
 	Active
 	Retired
 )
+
+// String returns the lower-case name of the status. These strings are what
+// gets persisted, so they are part of the storage format.
+func (s Status) String() string {
+	switch s {
+	case Draft:
+		return "draft"
+	case Active:
+		return "active"
+	case Retired:
+		return "retired"
+	default:
+		return "unknown"
+	}
+}
