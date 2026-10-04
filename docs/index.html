@@ -76,6 +76,9 @@
   <tr><td><a href="part-9-stretch.html">9 · Stretch</a></td><td>Per-section inventory, check-in, event v2, projections</td><td>Refactoring aggregates, schema evolution</td></tr>
 </table></div>
 
+<div class="callout discuss"><span class="label">After the course</span>
+<p>Finished Part 9 and want to go further? There is an <a href="ext-0-overview.html">optional extension track</a> that takes Stagehand toward production (dynamic pricing, discounts, fees and taxes, identity, observability, audit, a real payments integration, fraud screening) as additions on top of what you built. Nothing above depends on it, so ignore it until you want it.</p></div>
+
 <div class="callout why"><span class="label">Why this order?</span>
 <p>We go <strong>inside-out</strong> first. We start at the domain (pure Go, no database, no HTTP) because that's what DDD is about, and because it's the easiest place to learn TDD: no mocks, no setup, instant tests. Only once the model works do we add the ring around it (use cases), then the adapters (Postgres, HTTP, Kafka).</p>
 <p>The <em>Venue</em> context goes first because it's the simplest and everything else depends on it. <em>Show</em> repeats the same pattern faster and adds cross-context events. <em>Ticketing</em>, the hard part, comes last, when you already know the moves. From Part 6 on we switch to <strong>outside-in (double-loop) TDD</strong>: an acceptance test first, then inside-out to make it pass.</p>

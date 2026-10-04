@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Extension Track · Overview</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main class="content">
+<header>
+  <div class="kicker">Extension track · Optional</div>
+  <h1>Taking Stagehand toward production</h1>
+  <p class="lead">You can finish the main course (Parts 0–9) without ever opening these pages. This track takes the finished system and adds what a real platform needs, in small steps, <strong>without rewriting what you already built</strong>. Every lesson doubles as a test of the architecture: if DDD and hexagonal did their job, most of this is new domain code in the right place, new adapters, new decorators and a couple of new contexts, not surgery.</p>
+</header>
+
+<div class="callout why"><span class="label">How this track relates to the course</span>
+<ul>
+  <li><strong>Additive only.</strong> No existing chapter, rule or ADR is edited; the only changes to existing files are the sidebar entry, a pointer on the welcome page, and two small stylesheet fixes for narrow screens. Where this track changes the meaning of something (for example "Payments: buy it, fake adapter"), it says so and records an <a href="ext-decisions.html">extension ADR</a>.</li>
+  <li><strong>Ignorable.</strong> Nothing in Parts 0–9 depends on it. Skip it, do it later, or do only the extensions you care about, as long as you respect the prerequisites below.</li>
+  <li><strong>Same rules.</strong> Failing test first, simplest code, refactor. The dependency rule and the architecture test still apply, and several lessons extend that test.</li>
+  <li><strong>Same format.</strong> Lessons use the same "Goal / Rules / Your turn / TDD script / Discuss" shape, with ids like <code>E5.3</code> and progress ticks in the sidebar. Track your progress in <code>tasks/extension.md</code>, separate from the course checklist.</li>
+</ul></div>
+
+<h2>The six extensions</h2>
+<div class="cards">
+  <div class="card"><h4><a href="ext-1-pricing.html">E1 · Pricing</a> <span class="tag core">domain</span></h4><p>Dynamic prices, discounts, fees and taxes. Almost pure domain modelling: value objects, specifications, domain services, and a price lock inside the inventory aggregate.</p></div>
+  <div class="card"><h4><a href="ext-2-identity.html">E2 · Identity &amp; access</a> <span class="tag">cross-cutting</span></h4><p>Who is calling, and what may they do? Local user/password <em>and</em> pluggable SSO providers side by side. RBAC around the use cases, ownership rules from the domain.</p></div>
+  <div class="card"><h4><a href="ext-3-observability.html">E3 · Observability</a> <span class="tag">cross-cutting</span></h4><p>Prometheus metrics and Grafana dashboards in an optional Compose profile. Instrument through decorators and adapters, never the domain.</p></div>
+  <div class="card"><h4><a href="ext-4-audit.html">E4 · Audit trail</a> <span class="tag">cross-cutting</span></h4><p>Now that we know the caller, record who did what: command-level attempts plus actor-enriched events, in an append-only log.</p></div>
+  <div class="card"><h4><a href="ext-5-payments.html">E5 · Payments</a> <span class="tag core">new context</span></h4><p>A real Stripe sandbox integration that never leaks Stripe into our language. Authorize/capture, <strong>refunds</strong> as a feature added to an existing domain, and <strong>chargebacks</strong> from the outside world.</p></div>
+  <div class="card"><h4><a href="ext-6-fraud.html">E6 · Fraud screening</a> <span class="tag core">new context</span></h4><p>A third-party risk vendor we call synchronously before payment and feed asynchronously afterwards. We only ever use a fake; the architecture is the lesson.</p></div>
+</div>
+
+<h2>Prerequisites and order</h2>
+<div class="table-wrap"><table>
+  <tr><th>Extension</th><th>Needs from the course</th><th>Needs from the track</th></tr>
+  <tr><td>E1 pricing</td><td>Part 7 (inventory, holds, orders)</td><td>nothing</td></tr>
+  <tr><td>E2 identity</td><td>Part 4 (HTTP, composition root, architecture test); E2.7 needs Part 1's <code>Venue</code></td><td>nothing</td></tr>
+  <tr><td>E3 observability</td><td>Part 5 (outbox, consumers); E3.3 is richer after Part 7</td><td>nothing; labels by role are nicer after E2</td></tr>
+  <tr><td>E4 audit</td><td>Part 8 (8.3 correlation ids, 8.4 inbox and <code>TxManager</code>)</td><td>E2 (the actor)</td></tr>
+  <tr><td>E5 payments</td><td>Part 8 (8.4 inbox for webhooks)</td><td>E2 for E5.9–E5.10 (refund and dispute permissions); E1 makes E5.9's amounts richer but isn't required</td></tr>
+  <tr><td>E6 fraud</td><td>Part 8</td><td>E5 (it screens before payments and learns from them); E2 for manual review</td></tr>
+</table></div>
+<pre><code>E1 pricing                           (independent: domain only)
+E2 identity ──► E4 audit             (audit needs the actor)
+E3 observability                     (independent)
+E2 ──► E5 payments ──► E6 fraud      (fraud screens before, and learns from, payments)</code></pre>
+<p>If you only have time for two: do <strong>E1</strong> (rich domain modelling under TDD, the heart of DDD) and <strong>E5</strong> (modelling a messy external system without being infected by it). If you have time for three, add <strong>E2</strong> (how a cross-cutting concern fits a hexagon).</p>
+
+<h2>What "extending" means in this track</h2>
+<p>Each extension exercises a different <em>kind</em> of change. Watch for the kind as you work, because that's the real lesson:</p>
+<div class="table-wrap"><table>
+  <tr><th>Extension</th><th>Kind of change</th><th>What we expect to touch</th><th>What we expect <em>not</em> to touch</th></tr>
+  <tr><td>E1 pricing</td><td>Deepen an existing domain</td><td><code>ticketing/domain</code> (a new <code>pricing</code> package, <code>ShowInventory</code>, <code>Order</code>), <code>PlaceOrder</code>, DTOs, one optional contract field</td><td>Show and Venue logic, the saga, every adapter but HTTP and Postgres mapping</td></tr>
+  <tr><td>E2 identity</td><td>Cross-cutting concern</td><td>HTTP middleware, composition root (decorators), a new <code>identity</code> context, one field on <code>Venue</code></td><td>The bodies of existing use cases (one exception in E2.7, discussed there)</td></tr>
+  <tr><td>E3 observability</td><td>Cross-cutting concern</td><td>Platform packages, decorators, adapters, Compose</td><td>Domain and application code</td></tr>
+  <tr><td>E4 audit</td><td>Cross-cutting concern with a data requirement</td><td>Outbox envelope (an additive field), decorators, a new <code>audit</code> context</td><td>Domain event payloads</td></tr>
+  <tr><td>E5 payments</td><td>Replace a stub with a real subdomain; add features to an existing aggregate and saga</td><td>A new context; the adapter behind Ticketing's <code>PaymentGateway</code>; <code>Order</code> gains states</td><td>Seat inventory logic, Show, Venue</td></tr>
+  <tr><td>E6 fraud</td><td>Insert a step into an existing saga; reliable outbound feeds</td><td>A new context; one saga step and two <code>Order</code> states in Ticketing</td><td>Payments internals</td></tr>
+</table></div>
+
+<h2>New ubiquitous language</h2>
+<p>These terms extend the glossary in <a href="00-key-terms.html">chapter 0</a> (that page isn't edited). Keep this table nearby.</p>
+<div class="table-wrap"><table>
+  <tr><th>Term</th><th>Meaning in Stagehand</th></tr>
+  <tr><td>List price / selling price</td><td>The promoter's price per section (Show) / what a customer pays per seat after demand adjustment, decided when the seat is held (Ticketing).</td></tr>
+  <tr><td>Price lock</td><td>The selling price quoted for a hold stays fixed for that hold.</td></tr>
+  <tr><td>Price breakdown</td><td>The itemised, all-in price of an order: selling prices, discounts, fees, taxes, total.</td></tr>
+  <tr><td>Inclusive / exclusive tax</td><td>Tax already contained in the price (EU VAT) / added on top (US sales tax).</td></tr>
+  <tr><td>Basis point (bp)</td><td>One hundredth of a percent. Rates are stored as integer basis points.</td></tr>
+  <tr><td>Principal</td><td>The authenticated actor of a request: a user, or a system (scheduler, webhook). Carried in <code>context.Context</code>.</td></tr>
+  <tr><td>Role / permission</td><td>A role is a named bundle of permissions (<code>venue:register</code>, <code>order:refund</code>). Code checks permissions, never role names.</td></tr>
+  <tr><td>Identity provider (source)</td><td>Anything that can vouch for who someone is: our own password store, or an external SSO (OIDC).</td></tr>
+  <tr><td>Authorization (payment)</td><td>The issuer reserves funds on the card. No money has moved yet.</td></tr>
+  <tr><td>Capture</td><td>Collect previously authorized funds.</td></tr>
+  <tr><td>Void</td><td>Release an authorization that was never captured. Cheaper and faster than a refund.</td></tr>
+  <tr><td>Refund</td><td>Return captured money to the customer, fully or partly.</td></tr>
+  <tr><td>Dispute (chargeback)</td><td>The cardholder's bank reverses a captured payment and asks us to prove it was legitimate, within a deadline.</td></tr>
+  <tr><td>Screening</td><td>Asking a fraud vendor to assess a prospective transaction <em>before</em> we try to take money.</td></tr>
+  <tr><td>Risk decision</td><td><em>Our</em> verdict (Allow / Review / Block), derived from vendor signals plus our own policy.</td></tr>
+  <tr><td>Outcome feedback</td><td>Telling the fraud vendor what really happened to a transaction (captured, declined, refunded, charged back) so its model improves.</td></tr>
+</table></div>
+
+<h2>New rule ids</h2>
+<p>Numbering continues the main course's scheme so review comments stay unambiguous. <code>PRC-*</code>, <code>AUTH-*</code>, <code>AUD-*</code>, <code>PAY-*</code> and <code>FRD-*</code> are new families. The existing contexts get <code>VEN-8</code> (E2) and <code>TKT-13…TKT-18</code> (E5 and E6). Each rule is defined in the lesson that introduces it.</p>
+
+<h2>Ground rules for every lesson in this track</h2>
+<ol>
+  <li><strong>Never name the vendor in the domain.</strong> No <code>stripe</code>, <code>PaymentIntent</code> or vendor score type in <code>domain</code> or <code>application</code>. The architecture test grows a rule for this.</li>
+  <li><strong>Every external system gets a fake first</strong>, with scriptable behaviour (decline, time out, duplicate, reorder). The real adapter must pass the <em>same</em> contract tests as the fake.</li>
+  <li><strong>Every new capability can be switched off</strong> or starts off: demand pricing, metrics, fraud screening and each identity source are configured, with a safe, tested default.</li>
+  <li><strong>Secrets and personal data stay out of logs, events and audit rows.</strong> Card numbers never enter Stagehand at all; the browser sends them straight to the provider.</li>
+  <li><strong>Additive contracts only.</strong> New optional fields or new events. If you must break a contract, use lesson 9.3's playbook.</li>
+</ol>
+
+<div class="callout warn"><span class="label">Honest caveat</span><p>"Production-ready" is a direction, not a destination. This track covers the seams where pricing rules, identity, telemetry, audit and external providers plug in. It doesn't cover hosting, secrets management, PCI scoping paperwork, rate limiting at the edge, or GDPR processes. Those come up in "Discuss" prompts so you know what's still on the list.</p></div>
+</main>
+<script src="assets/course.js"></script>
+</body>
+</html>
