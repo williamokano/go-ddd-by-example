@@ -86,7 +86,7 @@ Tick a lesson when its "Done when" checks pass; add a one-line note (date, anyth
 - [x] 7.4 Time-based behaviour: release, expire, confirm, sold out, close
 - [x] 7.5 Inventory application, persistence, HTTP, and reacting to Show
 - [x] 7.6 The race for the last seat (S6)
-  - 200 concurrent holds on one seat: 3 succeeded before retries ran out, 594 conflicts, p50 812ms (measured in `notes/aggregate-design.md`). Exactly one ends up holding the seat.
+  - S6 proven: one winner for the last seat. 200 holds for 200 *different* seats: only 3 succeeded within 3 retries (594 conflicts, p50 ≈ 0.8 s). See `notes/aggregate-design.md` and ADR-005.
 - [x] 7.7 The Order aggregate and the payment port
 - [x] 7.8 Checkout and the saga
   - Choreographed saga on `ticketing.internal`: OrderPaid → ConfirmHold → SeatsSold → IssueTickets; HoldConfirmationFailed → RefundOrder.
