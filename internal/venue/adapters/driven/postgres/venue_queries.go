@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	pgplatform "github.com/williamokano/go-ddd-by-example/internal/platform/postgres"
 	"github.com/williamokano/go-ddd-by-example/internal/venue/adapters/driven/postgres/sqlcgen"
 	"github.com/williamokano/go-ddd-by-example/internal/venue/application"
 	"github.com/williamokano/go-ddd-by-example/internal/venue/domain"
@@ -28,7 +29,7 @@ func (q *VenueQueries) Get(ctx context.Context, id domain.VenueID) (application.
 	if err != nil {
 		return application.VenueView{}, fmt.Errorf("venue id: %w", err)
 	}
-	db := sqlcgen.New(q.pool)
+	db := sqlcgen.New(pgplatform.Conn(ctx, q.pool))
 	row, err := db.GetVenueView(ctx, uid)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return application.VenueView{}, fmt.Errorf("%w: %s", application.ErrVenueNotFound, id)
@@ -56,7 +57,7 @@ func (q *VenueQueries) Get(ctx context.Context, id domain.VenueID) (application.
 
 // List implements application.VenueQueries.
 func (q *VenueQueries) List(ctx context.Context, status string) ([]application.VenueView, error) {
-	db := sqlcgen.New(q.pool)
+	db := sqlcgen.New(pgplatform.Conn(ctx, q.pool))
 	rows, err := db.ListVenueViewsByStatus(ctx, status)
 	if err != nil {
 		return nil, fmt.Errorf("list venues %s: %w", status, err)

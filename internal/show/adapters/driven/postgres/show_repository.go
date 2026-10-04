@@ -11,6 +11,7 @@ import (
 
 	"github.com/williamokano/go-ddd-by-example/internal/platform/idgen"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/outbox"
+	pgplatform "github.com/williamokano/go-ddd-by-example/internal/platform/postgres"
 	"github.com/williamokano/go-ddd-by-example/internal/show/adapters/driven/postgres/sqlcgen"
 	"github.com/williamokano/go-ddd-by-example/internal/show/application"
 	"github.com/williamokano/go-ddd-by-example/internal/show/domain"
@@ -30,7 +31,7 @@ func NewShowRepository(pool *pgxpool.Pool) *ShowRepository {
 
 // Get implements application.ShowRepository.
 func (r *ShowRepository) Get(ctx context.Context, id domain.ShowID) (*domain.Show, error) {
-	row, err := sqlcgen.New(r.pool).GetShow(ctx, uuid.MustParse(id.String()))
+	row, err := sqlcgen.New(pgplatform.Conn(ctx, r.pool)).GetShow(ctx, uuid.MustParse(id.String()))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("%w: %s", application.ErrShowNotFound, id)
 	}
@@ -42,7 +43,7 @@ func (r *ShowRepository) Get(ctx context.Context, id domain.ShowID) (*domain.Sho
 
 // ListOpenAtVenue implements application.ShowRepository.
 func (r *ShowRepository) ListOpenAtVenue(ctx context.Context, venueID domain.VenueID) ([]*domain.Show, error) {
-	rows, err := sqlcgen.New(r.pool).ListOpenShowsAtVenue(ctx, uuid.MustParse(venueID.String()))
+	rows, err := sqlcgen.New(pgplatform.Conn(ctx, r.pool)).ListOpenShowsAtVenue(ctx, uuid.MustParse(venueID.String()))
 	if err != nil {
 		return nil, fmt.Errorf("list shows at venue %s: %w", venueID, err)
 	}
@@ -63,7 +64,7 @@ func (r *ShowRepository) Save(ctx context.Context, s *domain.Show) (err error) {
 	if err != nil {
 		return err
 	}
-	tx, err := r.pool.Begin(ctx)
+	tx, err := pgplatform.Begin(ctx, r.pool)
 	if err != nil {
 		return fmt.Errorf("save show %s: begin: %w", s.ID(), err)
 	}

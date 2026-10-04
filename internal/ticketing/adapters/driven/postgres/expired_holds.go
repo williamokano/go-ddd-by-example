@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	pgplatform "github.com/williamokano/go-ddd-by-example/internal/platform/postgres"
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/driven/postgres/sqlcgen"
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/domain"
 )
@@ -19,7 +20,7 @@ func NewExpiredHolds(pool *pgxpool.Pool) *ExpiredHolds { return &ExpiredHolds{po
 
 // ShowsWithExpiredHolds implements application.ExpiredHolds.
 func (e *ExpiredHolds) ShowsWithExpiredHolds(ctx context.Context, now time.Time) ([]domain.ShowID, error) {
-	ids, err := sqlcgen.New(e.pool).ShowsWithExpiredHolds(ctx, now)
+	ids, err := sqlcgen.New(pgplatform.Conn(ctx, e.pool)).ShowsWithExpiredHolds(ctx, now)
 	if err != nil {
 		return nil, fmt.Errorf("shows with expired holds: %w", err)
 	}

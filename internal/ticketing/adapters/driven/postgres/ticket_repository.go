@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	pgplatform "github.com/williamokano/go-ddd-by-example/internal/platform/postgres"
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/driven/postgres/sqlcgen"
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/application"
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/domain"
@@ -21,7 +22,7 @@ func NewTicketRepository(pool *pgxpool.Pool) *TicketRepository { return &TicketR
 // Save implements application.TicketRepository: a new ticket is inserted if
 // absent (its ID derives from order + seat), an existing one updated.
 func (r *TicketRepository) Save(ctx context.Context, t *domain.Ticket) error {
-	q := sqlcgen.New(r.pool)
+	q := sqlcgen.New(pgplatform.Conn(ctx, r.pool))
 	defer t.PullEvents()
 	if t.Version() == 0 {
 		err := q.InsertTicket(ctx, sqlcgen.InsertTicketParams{
@@ -45,7 +46,7 @@ func (r *TicketRepository) Save(ctx context.Context, t *domain.Ticket) error {
 
 // ListByOrder implements application.TicketRepository.
 func (r *TicketRepository) ListByOrder(ctx context.Context, order domain.OrderID) ([]*domain.Ticket, error) {
-	rows, err := sqlcgen.New(r.pool).ListTicketsByOrder(ctx, order.UUID())
+	rows, err := sqlcgen.New(pgplatform.Conn(ctx, r.pool)).ListTicketsByOrder(ctx, order.UUID())
 	if err != nil {
 		return nil, fmt.Errorf("tickets of order %s: %w", order, err)
 	}
@@ -62,7 +63,7 @@ func (r *TicketRepository) ListByOrder(ctx context.Context, order domain.OrderID
 
 // ListByShow implements application.TicketRepository.
 func (r *TicketRepository) ListByShow(ctx context.Context, show domain.ShowID) ([]*domain.Ticket, error) {
-	rows, err := sqlcgen.New(r.pool).ListTicketsByShow(ctx, show.UUID())
+	rows, err := sqlcgen.New(pgplatform.Conn(ctx, r.pool)).ListTicketsByShow(ctx, show.UUID())
 	if err != nil {
 		return nil, fmt.Errorf("tickets of show %s: %w", show, err)
 	}

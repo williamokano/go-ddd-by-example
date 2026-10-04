@@ -13,6 +13,7 @@ import (
 
 	"github.com/williamokano/go-ddd-by-example/internal/platform/idgen"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/outbox"
+	pgplatform "github.com/williamokano/go-ddd-by-example/internal/platform/postgres"
 	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/driven/postgres/sqlcgen"
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/application"
@@ -33,12 +34,12 @@ func NewInventoryRepository(pool *pgxpool.Pool) *InventoryRepository {
 
 // Get implements application.InventoryRepository.
 func (r *InventoryRepository) Get(ctx context.Context, id domain.ShowID) (*domain.ShowInventory, error) {
-	return load(ctx, sqlcgen.New(r.pool), id.UUID())
+	return load(ctx, sqlcgen.New(pgplatform.Conn(ctx, r.pool)), id.UUID())
 }
 
 // GetByHold implements application.InventoryRepository.
 func (r *InventoryRepository) GetByHold(ctx context.Context, id domain.HoldID) (*domain.ShowInventory, error) {
-	q := sqlcgen.New(r.pool)
+	q := sqlcgen.New(pgplatform.Conn(ctx, r.pool))
 	showID, err := q.GetShowIDByHold(ctx, id.UUID())
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("%w: %s", application.ErrHoldNotFound, id)
@@ -125,7 +126,7 @@ func toSeatView(s sqlcgen.ListSeatsRow) (domain.SeatView, error) {
 // 2-seat hold.
 func (r *InventoryRepository) Save(ctx context.Context, inv *domain.ShowInventory) (err error) {
 	events := inv.PullEvents()
-	tx, err := r.pool.Begin(ctx)
+	tx, err := pgplatform.Begin(ctx, r.pool)
 	if err != nil {
 		return fmt.Errorf("save inventory %s: begin: %w", inv.ShowID(), err)
 	}

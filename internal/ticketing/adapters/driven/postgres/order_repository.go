@@ -12,6 +12,7 @@ import (
 
 	"github.com/williamokano/go-ddd-by-example/internal/platform/idgen"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/outbox"
+	pgplatform "github.com/williamokano/go-ddd-by-example/internal/platform/postgres"
 	"github.com/williamokano/go-ddd-by-example/internal/sharedkernel"
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/driven/postgres/sqlcgen"
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/application"
@@ -54,7 +55,7 @@ func init() {
 
 // Get implements application.OrderRepository.
 func (r *OrderRepository) Get(ctx context.Context, id domain.OrderID) (*domain.Order, error) {
-	row, err := sqlcgen.New(r.pool).GetOrder(ctx, id.UUID())
+	row, err := sqlcgen.New(pgplatform.Conn(ctx, r.pool)).GetOrder(ctx, id.UUID())
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("%w: %s", application.ErrOrderNotFound, id)
 	}
@@ -66,7 +67,7 @@ func (r *OrderRepository) Get(ctx context.Context, id domain.OrderID) (*domain.O
 
 // ListPaidForShow implements application.OrderRepository.
 func (r *OrderRepository) ListPaidForShow(ctx context.Context, show domain.ShowID) ([]*domain.Order, error) {
-	rows, err := sqlcgen.New(r.pool).ListPaidOrdersForShow(ctx, show.UUID())
+	rows, err := sqlcgen.New(pgplatform.Conn(ctx, r.pool)).ListPaidOrdersForShow(ctx, show.UUID())
 	if err != nil {
 		return nil, fmt.Errorf("list orders of show %s: %w", show, err)
 	}
@@ -128,7 +129,7 @@ func money(amount int64, currency string) (sharedkernel.Money, error) {
 
 // Save implements application.OrderRepository.
 func (r *OrderRepository) Save(ctx context.Context, o *domain.Order) (err error) {
-	tx, err := r.pool.Begin(ctx)
+	tx, err := pgplatform.Begin(ctx, r.pool)
 	if err != nil {
 		return fmt.Errorf("save order %s: begin: %w", o.ID(), err)
 	}

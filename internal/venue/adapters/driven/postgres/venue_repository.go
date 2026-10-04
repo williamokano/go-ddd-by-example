@@ -14,6 +14,7 @@ import (
 
 	"github.com/williamokano/go-ddd-by-example/internal/platform/idgen"
 	"github.com/williamokano/go-ddd-by-example/internal/platform/outbox"
+	pgplatform "github.com/williamokano/go-ddd-by-example/internal/platform/postgres"
 	"github.com/williamokano/go-ddd-by-example/internal/venue/adapters/driven/postgres/sqlcgen"
 	"github.com/williamokano/go-ddd-by-example/internal/venue/application"
 	"github.com/williamokano/go-ddd-by-example/internal/venue/domain"
@@ -36,7 +37,7 @@ func (r *VenueRepository) Get(ctx context.Context, id domain.VenueID) (*domain.V
 	if err != nil {
 		return nil, fmt.Errorf("venue id: %w", err)
 	}
-	q := sqlcgen.New(r.pool)
+	q := sqlcgen.New(pgplatform.Conn(ctx, r.pool))
 	row, err := q.GetVenue(ctx, uid)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("%w: %s", application.ErrVenueNotFound, id)
@@ -60,7 +61,7 @@ func (r *VenueRepository) Save(ctx context.Context, v *domain.Venue) (err error)
 	if err != nil {
 		return fmt.Errorf("venue id: %w", err)
 	}
-	tx, err := r.pool.Begin(ctx)
+	tx, err := pgplatform.Begin(ctx, r.pool)
 	if err != nil {
 		return fmt.Errorf("save venue %s: begin: %w", v.ID(), err)
 	}

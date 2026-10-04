@@ -6,6 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	pgplatform "github.com/williamokano/go-ddd-by-example/internal/platform/postgres"
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/adapters/driven/postgres/sqlcgen"
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/application"
 	"github.com/williamokano/go-ddd-by-example/internal/ticketing/domain"
@@ -19,7 +20,7 @@ func NewSeatQueries(pool *pgxpool.Pool) *SeatQueries { return &SeatQueries{pool:
 
 // ListSeats implements application.SeatQueries.
 func (q *SeatQueries) ListSeats(ctx context.Context, showID domain.ShowID) ([]application.SeatRow, error) {
-	db := sqlcgen.New(q.pool)
+	db := sqlcgen.New(pgplatform.Conn(ctx, q.pool))
 	exists, err := db.InventoryExists(ctx, showID.UUID())
 	if err != nil {
 		return nil, fmt.Errorf("list seats %s: %w", showID, err)

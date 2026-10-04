@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	pgplatform "github.com/williamokano/go-ddd-by-example/internal/platform/postgres"
 	"github.com/williamokano/go-ddd-by-example/internal/show/adapters/driven/postgres/sqlcgen"
 	"github.com/williamokano/go-ddd-by-example/internal/show/application"
 	"github.com/williamokano/go-ddd-by-example/internal/show/domain"
@@ -36,7 +37,7 @@ type rowJSON struct {
 
 // Get implements application.VenueLayouts.
 func (l *VenueLayouts) Get(ctx context.Context, id domain.VenueID) (domain.VenueLayout, error) {
-	row, err := sqlcgen.New(l.pool).GetVenueLayout(ctx, uuid.MustParse(id.String()))
+	row, err := sqlcgen.New(pgplatform.Conn(ctx, l.pool)).GetVenueLayout(ctx, uuid.MustParse(id.String()))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.VenueLayout{}, fmt.Errorf("%w: %s", application.ErrVenueUnknown, id)
 	}
@@ -72,7 +73,7 @@ func (l *VenueLayouts) Upsert(ctx context.Context, layout domain.VenueLayout) er
 	if err != nil {
 		return fmt.Errorf("venue layout %s: %w", layout.VenueID, err)
 	}
-	err = sqlcgen.New(l.pool).UpsertVenueLayout(ctx, sqlcgen.UpsertVenueLayoutParams{
+	err = sqlcgen.New(pgplatform.Conn(ctx, l.pool)).UpsertVenueLayout(ctx, sqlcgen.UpsertVenueLayoutParams{
 		VenueID: uuid.MustParse(layout.VenueID.String()), Name: layout.Name, Active: layout.Active, Sections: b,
 	})
 	if err != nil {
