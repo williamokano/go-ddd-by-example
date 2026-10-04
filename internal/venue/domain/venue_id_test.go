@@ -4,6 +4,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/williamokano/go-ddd-by-example/internal/venue/domain"
 )
 
@@ -36,4 +38,14 @@ func TestParseVenueID(t *testing.T) {
 			t.Errorf("ParseVenueID() error = %v, want %v", err, domain.ErrInvalidVenueID)
 		}
 	})
+}
+
+func TestNewVenueID(t *testing.T) {
+	u := uuid.MustParse("0192f5e0-7c1a-7b3e-9d2a-3f4b5c6d7e8f")
+
+	id := domain.NewVenueID(u)
+
+	if got := id.String(); got != u.String() {
+		t.Errorf("String() = %q, want %q", got, u.String())
+	}
 }

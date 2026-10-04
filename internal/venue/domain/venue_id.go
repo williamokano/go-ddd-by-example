@@ -24,3 +24,7 @@ func ParseVenueID(raw string) (VenueID, error) {
 
 // String returns the canonical textual form of the ID.
 func (id VenueID) String() string { return id.value.String() }
+
+// NewVenueID wraps an already-generated UUID. The application's IDGenerator
+// calls it; the domain never generates IDs itself (ADR-008).
+func NewVenueID(u uuid.UUID) VenueID { return VenueID{value: u} }
